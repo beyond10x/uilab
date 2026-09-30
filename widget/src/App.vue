@@ -5,7 +5,7 @@ import { accept, agentActions, goalBanner, micDown, micUp, operatorView, reject,
 /** The goal's own banner, when no agent banner of its operator already says `goal i/n`. */
 const goalOwner = computed(() => (goalBanner.value && state.goal ? operatorView(state.goal.by) : null));
 const goalOnly = computed(() => !!goalOwner.value && !agentActions.value.some((a) => a.op.id === goalOwner.value!.id));
-import { canvasMode, togglesMode } from './lib/canvasmode.ts';
+import { canvasMode, modeButton, togglesModeOn } from './lib/canvasmode.ts';
 import { enterAccepts, type KeyTarget } from './lib/keys.ts';
 import { API } from './remote.ts';
 import CanvasView from './components/CanvasView.vue';
@@ -51,7 +51,7 @@ function onKeyDown(ev: KeyboardEvent): void {
   } else if (plain && ev.key === '?') {
     ev.preventDefault();
     state.helpOpen = true;
-  } else if (togglesMode(ev)) {
+  } else if (togglesModeOn(ev, state.view)) {
     ev.preventDefault();
     if (!ev.repeat) canvasMode.toggle();
   } else if (ev.code === 'Space') {
@@ -132,12 +132,12 @@ onBeforeUnmount(() => {
           <button
             v-if="state.view === 'ui'"
             class="view-tab canvas-mode"
-            :class="{ active: canvasMode.mode.value === 'preview' }"
-            :aria-pressed="canvasMode.mode.value === 'preview'"
+            :class="{ active: modeButton(canvasMode.mode.value).pressed }"
+            :aria-pressed="modeButton(canvasMode.mode.value).pressed"
             title="switch the canvas between structure and preview (p)"
             @click="canvasMode.toggle()"
           >
-            {{ canvasMode.mode.value === 'preview' ? 'Preview' : 'Structure' }} <kbd>p</kbd>
+            {{ modeButton(canvasMode.mode.value).label }} <kbd>p</kbd>
           </button>
           <button class="export" title="download the document as YAML" @click="exportYaml">Export YAML</button>
         </nav>

@@ -135,3 +135,28 @@ test('accountName falls back to full_name, and trims what it returns', () => {
   assert.equal(accountName([{ id: 's-1', name: ' ', display_name: 'Shown' }]), 'Shown');
   assert.equal(accountName([{ id: 's-1', name: 42, email: 'a@example.com' }]), 'a@example.com');
 });
+
+// Round 2 (implementor): the rest of the classes the findings above are instances of.
+
+test('the account chrome is announced by the name alone', async () => {
+  state.rows = { 'staff.Me': { view: 'staff.Me', rows: [{ id: 's-1', name: 'Example Librarian' }] } };
+  setMode('preview');
+  const html = await renderCanvas(app('staff.Me'));
+  const button = /<button[^>]*class="chrome-account[^"]*"[^>]*>[\s\S]*?<\/button>/.exec(html)?.[0] ?? '';
+  assert.match(button, /aria-label="Example Librarian"/);
+  assert.match(button, /<span[^>]*class="avatar"[^>]*aria-hidden="true"|<span[^>]*aria-hidden="true"[^>]*class="avatar"/, button);
+  assert.match(button, /<span[^>]*class="caret"[^>]*aria-hidden="true"|<span[^>]*aria-hidden="true"[^>]*class="caret"/, button);
+});
+
+test('preview hides the view a menu entry opens per row of', async () => {
+  state.rows = {};
+  const nav = node('nav', 'menu', 'nav', { path: 'nav:menu' }, [
+    node('nav_section', 'people', 'nav_section', { path: 'nav:menu/people', props: { page: 'member', from_view: 'members.All' } }),
+  ]);
+  const member = node('page', 'member', 'page', { title: 'Member' });
+  const root = node('root', 'library', 'app', { path: '/' }, [nav, member]);
+  setMode('structure');
+  assert.match(text(await renderCanvas(root)), /per row of members\.All/, 'structure names the view');
+  setMode('preview');
+  assert.doesNotMatch(text(await renderCanvas(root)), /members\.All/);
+});

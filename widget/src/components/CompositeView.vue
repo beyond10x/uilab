@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
-import { canvasMode } from '../lib/canvasmode.ts';
+import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
 import { columnsOf, fieldsOf, isDraftView, propsOf } from '../lib/outline.ts';
 import { marks, requestRows, select, state, tint } from '../store.ts';
 
@@ -27,12 +27,15 @@ watchEffect(() => {
   if (needsRows.value) requestRows(view.value);
 });
 
-const emptyLine = computed(() => {
-  if (!view.value) return 'no data yet (no view)';
-  if (!rows.value) return state.conn === 'open' ? `loading ${view.value}…` : `no data yet (${view.value})`;
-  if (rowObjects.value.length === 0) return `no data yet (${view.value})`;
-  return null;
-});
+const emptyLine = computed(() =>
+  emptyLineText({
+    view: view.value,
+    loaded: !!rows.value,
+    count: rowObjects.value.length,
+    connOpen: state.conn === 'open',
+    preview: preview.value,
+  }),
+);
 
 const columns = computed(() => columnsOf(props.node));
 const rowActions = computed(() => {

@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue';
+import { isDraftView } from './outline.ts';
 
 /**
  * How the canvas draws the document. `structure` labels every composite `name · kind · view` and
@@ -20,6 +21,28 @@ export const MODE_HELP: [string[], string] = [['p'], 'switch the canvas between 
 /** Whether a key press toggles the mode: `p` with no Ctrl, Meta or Alt. */
 export function togglesMode(ev: { key: string; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean }): boolean {
   return !ev.ctrlKey && !ev.metaKey && !ev.altKey && ev.key.toLowerCase() === 'p';
+}
+
+/** Whether a key press toggles the mode on the given tab: the canvas is only on the UI tab. */
+export function togglesModeOn(ev: Parameters<typeof togglesMode>[0], view: string): boolean {
+  return view === 'ui' && togglesMode(ev);
+}
+
+/** The mode button: one fixed label, the mode carried by `aria-pressed`. */
+export function modeButton(mode: CanvasMode): { label: string; pressed: boolean } {
+  return { label: 'Preview', pressed: mode === 'preview' };
+}
+
+/**
+ * The line a composite shows while it has no rows, or null when it has some. Structure names the
+ * view it reads; preview never names a view.
+ */
+export function emptyLine(c: { view: string | undefined; loaded: boolean; count: number; connOpen: boolean; preview: boolean }): string | null {
+  if (c.loaded && c.count > 0) return null;
+  if (c.preview) return !c.view || c.loaded || !c.connOpen ? 'no data yet' : 'loading…';
+  if (!c.view) return 'no data yet (no view)';
+  if (!c.loaded && c.connOpen) return `loading ${c.view}…`;
+  return `no data yet (${c.view})`;
 }
 
 /**
@@ -67,4 +90,14 @@ export function accountName(rows: unknown[] | undefined): string | null {
     if (typeof v === 'string' && v.trim()) return v.trim();
   }
   return null;
+}
+
+/**
+ * What the account menu shows in preview: the name from the rows its view reads, else `fallback`.
+ * A name read from a draft view is made up, so it is marked as sample data like every draft read.
+ */
+export function accountChrome(view: string | undefined, rows: unknown[] | undefined, fallback: string): { name: string; initial: string; sample: boolean } {
+  const read = accountName(rows);
+  const name = read ?? fallback;
+  return { name, initial: name.charAt(0).toUpperCase(), sample: read !== null && isDraftView(view) };
 }

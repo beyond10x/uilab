@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
-import { accountName, canvasMode } from '../lib/canvasmode.ts';
+import { accountChrome, canvasMode } from '../lib/canvasmode.ts';
 import { childrenOf, findNode, labelOf, navLayout, shellOf } from '../lib/outline.ts';
 import { activePage, marks, requestRows, select, shownOutline, showPage, state, tint } from '../store.ts';
 import CompositeView from './CompositeView.vue';
@@ -30,9 +30,9 @@ watchEffect(() => {
   for (const r of barRegions.value) if (r.kind === 'account_menu') requestRows(r.view);
 });
 
-/** The account menu's label: the staff member's name from the rows its view reads, when loaded. */
-function accountLabel(r: OutlineNode): string {
-  return accountName(r.view ? state.rows[r.view]?.rows : undefined) ?? (r.title || 'Account');
+/** The account menu as chrome: the staff member's name from the rows its view reads, when loaded. */
+function account(r: OutlineNode): ReturnType<typeof accountChrome> {
+  return accountChrome(r.view, r.view ? state.rows[r.view]?.rows : undefined, r.title || 'Account');
 }
 
 /** Whether a node carries a mark worth seeing: selected, part of the proposal, or being worked on. */
@@ -81,10 +81,13 @@ function openOverlay(o: OutlineNode): void {
           class="chrome-account node"
           :class="marks(r.path)" :style="tint(r.path)"
           :title="r.name"
+          :aria-label="account(r).name"
           @click.stop="select(r.path)"
         >
-          <span class="avatar">{{ accountLabel(r).charAt(0).toUpperCase() }}</span>
-          {{ accountLabel(r) }} <span class="caret">▾</span>
+          <span class="avatar" aria-hidden="true">{{ account(r).initial }}</span>
+          {{ account(r).name }}
+          <span v-if="account(r).sample" class="sample-tag" title="made-up rows: this view has no model binding yet">sample data</span>
+          <span class="caret" aria-hidden="true">▾</span>
         </button>
         <button
           v-else-if="r.kind === 'notifications'"
@@ -141,7 +144,7 @@ function openOverlay(o: OutlineNode): void {
             @click.stop.prevent="openPage(e.page)"
           >
             {{ e.page.title || e.page.name }}
-            <span v-if="e.fromView" class="muted small">per row of {{ e.fromView }}</span>
+            <span v-if="e.fromView && !preview" class="muted small">per row of {{ e.fromView }}</span>
           </a>
         </div>
       </nav>
