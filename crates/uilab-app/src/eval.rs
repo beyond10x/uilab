@@ -495,4 +495,23 @@ mod tests {
         assert_eq!(navigate.expect.moved_to.as_deref(), Some("page:members"));
         assert!(by_id("retarget-none").expect.stays);
     }
+
+    /// Adversary (story:agent-retarget): a navigation-only move settles the act (api `Settle`), so
+    /// a case that did not expect one fails on the move, not on a wait that never ran out.
+    #[test]
+    fn adversary_an_unexpected_navigation_is_reported_as_the_move_it_was() {
+        let out = judge(&case(Expect::default()), &[moved("page:members", true)], 10);
+        assert!(!out.pass);
+        assert!(
+            out.got.contains("moved to page:members"),
+            "got: {}; reasons: {:?}",
+            out.got,
+            out.reasons
+        );
+        assert!(
+            !out.reasons.iter().any(|r| r.contains("wait ran out")),
+            "{:?}",
+            out.reasons
+        );
+    }
 }
