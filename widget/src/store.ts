@@ -30,7 +30,8 @@ import { settleCard } from './lib/card.ts';
 import { bannerLabel, goalEnded, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
 import { targetIn, workspaceOf } from './lib/workspace.ts';
 import { markClasses, outlineMarks, previewBase, withRemoved, type Mark } from './lib/marks.ts';
-import { findNode, homePage, isDraftView, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf } from './lib/outline.ts';
+import { findNode, homePage, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf } from './lib/outline.ts';
+import { rowsDue } from './lib/rows.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
 
@@ -110,7 +111,8 @@ let feedSeq = 0;
 let flashSeq = 0;
 
 let transport: Transport | null = null;
-const rowsRequested = new Set<string>();
+/** View → document revision its rows were last asked for at. */
+const rowsAsked = new Map<string, number | null>();
 /** Views the canvas wants rows for; asked again on reconnect. */
 const pendingViews = new Set<string>();
 let micHeld = false;
@@ -391,7 +393,7 @@ function onState(conn: ConnState, retryInMs?: number): void {
     // connection dropped may no longer exist.
     state.goal = null;
     // Requests that were never answered are asked again on the new connection.
-    for (const view of rowsRequested) if (!state.rows[view]) rowsRequested.delete(view);
+    for (const view of rowsAsked.keys()) if (!state.rows[view]) rowsAsked.delete(view);
     for (const view of pendingViews) requestRows(view);
   } else if (conn === 'closed') {
     if (state.phase === 'listening') mic.end();
@@ -418,11 +420,13 @@ export function showPage(path: string): void {
   state.openOverlay = null;
 }
 
+/** Asks for `view`'s rows when they are due (`rowsDue`); a `draft.` view gets sample rows. */
 export function requestRows(view: string | undefined): void {
-  if (!view || isDraftView(view)) return;
+  if (!view) return;
   pendingViews.add(view);
-  if (state.rows[view] || rowsRequested.has(view)) return;
-  if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsRequested.add(view);
+  const revision = state.revision;
+  if (!rowsDue(view, !!state.rows[view], rowsAsked.get(view), revision)) return;
+  if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsAsked.set(view, revision);
 }
 
 /** Where an instruction goes, in the view on screen (`targetIn`); selects the page it names. */
