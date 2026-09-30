@@ -8,6 +8,7 @@
 //! shell:app/region:nav
 //! nav/nav_section:sales
 //! page:loans/section:list/item:status
+//! component:loan_card/node:title
 //! ```
 
 use std::fmt;
@@ -16,7 +17,8 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Composite, CompositeKind, Document, NavSection, Navigation, Overlay, Page, Region, Shell,
+    Composite, CompositeKind, Document, NavSection, Navigation, NodeBody, Overlay, Page, Primitive,
+    Region, Shell, Widget,
 };
 
 /// The layer a node belongs to.
@@ -43,6 +45,10 @@ pub enum Layer {
     Widget,
     /// A composite nested in each row of a collection.
     Item,
+    /// An app-defined widget declared under the root.
+    Component,
+    /// One named node of a widget body: a composite, a widget instance or a primitive.
+    Node,
 }
 
 impl Layer {
@@ -59,6 +65,8 @@ impl Layer {
             Layer::Overlay => "overlay",
             Layer::Widget => "widget",
             Layer::Item => "item",
+            Layer::Component => "component",
+            Layer::Node => "node",
         }
     }
 
@@ -73,15 +81,17 @@ impl Layer {
             "overlay" => Layer::Overlay,
             "widget" => Layer::Widget,
             "item" => Layer::Item,
+            "component" => Layer::Component,
+            "node" => Layer::Node,
             _ => return None,
         })
     }
 
-    /// Whether a node of this layer is a composite (and may hold widgets or items).
+    /// Whether a node of this layer is, or may be, a composite (and may hold widgets or items).
     pub fn is_composite(self) -> bool {
         matches!(
             self,
-            Layer::Section | Layer::Overlay | Layer::Widget | Layer::Item
+            Layer::Section | Layer::Overlay | Layer::Widget | Layer::Item | Layer::Node
         )
     }
 }
@@ -250,11 +260,12 @@ impl<'de> Deserialize<'de> for NodePath {
 pub fn may_contain(parent: Layer, child: Layer) -> bool {
     use Layer::*;
     match parent {
-        Root => matches!(child, Shell | Nav | Page),
+        Root => matches!(child, Shell | Nav | Page | Component),
         Shell => matches!(child, Region | Overlay),
         Nav => child == NavSection,
         Page => matches!(child, Section | Overlay),
-        Section | Overlay | Widget | Item => matches!(child, Widget | Item),
+        Section | Overlay | Widget | Item | Node => matches!(child, Widget | Item),
+        Component => child == Node,
         Region | NavSection => false,
     }
 }
@@ -276,12 +287,17 @@ pub enum NodeRef<'a> {
     Page(&'a Page),
     /// A page overlay or shell overlay.
     Overlay(&'a Overlay),
-    /// A section, widget or item.
+    /// A section, board widget, item, or a composite or widget instance in a widget body.
     Composite(&'a Composite),
+    /// A widget declaration.
+    Component(&'a Widget),
+    /// A primitive in a widget body.
+    Primitive(&'a Primitive),
 }
 
 impl<'a> NodeRef<'a> {
-    /// The composite this node renders, for sections, overlays, widgets and items.
+    /// The composite this node renders, for sections, overlays, board widgets, items and
+    /// composite nodes of a widget body.
     pub fn composite(self) -> Option<&'a Composite> {
         match self {
             NodeRef::Overlay(o) => Some(&o.body),
@@ -303,6 +319,8 @@ impl<'a> NodeRef<'a> {
                 format!("{:?} {}", o.kind, o.body.component.as_str()).to_lowercase()
             }
             NodeRef::Composite(c) => c.component.as_str().into(),
+            NodeRef::Component(_) => "widget".into(),
+            NodeRef::Primitive(p) => p.primitive.as_str().into(),
         }
     }
 }
@@ -321,6 +339,14 @@ pub fn resolve<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeRef<'a>, Pa
             (NodeRef::Root(d), Layer::Page) => {
                 NodeRef::Page(d.pages.get(name).ok_or_else(not_found)?)
             }
+            (NodeRef::Root(d), Layer::Component) => {
+                NodeRef::Component(d.widgets.get(name).ok_or_else(not_found)?)
+            }
+            (NodeRef::Component(w), Layer::Node) => match &w.node(name).ok_or_else(not_found)?.body
+            {
+                NodeBody::Composite(c) => NodeRef::Composite(c),
+                NodeBody::Primitive(p) => NodeRef::Primitive(p),
+            },
             (NodeRef::Shell(s), Layer::Region) => {
                 NodeRef::Region(s.regions.get(name).ok_or_else(not_found)?)
             }
@@ -365,17 +391,19 @@ pub fn resolve<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeRef<'a>, Pa
 
 /// The layers a node at `path` can take a new child in, given what the node is.
 ///
-/// Composites follow their kind: only a `board` holds widgets and only a `collection` holds items.
+/// Composites follow their kind: only a `board` holds widgets and only a `collection` holds items;
+/// a widget instance and a primitive hold nothing. A widget takes nodes in its body.
 pub fn allowed_children(doc: &Document, path: &NodePath) -> Result<Vec<Layer>, PathError> {
     let node = resolve(doc, path)?;
     Ok(match node {
-        NodeRef::Root(_) => vec![Layer::Shell, Layer::Page],
+        NodeRef::Root(_) => vec![Layer::Shell, Layer::Page, Layer::Component],
         NodeRef::Shell(_) => vec![Layer::Region, Layer::Overlay],
         NodeRef::Nav(_) => vec![Layer::NavSection],
         NodeRef::Page(_) => vec![Layer::Section, Layer::Overlay],
-        NodeRef::Region(_) | NodeRef::NavSection(_) => vec![],
+        NodeRef::Component(_) => vec![Layer::Node],
+        NodeRef::Region(_) | NodeRef::NavSection(_) | NodeRef::Primitive(_) => vec![],
         NodeRef::Overlay(_) | NodeRef::Composite(_) => {
-            match node.composite().map(|c| c.component) {
+            match node.composite().and_then(|c| c.component.kind()) {
                 Some(CompositeKind::Board) => vec![Layer::Widget],
                 Some(CompositeKind::Collection) => vec![Layer::Item],
                 _ => vec![],
@@ -393,9 +421,15 @@ pub fn children(doc: &Document, path: &NodePath) -> Result<Vec<(Layer, String)>,
         NodeRef::Root(d) => {
             let mut out: Vec<_> = names(Layer::Shell, d.shells.keys().collect()).collect();
             out.push((Layer::Nav, String::new()));
+            out.extend(names(Layer::Component, d.widgets.keys().collect()));
             out.extend(names(Layer::Page, d.pages.keys().collect()));
             out
         }
+        NodeRef::Component(w) => w
+            .body
+            .iter()
+            .map(|n| (Layer::Node, n.name.clone()))
+            .collect(),
         NodeRef::Shell(s) => names(Layer::Region, s.regions.keys().collect())
             .chain(names(Layer::Overlay, s.overlays.keys().collect()))
             .collect(),
@@ -421,7 +455,7 @@ pub fn children(doc: &Document, path: &NodePath) -> Result<Vec<(Layer, String)>,
                 .collect(),
         ))
         .collect(),
-        NodeRef::Region(_) | NodeRef::NavSection(_) => vec![],
+        NodeRef::Region(_) | NodeRef::NavSection(_) | NodeRef::Primitive(_) => vec![],
         node @ (NodeRef::Overlay(_) | NodeRef::Composite(_)) => {
             let c = node
                 .composite()
