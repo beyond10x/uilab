@@ -1,12 +1,12 @@
 {
   "format": "ess-types-report/3",
-  "source_digest": "c1c9563af89cf1f1f8ef7782b80ff93b32b7086e6e86f27333557738d9508f0c",
+  "source_digest": "b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a",
   "input": {
     "kind": "model",
     "system": "uilab",
     "specification_version": "v1",
-    "contract_digest": "slice-sha256/2:f0375981206ba50f4e8ee6f82dfeef64131d42d34be5bd3b49ebff80d452635e",
-    "projection_digest": "2ae3d1db08e9b24afc405d985faeb642fb4b6596e67be094bbe363f9ff20377b"
+    "contract_digest": "slice-sha256/2:35c728bccc1e3a09e0d3a8fb1b2a0376a8d684032f6dc0cc66405120d9e460ac",
+    "projection_digest": "b2a595dd00ba2f5f0f81440c12479d1791972c4780fef89ab69cee35b1e2c22a"
   },
   "generator_version": "0.44.0",
   "target": "rust",
@@ -53,7 +53,8 @@
     "uilab.wire.StepStatus": "UilabWireStepStatus",
     "uilab.wire.StopGoal": "UilabWireStopGoal",
     "uilab.wire.Thinking": "UilabWireThinking",
-    "uilab.wire.Transcript": "UilabWireTranscript"
+    "uilab.wire.Transcript": "UilabWireTranscript",
+    "uilab.wire.Workspace": "UilabWireWorkspace"
   },
   "annotations": [
     {
@@ -708,6 +709,21 @@
     },
     {
       "pointer": "/$defs/uilab.wire.Transcript/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Workspace/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Workspace/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Workspace/x-ess-name",
       "rule": "x-ess-name",
       "detail": "model identity and wire mapping retained in source.schema.json"
     }

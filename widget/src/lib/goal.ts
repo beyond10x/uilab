@@ -3,6 +3,7 @@ import type {
   UilabWireGoal as Goal,
   UilabWireServerMessage as ServerMessage,
   UilabWireStepStatus as StepStatus,
+  UilabWireWorkspace,
 } from '../generated/types.ts';
 
 /** One icon per step status, for the goal panel. */
@@ -86,11 +87,18 @@ export function stateLabel(goal: Goal): string {
   }
 }
 
-/** The `goal` message for typed text at a target; `null` for blank text. */
-export function goalMessage(text: string, target: string | undefined): ClientMessage | null {
+/** The `goal` message for typed text at a target, from a workspace; `null` for blank text. */
+export function goalMessage(
+  text: string,
+  target: string | undefined,
+  workspace?: UilabWireWorkspace,
+): ClientMessage | null {
   const t = text.trim();
   if (!t) return null;
-  return { type: 'goal', value: target ? { text: t, target } : { text: t } };
+  return {
+    type: 'goal',
+    value: { text: t, ...(target ? { target } : {}), ...(workspace ? { workspace } : {}) },
+  };
 }
 
 /** The `stop_goal` message for a goal that still acts; `null` otherwise. */

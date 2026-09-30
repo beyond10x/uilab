@@ -118,6 +118,8 @@ pub struct Goal {
     pub current: Option<usize>,
     /// Why the run failed.
     pub message: Option<String>,
+    /// Where the goal was given; each step is proposed there.
+    pub workspace: uilab_agent::Workspace,
 }
 
 impl Goal {
@@ -141,6 +143,7 @@ impl Goal {
             steps: Vec::new(),
             current: None,
             message: None,
+            workspace: uilab_agent::Workspace::App,
         }
     }
 

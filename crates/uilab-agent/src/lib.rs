@@ -82,6 +82,31 @@ impl Default for ProposerConfig {
     }
 }
 
+/// Where the operator gave the instruction: the app canvas, or the Components workspace, where
+/// what they ask for is reusable widgets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Workspace {
+    #[default]
+    App,
+    Components,
+}
+
+impl Workspace {
+    /// The line the model reads before the target; empty for the app canvas.
+    fn note(self) -> &'static str {
+        match self {
+            Workspace::App => "",
+            Workspace::Components => {
+                "Workspace: Components. The operator is building the component library: what they \
+                 ask for is reusable widgets declared under `widgets:` at the root (target `/`, \
+                 layer `component`, each with a summary, typed params and a body), not page \
+                 sections or pages. A set of components is one batch of widget inserts. Put a \
+                 widget on a page only when they ask for that.\n\n"
+            }
+        }
+    }
+}
+
 /// One admitted patch and what it took.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Proposal {
@@ -409,12 +434,28 @@ impl Proposer {
         utterance: &str,
         fields: &[(String, Vec<String>)],
     ) -> Result<Proposal, ProposeError> {
+        self.propose_in(doc, target, utterance, fields, Workspace::App)
+    }
+
+    /// [`propose_with`](Self::propose_with), given in `workspace`.
+    ///
+    /// # Errors
+    ///
+    /// As [`propose`](Self::propose).
+    pub fn propose_in(
+        &mut self,
+        doc: &Document,
+        target: &NodePath,
+        utterance: &str,
+        fields: &[(String, Vec<String>)],
+        workspace: Workspace,
+    ) -> Result<Proposal, ProposeError> {
         let context = uilab_doc::node_context(doc, target)?;
         let schema = uilab_doc::patch_schema(doc, target)?;
         let config = self.loop_config(INSTRUCTIONS, schema)?;
         let answered = self.attempts(
             config,
-            request(doc, &context, target, utterance, fields),
+            request(doc, &context, target, utterance, fields, workspace),
             Retry::PATCH,
             |structured| {
                 let patch =
@@ -468,6 +509,23 @@ impl Proposer {
         max_steps: usize,
         fields: &[(String, Vec<String>)],
     ) -> Result<Plan, ProposeError> {
+        self.plan_goal_in(doc, target, goal, max_steps, fields, Workspace::App)
+    }
+
+    /// [`plan_goal_with`](Self::plan_goal_with), given in `workspace`.
+    ///
+    /// # Errors
+    ///
+    /// As [`plan_goal`](Self::plan_goal).
+    pub fn plan_goal_in(
+        &mut self,
+        doc: &Document,
+        target: &NodePath,
+        goal: &str,
+        max_steps: usize,
+        fields: &[(String, Vec<String>)],
+        workspace: Workspace,
+    ) -> Result<Plan, ProposeError> {
         let context = uilab_doc::node_context(doc, target)?;
         if max_steps == 0 {
             return Err(ProposeError::Config(
@@ -477,7 +535,7 @@ impl Proposer {
         let config = self.loop_config(PLAN_INSTRUCTIONS, plan_schema(max_steps))?;
         let answered = self.attempts(
             config,
-            plan_request(doc, &context, goal, max_steps, fields),
+            plan_request(doc, &context, goal, max_steps, fields, workspace),
             Retry::PLAN,
             |structured| {
                 let answer =
@@ -842,13 +900,14 @@ fn plan_request(
     goal: &str,
     max_steps: usize,
     fields: &[(String, Vec<String>)],
+    workspace: Workspace,
 ) -> String {
     let mut outline = String::new();
     outline_lines(&uilab_doc::outline(doc), 0, &mut outline);
     format!(
         "Goal: \"{goal}\"\n\
          At most {max_steps} steps.\n\n\
-         Target node: {path} ({kind})\n\
+         {note}Target node: {path} ({kind})\n\
          Ancestors: {ancestors}\n\
          Child layers it can take: {layers}\n\
          Existing children: {children}\n\
@@ -872,6 +931,7 @@ fn plan_request(
         views = join(known_views(doc)),
         fields = view_fields(fields),
         widgets = declared_widgets(doc),
+        note = workspace.note(),
         yaml = context.yaml,
     )
 }
@@ -1029,6 +1089,7 @@ fn request(
     target: &NodePath,
     utterance: &str,
     fields: &[(String, Vec<String>)],
+    workspace: Workspace,
 ) -> String {
     let pages = named_pages(doc, target, utterance);
     let places = if matches!(target.layer(), Layer::Root | Layer::Page) {
@@ -1051,7 +1112,7 @@ fn request(
         .collect();
     format!(
         "Instruction (speech-to-text): \"{utterance}\"\n\n\
-         Target node: {path} ({kind})\n\
+         {note}Target node: {path} ({kind})\n\
          Ancestors: {ancestors}\n\
          Child layers it can take: {layers}\n\
          Composite kinds a new composite child can be: {kinds}\n\
@@ -1070,6 +1131,7 @@ fn request(
         views = join(known_views(doc)),
         fields = view_fields(fields),
         widgets = declared_widgets(doc),
+        note = workspace.note(),
         yaml = context.yaml,
     )
 }
@@ -1098,6 +1160,26 @@ mod tests {
     fn a_proposer_is_send() {
         fn send<T: Send>() {}
         send::<Proposer>();
+    }
+
+    #[test]
+    fn an_instruction_from_the_components_workspace_asks_for_widgets() {
+        let doc = library();
+        let root = NodePath::root();
+        let context = uilab_doc::node_context(&doc, &root).unwrap();
+        let text = "put some basic set of components now";
+        let app = request(&doc, &context, &root, text, &[], Workspace::App);
+        assert!(!app.contains("Workspace:"), "{app}");
+        let components = request(&doc, &context, &root, text, &[], Workspace::Components);
+        assert!(
+            components.contains("Workspace: Components.")
+                && components.contains("under `widgets:`")
+                && components.contains("not page sections"),
+            "{components}"
+        );
+        let plan = plan_request(&doc, &context, text, 4, &[], Workspace::Components);
+        assert!(plan.contains("Workspace: Components."), "{plan}");
+        assert!(!plan_request(&doc, &context, text, 4, &[], Workspace::App).contains("Workspace:"));
     }
 
     #[test]

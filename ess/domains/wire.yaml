@@ -63,11 +63,17 @@ types:
     kind: enum
     variants: [open, closed]
 
+  - name: uilab.wire.Workspace
+    kind: enum
+    variants: [app, components]
+
   - name: uilab.wire.Mic
     kind: struct
     fields:
       - name: state
         type: uilab.wire.MicState
+      - name: workspace
+        type: Optional<uilab.wire.Workspace>
 
   - name: uilab.wire.Say
     kind: struct
@@ -78,6 +84,8 @@ types:
         type: Optional<uilab.session.NodePath>
       - name: review
         type: Optional<Boolean>
+      - name: workspace
+        type: Optional<uilab.wire.Workspace>
 
   - name: uilab.wire.Settings
     kind: struct
@@ -126,6 +134,8 @@ types:
         type: Optional<Integer>
       - name: review
         type: Optional<Boolean>
+      - name: workspace
+        type: Optional<uilab.wire.Workspace>
 
   - name: uilab.wire.StopGoal
     kind: struct
