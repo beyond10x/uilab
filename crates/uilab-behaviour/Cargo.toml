@@ -1,0 +1,18 @@
+[package]
+name = "uilab-behaviour"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+uilab-types = { workspace = true }
+uilab-session = { workspace = true }
+uilab-wire = { workspace = true }
+uilab-doc = { workspace = true }
+indexmap = { workspace = true }
+serde_json = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
