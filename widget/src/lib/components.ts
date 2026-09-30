@@ -160,18 +160,18 @@ function stemKey(name: string): string {
 
 /** The view prefixes an entity's rows go by, as [`stemKey`] gives them: `Member` → `members`,
  *  `member`; `Category` → `categories`; `Box` → `boxes`; `LoanRequest` → `loanrequests`;
- *  `Person` → `people`. */
+ *  `Person` → `people`, then `persons`. */
 function viewStems(entity: string): string[] {
   const base = stemKey(entity);
+  const regular = /[^aeiou]y$/.test(base)
+    ? `${base.slice(0, -1)}ies`
+    : /(s|x|z|ch|sh)$/.test(base)
+      ? `${base}es`
+      : `${base}s`;
   const irregular = Object.keys(IRREGULAR_PLURALS).find((word) => base.endsWith(word));
-  const plural = irregular
-    ? `${base.slice(0, -irregular.length)}${IRREGULAR_PLURALS[irregular]}`
-    : /[^aeiou]y$/.test(base)
-      ? `${base.slice(0, -1)}ies`
-      : /(s|x|z|ch|sh)$/.test(base)
-        ? `${base}es`
-        : `${base}s`;
-  return [plural, base];
+  return irregular
+    ? [`${base.slice(0, -irregular.length)}${IRREGULAR_PLURALS[irregular]}`, regular, base]
+    : [regular, base];
 }
 
 /**
