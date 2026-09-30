@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-goals
 kind: story
-status: draft
+status: active
 title: 'Long-running goals: the agent works in steps until done'
 relations:
 - decomposes: epic:workbench
@@ -17,7 +17,10 @@ scope:
   path: generated
 - confidence: cited
   path: widget
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T04:02:56Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T04:02:56Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

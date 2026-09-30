@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-widgets
 kind: story
-status: draft
+status: active
 title: The agent builds and uses widgets
 relations:
 - decomposes: epic:component-library
@@ -11,7 +11,10 @@ relations:
 scope:
 - confidence: cited
   path: crates/uilab-agent/src/lib.rs
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T04:02:56Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T04:02:56Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
