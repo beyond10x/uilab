@@ -39,7 +39,7 @@ pub fn outline(doc: &Document) -> OutlineNode {
     node(doc, &widget_uses(doc), &NodePath::root()).expect("the root resolves")
 }
 
-/// The use sites of the widget `name`, in the order [`widget_uses`] finds them, each once.
+/// The use sites of the widget `name`, one per instance, in the order [`widget_uses`] finds them.
 fn uses_of(uses: &[(NodePath, Instance<'_>)], name: &str) -> serde_json::Value {
     let mut out: Vec<serde_json::Value> = Vec::new();
     for (path, instance) in uses.iter().filter(|(_, i)| i.widget == name) {
@@ -47,9 +47,7 @@ fn uses_of(uses: &[(NodePath, Instance<'_>)], name: &str) -> serde_json::Value {
             Some(trail) => serde_json::json!({"path": path.to_string(), "trail": trail}),
             None => serde_json::json!({"path": path.to_string()}),
         };
-        if !out.contains(&site) {
-            out.push(site);
-        }
+        out.push(site);
     }
     serde_json::Value::Array(out)
 }

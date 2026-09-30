@@ -886,23 +886,26 @@ impl App {
     }
 
     /// Broadcasts an accepted proposal as a delta. A page or a menu section changes the menu as
-    /// well, which a delta at one path cannot carry, so those go out as a full snapshot.
-    fn announce_change(&self, by: &str, id: &s::ProposalId) {
+    /// well, which a delta at one path cannot carry, and a change that adds or drops a widget
+    /// instance changes the use sites on component nodes elsewhere in the tree: those go out as a
+    /// full snapshot.
+    fn announce_change(&self, by: &str, id: &s::ProposalId, before: &Document) {
         let Some(patch) = self.handle.patch(id) else {
             self.send_document();
             return;
         };
         let changed = patch.changed_path();
+        let doc = self.doc();
         if matches!(patch, Patch::Batch { .. })
             || matches!(
                 changed.layer(),
                 Layer::Page | Layer::NavSection | Layer::Shell
             )
+            || component_uses(before) != component_uses(&doc)
         {
             self.send_document();
             return;
         }
-        let doc = self.doc();
         let node = match patch {
             Patch::Remove { .. } => None,
             _ => outline_at(&doc, &changed),
@@ -955,6 +958,7 @@ impl App {
     /// Applies a waiting proposal. `automatic` when review is off and nobody pressed accept.
     fn accept(&mut self, by: &str, proposal_id: &str, automatic: bool) {
         let id = proposal(proposal_id);
+        let before = self.doc();
         let outcome = self.port.accept_proposal(s::AcceptProposal {
             proposal_id: id.clone(),
         });
@@ -967,7 +971,7 @@ impl App {
                     "accepted",
                     json!({"by": by, "proposal_id": proposal_id, "revision": self.revision, "automatic": automatic}),
                 );
-                self.announce_change(by, &id);
+                self.announce_change(by, &id, &before);
             }
             Ok(s::AcceptProposalOutcome::Stale { error }) => self.send(Server::refused(
                 error.check,
@@ -1141,6 +1145,16 @@ impl App {
 
 fn proposal(id: &str) -> s::ProposalId {
     s::ProposalId(Uuid(id.to_owned()))
+}
+
+/// The use sites each component node of the outline carries, in outline order.
+fn component_uses(doc: &Document) -> Vec<Option<serde_json::Value>> {
+    outline(doc)
+        .children
+        .into_iter()
+        .filter(|c| c.layer == Layer::Component)
+        .map(|c| c.props.and_then(|p| p.get("uses").cloned()))
+        .collect()
 }
 
 /// The session actor without a model: `App::open` asks for nothing, so each test answers for the
@@ -1888,5 +1902,78 @@ pages:
             drops,
             ["replace at page:members/section:list drops columns joined, loans, standing"]
         );
+    }
+
+    /// Accepts `patch` as the API operator's, with review off.
+    fn accept_patch(rig: &mut Rig, patch: Patch) -> Vec<Server> {
+        rig.app.handle_cmd(Cmd::Proposed {
+            by: "api-1".into(),
+            target: patch.target().clone(),
+            utterance: "u".into(),
+            result: Box::new(Ok(uilab_agent::Proposal {
+                patch,
+                turns: 1,
+                cost_micro_usd: None,
+                attempts: 1,
+            })),
+            ms: 1,
+            review: false,
+            step: None,
+        });
+        rig.drain_broadcast()
+    }
+
+    fn loan_card_uses(outline: &serde_json::Value) -> Vec<String> {
+        child(outline, "component:loan_card")["props"]["uses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|u| u["path"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// The use sites sit on component nodes, which a delta at the changed path does not re-send:
+    /// a change that adds or drops an instance goes out as a full document, and one that does
+    /// not stays a delta.
+    #[test]
+    fn a_change_that_adds_or_drops_a_widget_instance_sends_the_whole_outline() {
+        let mut rig = rig_over(false, with_loan_card);
+        let sent = accept_patch(
+            &mut rig,
+            Patch::Insert {
+                target: "page:overview".parse().unwrap(),
+                child: uilab_doc::Child {
+                    layer: Layer::Section,
+                    name: "more".into(),
+                    node: json!({"component": "loan_card", "args": {"loan": "rows.first"}}),
+                    nav_section: None,
+                },
+            },
+        );
+        assert!(!sent.iter().any(|m| matches!(m, Server::Changed(_))));
+        assert_eq!(
+            loan_card_uses(&last_outline(&sent)),
+            ["page:overview/section:latest", "page:overview/section:more"]
+        );
+
+        let sent = accept_patch(
+            &mut rig,
+            Patch::Remove {
+                target: "page:overview/section:latest".parse().unwrap(),
+            },
+        );
+        assert_eq!(
+            loan_card_uses(&last_outline(&sent)),
+            ["page:overview/section:more"]
+        );
+
+        let sent = accept_patch(
+            &mut rig,
+            Patch::Remove {
+                target: "page:overview/section:recent".parse().unwrap(),
+            },
+        );
+        assert!(sent.iter().any(|m| matches!(m, Server::Changed(_))));
+        assert!(!sent.iter().any(|m| matches!(m, Server::Document(_))));
     }
 }
