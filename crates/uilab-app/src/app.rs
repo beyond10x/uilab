@@ -450,6 +450,14 @@ impl App {
                         || running.as_deref() == Some(id.as_str())
                 });
                 if self.operators.len() != before {
+                    // Presence never names a selector it no longer lists.
+                    if self
+                        .selected_by
+                        .as_ref()
+                        .is_some_and(|by| !self.operators.contains_key(by))
+                    {
+                        self.selected_by = None;
+                    }
                     self.send_presence();
                 }
             }

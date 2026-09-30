@@ -204,10 +204,13 @@ pub fn check_retarget(
     Ok(())
 }
 
-/// Whether `utterance` names a page: says the word, or a page's name or title, in words that are
-/// not part of a widget name it also says ("the loan card" names the widget `loan_card`, not the
-/// page `loans`; "the page header" names the widget `page_header`).
+/// Whether `utterance` names a page as a place: a page's name or title said in words that are not
+/// part of a widget name it also says ("the loan card" names the widget `loan_card`, not the page
+/// `loans`), and said as a place: followed by "page" ("the loans page"), after "page", or after
+/// in/on/to/into/onto/at, with or without "the" ("in members", "on the loans page"). A word that
+/// only matches a page ("show the loan's due date", "as wide as the page") names none.
 fn names_a_page(doc: &Document, utterance: &str) -> bool {
+    const PLACE: [&str; 6] = ["in", "on", "to", "into", "onto", "at"];
     let said = words(utterance);
     let mut free = vec![true; said.len()];
     for widget in doc.widgets.keys() {
@@ -215,15 +218,23 @@ fn names_a_page(doc: &Document, utterance: &str) -> bool {
             free[start..start + len].fill(false);
         }
     }
-    let names_freely = |name: &str| {
+    let word = |i: Option<usize>| i.and_then(|i| said.get(i)).map(String::as_str);
+    let as_place = |start: usize, len: usize| {
+        let before = word(start.checked_sub(1));
+        let preposition = |w: Option<&str>| w.is_some_and(|w| PLACE.contains(&w));
+        word(Some(start + len)).is_some_and(|w| same_word(w, "page"))
+            || before == Some("page")
+            || preposition(before)
+            || (before == Some("the") && preposition(word(start.checked_sub(2))))
+    };
+    let named = |name: &str| {
         runs_of(&said, name)
             .into_iter()
-            .any(|(start, len)| free[start..start + len].iter().all(|f| *f))
+            .any(|(start, len)| free[start..start + len].iter().all(|f| *f) && as_place(start, len))
     };
-    names_freely("page")
-        || doc.pages.iter().any(|(name, page)| {
-            names_freely(name) || page.title.as_deref().is_some_and(names_freely)
-        })
+    doc.pages
+        .iter()
+        .any(|(name, page)| named(name) || page.title.as_deref().is_some_and(named))
 }
 
 /// Where `said` says `name` as whole words (underscores as spaces, plurals as [`same_word`]): the
