@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:canvas-preview-mode
 kind: story
-status: active
+status: implemented
 title: Canvas structure and preview modes
 relations:
 - decomposes: epic:ux-fidelity
@@ -15,11 +15,14 @@ scope:
 - confidence: cited
   path: widget/src/components/CompositeView.vue
 - confidence: cited
+  path: widget/src/components/HelpModal.vue
+- confidence: cited
   path: widget/src/lib/canvasmode.ts
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T12:08:58Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T12:08:58Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T14:59:18Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 

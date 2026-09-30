@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-30T23:30:00Z",
+  "actor": "human:timo",
+  "artifact": "story:canvas-preview-mode",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "round 2 9a2f297",
+    "review": "review-result:canvas-preview-mode-adversary-1",
+    "outcome": "fixed"
+  }
+}

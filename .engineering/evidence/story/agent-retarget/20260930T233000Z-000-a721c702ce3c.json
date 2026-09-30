@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-30T23:30:00Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-retarget",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave 2026-09-30 w7 integration gate at e500360: ess validate; task drift; pnpm check 255 (254 pass, 1 todo, 0 fail) + build; cargo test --workspace --release 291 passed 0 failed; clippy -D warnings; cargo fmt --check (Taskfile packages); EXIT=0"
+  }
+}

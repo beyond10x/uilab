@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-retarget
 kind: story
-status: active
+status: implemented
 title: The agent moves the target when the instruction names another place
 relations:
 - serves: vision:website-harness
@@ -11,8 +11,16 @@ scope:
   path: crates/uilab-agent
 - confidence: inferred
   path: crates/uilab-agent/src/lib.rs
+- confidence: cited
+  path: crates/uilab-app/src/api.rs
 - confidence: inferred
   path: crates/uilab-app/src/app.rs
+- confidence: cited
+  path: crates/uilab-app/src/eval.rs
+- confidence: cited
+  path: crates/uilab-app/src/op.rs
+- confidence: cited
+  path: crates/uilab-app/src/wire.rs
 - confidence: inferred
   path: ess/domains/wire.yaml
 - confidence: inferred
@@ -23,12 +31,15 @@ scope:
   path: widget/src/components/ActivityFeed.vue
 - confidence: inferred
   path: widget/src/generated
+- confidence: cited
+  path: widget/src/lib/collab.ts
 - confidence: inferred
   path: widget/src/store.ts
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:11:15Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T13:11:16Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T14:59:18Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 
