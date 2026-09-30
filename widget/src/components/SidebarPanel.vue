@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { findingsBadge, phaseLabel } from '../lib/sidebar.ts';
+import { draftsLabel, draftViews, faults, findingsBadge, phaseLabel } from '../lib/sidebar.ts';
 import { micDown, micUp, say, sayGoal, select, selectedBy, selectedNode, shownOutline, state, undo } from '../store.ts';
 import ActivityFeed from './ActivityFeed.vue';
 import GoalPanel from './GoalPanel.vue';
@@ -12,6 +12,9 @@ const text = ref('');
 const findingsOpen = ref(false);
 const doc = computed(() => state.doc);
 const badge = computed(() => findingsBadge(doc.value?.findings ?? []));
+const listed = computed(() => faults(doc.value?.findings ?? []));
+const drafts = computed(() => draftViews(doc.value?.findings ?? []));
+const draftsOpen = ref(false);
 
 const connLabel = computed(() => {
   if (state.conn === 'open') return 'connected';
@@ -61,12 +64,38 @@ function down(ev: PointerEvent): void {
       </div>
       <div v-if="state.conn !== 'open'" class="conn-line small" :class="`conn-${state.conn}`" aria-hidden="true">{{ connLabel }}</div>
       <ul v-if="doc && findingsOpen" class="findings">
-        <li v-for="(f, i) in doc.findings" :key="i" :class="f.severity">
+        <li v-for="(f, i) in listed" :key="i" :class="f.severity">
           <code>{{ f.check }}</code> {{ f.message }}
           <code class="path" @click="select(f.path)">{{ f.path }}</code>
         </li>
-        <li v-if="!doc.findings.length" class="muted">none</li>
+        <li v-if="!listed.length" class="muted">none</li>
       </ul>
+      <div v-if="doc && drafts.length" class="drafts">
+        <button
+          type="button"
+          class="drafts-toggle"
+          :title="`views the document reads that have no model binding yet (click to ${draftsOpen ? 'hide' : 'list'})`"
+          :aria-expanded="draftsOpen"
+          @click="draftsOpen = !draftsOpen"
+        >
+          <span class="caret" aria-hidden="true">{{ draftsOpen ? '▾' : '▸' }}</span>
+          Data to model
+          <span class="muted">· {{ draftsLabel(drafts.length) }}</span>
+        </button>
+        <ul v-if="draftsOpen" class="draft-list">
+          <li v-for="d in drafts" :key="d.view">
+            <button type="button" class="link draft-view" :title="`select ${d.paths[0]}`" @click="select(d.paths[0])">
+              <code>{{ d.view }}</code>
+            </button>
+            <span class="muted small">read by</span>
+            <span class="draft-paths">
+              <button v-for="p in d.paths" :key="p" type="button" class="link draft-path" :title="`select ${p}`" @click="select(p)">
+                <code>{{ p }}</code>
+              </button>
+            </span>
+          </li>
+        </ul>
+      </div>
     </div>
 
     <div class="card-area" data-section="card">
@@ -191,6 +220,62 @@ function down(ev: PointerEvent): void {
   margin: 0;
   max-height: 30vh;
   overflow: auto;
+}
+
+.drafts-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 8px;
+  font-size: 12px;
+  border-style: dashed;
+}
+
+.drafts-toggle .caret {
+  width: 10px;
+  color: var(--muted);
+}
+
+.draft-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  font-size: 12px;
+  max-height: 30vh;
+  overflow: auto;
+}
+
+.draft-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 0 3px 8px;
+  border-left: 3px dashed var(--line);
+  margin-bottom: 4px;
+}
+
+.draft-paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  min-width: 0;
+}
+
+.draft-list button.link {
+  padding: 0;
+  font-size: 12px;
+  word-break: break-all;
+  text-align: left;
+}
+
+.draft-view code {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.draft-path code {
+  color: var(--accent);
 }
 
 .card-area,
