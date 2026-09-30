@@ -47,7 +47,10 @@ function down(ev: PointerEvent): void {
   <div class="side">
     <div class="side-head">
       <PresenceStrip />
-      <div class="conn" :class="`conn-${state.conn}`"><span class="dot"></span>{{ connLabel }}</div>
+      <div class="conn-row">
+        <div class="conn" :class="`conn-${state.conn}`"><span class="dot"></span>{{ connLabel }}</div>
+        <button class="help-button" title="help (?)" aria-label="help" @click="state.helpOpen = true">?</button>
+      </div>
       <template v-if="doc">
         <div class="doc-title">{{ doc.title || shownOutline?.title || 'untitled' }}</div>
         <div class="muted small file">{{ doc.file }}</div>

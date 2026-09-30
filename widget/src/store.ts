@@ -41,6 +41,9 @@ export interface Notice {
 
 export type Mark = 'insert' | 'replace' | 'remove';
 
+/** The canvas pane: the rendered UI, the document as YAML, or its generated documentation. */
+export type ViewMode = 'ui' | 'yaml' | 'docs';
+
 const NAME_KEY = 'uilab.operator.name';
 const FLASH_MS = 1500;
 
@@ -89,6 +92,9 @@ export const state = shallowReactive({
   flashes: {} as Readonly<Record<string, string>>,
   /** Newest first, at most 50. */
   feed: [] as FeedEntry[],
+  /** What the canvas pane shows. */
+  view: 'ui' as ViewMode,
+  helpOpen: false,
 });
 
 let feedSeq = 0;

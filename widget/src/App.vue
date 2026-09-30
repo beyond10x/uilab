@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue';
-import { accept, agentActions, micDown, micUp, reject, selectNearest, state, undo } from './store.ts';
+import { accept, agentActions, micDown, micUp, reject, selectNearest, state, undo, type ViewMode } from './store.ts';
+import { API } from './remote.ts';
 import CanvasView from './components/CanvasView.vue';
+import DocsView from './components/DocsView.vue';
+import HelpModal from './components/HelpModal.vue';
 import SidebarPanel from './components/SidebarPanel.vue';
+import YamlView from './components/YamlView.vue';
 
 /** Whether keyboard focus is where typed keys belong to the element, not to the app. */
 function typing(target: EventTarget | null): boolean {
@@ -11,9 +15,35 @@ function typing(target: EventTarget | null): boolean {
   return el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
 }
 
+const VIEWS: { mode: ViewMode; label: string; key: string }[] = [
+  { mode: 'ui', label: 'UI', key: '1' },
+  { mode: 'yaml', label: 'YAML', key: '2' },
+  { mode: 'docs', label: 'Docs', key: '3' },
+];
+
+function exportYaml(): void {
+  window.location.assign(API.yamlDownload);
+}
+
 function onKeyDown(ev: KeyboardEvent): void {
+  if (state.helpOpen) {
+    // Help is modal: Esc closes it and every other key waits.
+    if (ev.key === 'Escape' || ev.key === '?') {
+      ev.preventDefault();
+      state.helpOpen = false;
+    }
+    return;
+  }
   if (typing(ev.target)) return;
-  if (ev.code === 'Space') {
+  const plain = !ev.ctrlKey && !ev.metaKey && !ev.altKey;
+  const view = plain ? VIEWS.find((v) => v.key === ev.key) : undefined;
+  if (view) {
+    ev.preventDefault();
+    state.view = view.mode;
+  } else if (plain && ev.key === '?') {
+    ev.preventDefault();
+    state.helpOpen = true;
+  } else if (ev.code === 'Space') {
     ev.preventDefault();
     if (!ev.repeat) void micDown();
   } else if (ev.key === 'Enter' && state.proposal) {
@@ -55,19 +85,39 @@ onBeforeUnmount(() => {
 <template>
   <div class="app">
     <div class="canvas-pane">
-      <div v-if="agentActions.length" class="op-banners">
-        <div
-          v-for="a in agentActions"
-          :key="a.op.id"
-          class="op-banner"
-          :style="{ '--op-colour': a.op.colour }"
-          @click="selectNearest(a.target)"
-        >
-          🤖 <strong>{{ a.op.name }}</strong> is operating on <code>{{ a.target }}</code>
+      <div class="canvas-head">
+        <nav class="view-tabs" aria-label="view">
+          <button
+            v-for="v in VIEWS"
+            :key="v.mode"
+            class="view-tab"
+            :class="{ active: state.view === v.mode }"
+            :aria-pressed="state.view === v.mode"
+            :title="`${v.label} (${v.key})`"
+            @click="state.view = v.mode"
+          >
+            {{ v.label }} <kbd>{{ v.key }}</kbd>
+          </button>
+          <span class="spacer"></span>
+          <button class="export" title="download the document as YAML" @click="exportYaml">Export YAML</button>
+        </nav>
+        <div v-if="agentActions.length" class="op-banners">
+          <div
+            v-for="a in agentActions"
+            :key="a.op.id"
+            class="op-banner"
+            :style="{ '--op-colour': a.op.colour }"
+            @click="selectNearest(a.target)"
+          >
+            🤖 <strong>{{ a.op.name }}</strong> is operating on <code>{{ a.target }}</code>
+          </div>
         </div>
       </div>
-      <CanvasView />
+      <CanvasView v-if="state.view === 'ui'" />
+      <YamlView v-else-if="state.view === 'yaml'" />
+      <DocsView v-else />
     </div>
     <aside class="sidebar"><SidebarPanel /></aside>
+    <HelpModal v-if="state.helpOpen" />
   </div>
 </template>

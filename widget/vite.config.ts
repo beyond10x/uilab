@@ -10,6 +10,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/ws': { target: 'http://127.0.0.1:8740', ws: true },
+      '/api': { target: 'http://127.0.0.1:8740' },
     },
   },
   build: {
