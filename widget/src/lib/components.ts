@@ -150,30 +150,55 @@ export function entityOf(type: unknown): string | null {
   return CHOICE_CTORS.includes(ctor) ? null : entityOf(inner);
 }
 
-/** The view prefixes an entity's rows go by: `Member` → `members`, `member`; `Category` →
- *  `categories`; `Box` → `boxes`. */
+/** Plurals no suffix rule forms, by the word they end an entity name with. */
+const IRREGULAR_PLURALS: Record<string, string> = { person: 'people', child: 'children' };
+
+/** A view prefix or entity name as compared: lower case, underscores removed. */
+function stemKey(name: string): string {
+  return name.toLowerCase().replace(/_/g, '');
+}
+
+/** The view prefixes an entity's rows go by, as [`stemKey`] gives them: `Member` → `members`,
+ *  `member`; `Category` → `categories`; `Box` → `boxes`; `LoanRequest` → `loanrequests`;
+ *  `Person` → `people`. */
 function viewStems(entity: string): string[] {
-  const base = entity.toLowerCase();
-  const plural = /[^aeiou]y$/.test(base) ? `${base.slice(0, -1)}ies` : /(s|x|z|ch|sh)$/.test(base) ? `${base}es` : `${base}s`;
+  const base = stemKey(entity);
+  const irregular = Object.keys(IRREGULAR_PLURALS).find((word) => base.endsWith(word));
+  const plural = irregular
+    ? `${base.slice(0, -irregular.length)}${IRREGULAR_PLURALS[irregular]}`
+    : /[^aeiou]y$/.test(base)
+      ? `${base.slice(0, -1)}ies`
+      : /(s|x|z|ch|sh)$/.test(base)
+        ? `${base}es`
+        : `${base}s`;
   return [plural, base];
 }
 
 /**
  * The view whose rows carry `entity`, among `views`: one whose first segment is the entity's name
- * in the plural or singular, case-insensitively (`Member` → `members.*`), `<prefix>.All` first,
- * else the first such view listed; `null` when none is.
+ * in the plural or singular, case-insensitively and whatever its underscores (`Member` →
+ * `members.*`, `LoanRequest` → `loan_requests.*`), `<prefix>.All` first, else the first such view
+ * listed; `null` when none is.
  */
 export function viewForEntity(entity: string, views: string[]): string | null {
   const stems = viewStems(entity);
-  const matching = views.filter((v) => stems.includes(v.split('.')[0].toLowerCase()));
+  const matching = views.filter((v) => stems.includes(stemKey(v.split('.')[0])));
   return matching.find((v) => v.split('.').slice(1).join('.') === 'All') ?? matching[0] ?? null;
 }
 
-/** Every view the outline's nodes read, once each, in document order; draft views (no rows) left out. */
+/**
+ * Every view the outline's nodes read, once each, in document order; draft views (no rows) left
+ * out. A node's `view` (a composite's, an overlay's, a shell region's) and a dynamic menu section's
+ * `props.from_view`.
+ */
 export function viewsRead(root: OutlineNode): string[] {
   const out: string[] = [];
+  const add = (view: unknown) => {
+    if (typeof view === 'string' && view && !isDraftView(view) && !out.includes(view)) out.push(view);
+  };
   const walk = (node: OutlineNode) => {
-    if (node.view && !isDraftView(node.view) && !out.includes(node.view)) out.push(node.view);
+    add(node.view);
+    if (node.layer === 'nav_section') add(propsOf(node).from_view);
     node.children.forEach(walk);
   };
   walk(root);
@@ -208,10 +233,12 @@ export function sampleArgs(params: Param[], rowOf?: RowOf): Record<string, unkno
 }
 
 /** Where a use site shows: the node to select, the page it sits on and the overlay it sits in.
- *  A site that is not on a page (inside a widget, a page kind) has no page to show. */
+ *  A site that is not on a page (inside a widget, a page kind) has no page to show; a site in a
+ *  shell overlay has none either, and shows as that overlay over whichever page is shown. */
 export function useSiteTarget(site: UseSite): { select: string; page: string | null; overlay: string | null } {
   const page = pageOf(site.path);
-  return { select: site.path, page, overlay: page ? overlayOf(site.path) : null };
+  const onCanvas = page !== null || site.path.startsWith('shell:');
+  return { select: site.path, page, overlay: onCanvas ? overlayOf(site.path) : null };
 }
 
 const WHOLE_REF = /^args\.([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)*)$/;

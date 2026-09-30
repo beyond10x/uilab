@@ -296,6 +296,17 @@ test('an entity maps to a view named after it, preferring `.All`', () => {
   assert.equal(viewForEntity('Member', []), null);
 });
 
+test('an entity maps to its view whatever the underscores, and by an irregular plural', () => {
+  assert.equal(viewForEntity('LoanRequest', ['loan_requests.All']), 'loan_requests.All');
+  assert.equal(viewForEntity('LoanRequest', ['loanrequests.All']), 'loanrequests.All');
+  assert.equal(viewForEntity('LoanRequest', ['loan_request.Open']), 'loan_request.Open');
+  assert.equal(viewForEntity('ShelfCategory', ['shelf_categories.All']), 'shelf_categories.All');
+  assert.equal(viewForEntity('Person', ['people.All']), 'people.All');
+  assert.equal(viewForEntity('Child', ['children.All']), 'children.All');
+  assert.equal(viewForEntity('ContactPerson', ['contact_people.All']), 'contact_people.All');
+  assert.equal(viewForEntity('Loan', ['loan_requests.All']), null, 'a longer entity’s view is not the shorter one’s');
+});
+
 test('viewsRead lists each view the outline reads once, in document order, drafts left out', () => {
   const root = n('/', 'root', 'document', [
     n('page:p', 'page', 'dashboard_page', [
@@ -308,6 +319,22 @@ test('viewsRead lists each view the outline reads once, in document order, draft
     ]),
   ]);
   assert.deepEqual(viewsRead(root), ['loans.Summary', 'loans.All', 'members.All']);
+});
+
+test('viewsRead also lists the views shell regions and dynamic menu sections read', () => {
+  const root = n('/', 'root', 'document', [
+    n('shell:app', 'shell', 'shell', [
+      n('shell:app/region:nav', 'region', 'navigation'),
+      n('shell:app/region:account', 'region', 'account_menu', [], { view: 'staff.Me' }),
+    ]),
+    n('nav', 'nav', 'navigation', [
+      n('nav/nav_section:people', 'nav_section', 'nav_section', [], { props: { from_view: 'members.All', page: 'member' } }),
+      n('nav/nav_section:drafts', 'nav_section', 'nav_section', [], { props: { from_view: 'draft.Shelves', page: 'shelf' } }),
+      n('nav/nav_section:fixed', 'nav_section', 'nav_section', [], { props: { pages: ['overview'] } }),
+    ]),
+    n('page:p', 'page', 'list_page', [n('page:p/section:a', 'section', 'collection', [], { view: 'loans.All' })]),
+  ]);
+  assert.deepEqual(viewsRead(root), ['staff.Me', 'members.All', 'loans.All']);
 });
 
 test('entityViews names the views a widget’s samples need rows from', () => {
@@ -374,4 +401,14 @@ test('a use site on a page shows that page in the UI tab, opening the overlay it
     overlay: null,
   });
   assert.deepEqual(useSiteTarget({ path: '/', trail: 'page_kinds/board_page/sections/s' }).page, null);
+});
+
+test('a use site in a shell overlay opens that overlay on no page of its own', () => {
+  assert.deepEqual(useSiteTarget({ path: 'shell:app/overlay:whoami' }), {
+    select: 'shell:app/overlay:whoami',
+    page: null,
+    overlay: 'shell:app/overlay:whoami',
+  });
+  assert.equal(useSiteTarget({ path: 'shell:app/overlay:whoami/item:name' }).overlay, 'shell:app/overlay:whoami');
+  assert.equal(useSiteTarget({ path: 'component:w/overlay:x' }).overlay, null, 'a widget body shows on no canvas');
 });

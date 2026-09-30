@@ -11,14 +11,16 @@ function n(path: string, layer: string, kind: string, children: OutlineNode[] = 
 /**
  * The outline `uilab serve` sends for `examples/library/library.ui.yaml` with one widget
  * (`staff_badge`, param `staff: Staff`) and one shell overlay instantiating it added, as read from
- * `/api/state`. The shell region `account` reads `staff.Me` in the document, but a region node
- * carries neither `view` nor `props` in the outline. `staff.Me` is a declared fixture view.
+ * `/api/state`. The shell region `account` reads `staff.Me` in the document and is the only node
+ * that does; its outline node carries that view (`view`, as the server sends it since
+ * `outline::tests::a_region_carries_the_view_its_props_read`) and no `props`. `staff.Me` is a
+ * declared fixture view.
  */
 function servedLibrary(): OutlineNode {
   return n('/', 'root', 'document', [
     n('shell:app', 'shell', 'shell', [
       n('shell:app/region:nav', 'region', 'navigation'),
-      n('shell:app/region:account', 'region', 'account_menu'),
+      n('shell:app/region:account', 'region', 'account_menu', [], { view: 'staff.Me' }),
       n('shell:app/region:main', 'region', 'page_outlet'),
       n('shell:app/region:overlay', 'region', 'overlay_outlet'),
       n('shell:app/region:notify', 'region', 'notifications'),

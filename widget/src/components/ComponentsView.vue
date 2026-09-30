@@ -39,15 +39,23 @@ function defaultText(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
-/** Shows a use site: its page in the UI tab, with the overlay it sits in open, and the site
- *  selected. A site on no page (inside another widget) is only selected. */
+/** Shows a use site in the UI tab: its page, with the overlay it sits in open (a shell overlay
+ *  over the page already shown), and the site selected. A site on no canvas (inside another
+ *  widget) is only selected. */
 function openUse(u: UseSite): void {
   const target = useSiteTarget(u);
   selectNearest(target.select);
-  if (!target.page) return;
-  showPage(target.page);
+  if (!target.page && !target.overlay) return;
+  if (target.page) showPage(target.page);
   if (target.overlay) state.openOverlay = target.overlay;
   state.view = 'ui';
+}
+
+function useTitle(u: UseSite): string {
+  const target = useSiteTarget(u);
+  if (target.page) return `show ${target.page} in the UI tab`;
+  if (target.overlay) return `open ${target.overlay} in the UI tab`;
+  return 'select it';
 }
 </script>
 
@@ -112,7 +120,7 @@ function openUse(u: UseSite): void {
                 :key="`${u.path}#${u.trail ?? ''}#${i}`"
                 href="#"
                 class="comp-use"
-                :title="useSiteTarget(u).page ? `show ${useSiteTarget(u).page} in the UI tab` : 'select it'"
+                :title="useTitle(u)"
                 @click.prevent.stop="openUse(u)"
               >
                 <code>{{ u.path }}</code><span v-if="u.trail" class="muted"> ({{ u.trail }})</span>
