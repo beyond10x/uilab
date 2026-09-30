@@ -1,12 +1,12 @@
 {
   "format": "ess-types-report/3",
-  "source_digest": "b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a",
+  "source_digest": "823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24",
   "input": {
     "kind": "model",
     "system": "uilab",
     "specification_version": "v1",
-    "contract_digest": "slice-sha256/2:35c728bccc1e3a09e0d3a8fb1b2a0376a8d684032f6dc0cc66405120d9e460ac",
-    "projection_digest": "b2a595dd00ba2f5f0f81440c12479d1791972c4780fef89ab69cee35b1e2c22a"
+    "contract_digest": "slice-sha256/2:c5a8ef96d326453baee30aa7573313201936a8325cbf956ae876c37420def685",
+    "projection_digest": "ed1189210d5272130e2e6a96d9f7c90f8c81734c8b30ca9522c322b976f639b8"
   },
   "generator_version": "0.44.0",
   "target": "typescript",
@@ -34,6 +34,7 @@
     "uilab.wire.Hello": "UilabWireHello",
     "uilab.wire.Mic": "UilabWireMic",
     "uilab.wire.MicState": "UilabWireMicState",
+    "uilab.wire.Moved": "UilabWireMoved",
     "uilab.wire.Operator": "UilabWireOperator",
     "uilab.wire.OperatorKind": "UilabWireOperatorKind",
     "uilab.wire.OutlineNode": "UilabWireOutlineNode",
@@ -372,6 +373,21 @@
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
     {
+      "pointer": "/$defs/uilab.wire.Moved/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Moved/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Moved/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
       "pointer": "/$defs/uilab.wire.Operator/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
@@ -543,6 +559,11 @@
     },
     {
       "pointer": "/$defs/uilab.wire.ServerMessage/oneOf/1/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ServerMessage/oneOf/10/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
     },
@@ -899,6 +920,11 @@
       "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
     },
     {
+      "pointer": "/$defs/uilab.wire.Moved",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
       "pointer": "/$defs/uilab.wire.Operator",
       "rule": "closed_object",
       "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
@@ -1000,6 +1026,11 @@
     },
     {
       "pointer": "/$defs/uilab.wire.ServerMessage/oneOf/1",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ServerMessage/oneOf/10",
       "rule": "closed_object",
       "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
     },

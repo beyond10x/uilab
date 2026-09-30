@@ -119,13 +119,22 @@ export function flashPath(change: Pick<Changed, 'op' | 'changed' | 'parent'>): s
 /** Operator id → the target of the action that operator has in flight. */
 export type InFlight = Readonly<Record<string, string>>;
 
-/** The in-flight map after one server message: `thinking` starts an action, an outcome ends it. */
+/** The in-flight map after one server message: `thinking` starts an action, an outcome ends it.
+ *  A move carries the action to its new target; a navigation-only move is its outcome. */
 export function trackInFlight(inFlight: InFlight, msg: ServerMessage): InFlight {
   switch (msg.type) {
     case 'thinking': {
       const by = msg.value.by;
       if (!by) return inFlight;
       return { ...inFlight, [by]: msg.value.target };
+    }
+    case 'moved': {
+      const by = msg.value.by;
+      if (!by || !(by in inFlight)) return inFlight;
+      if (!msg.value.navigate_only) return { ...inFlight, [by]: msg.value.to };
+      const next = { ...inFlight };
+      delete next[by];
+      return next;
     }
     case 'proposal':
     case 'refused':
@@ -152,7 +161,7 @@ export function pruneInFlight(inFlight: InFlight, operators: readonly Operator[]
 // ---------------------------------------------------------------------------------------------
 // Activity feed
 
-export type FeedKind = 'thinking' | 'transcript' | 'proposal' | 'changed' | 'refused' | 'failed';
+export type FeedKind = 'thinking' | 'transcript' | 'moved' | 'proposal' | 'changed' | 'refused' | 'failed';
 
 export interface FeedEntry {
   seq: number;
@@ -176,6 +185,16 @@ export function feedEntry(msg: ServerMessage, at: number, seq: number, inFlight:
       return { ...base, kind: 'thinking', by: msg.value.by, path: msg.value.target };
     case 'transcript':
       return { ...base, kind: 'transcript', by: msg.value.by, text: msg.value.text };
+    case 'moved':
+      // By whoever moved the selection (the agent), not the operator whose instruction it was.
+      return {
+        ...base,
+        kind: 'moved',
+        by: msg.value.selected_by,
+        what: msg.value.navigate_only ? 'navigate' : 'retarget',
+        path: msg.value.to,
+        text: msg.value.reason,
+      };
     case 'proposal':
       return { ...base, kind: 'proposal', by: msg.value.by, what: msg.value.op, path: msg.value.changed, text: msg.value.utterance };
     case 'changed':

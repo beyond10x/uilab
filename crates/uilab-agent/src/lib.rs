@@ -8,6 +8,9 @@
 //! [`uilab_doc::Patch`] and admitted. A refusal is fed back to the model once, on the same
 //! conversation; a second refusal is [`ProposeError::Refused`].
 //!
+//! [`Proposer::answer_in`] is `propose` where the agent may instead move the target once, as a
+//! [`Retarget`], when the instruction names a place outside it or only asks to go somewhere.
+//!
 //! [`Proposer::plan_goal`] runs the same way for a goal: one run whose answer is an ordered
 //! [`Plan`] of at most N [`Step`]s, each an instruction `propose` can carry out at its target,
 //! held to [`check_plan`] with the same one retry.
@@ -120,6 +123,138 @@ pub struct Proposal {
     pub attempts: u32,
 }
 
+/// A move of the target the agent answered instead of a patch: the instruction names a place
+/// outside the target, or only asks to go somewhere.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Retarget {
+    /// Where the target moves; [`check_retarget`] accepted it.
+    pub path: NodePath,
+    /// One line the operator reads: why the target moves.
+    pub reason: String,
+    /// The instruction only asks to go there: nothing is proposed after the move.
+    pub navigate_only: bool,
+    /// Turns across every attempt.
+    pub turns: u64,
+    /// What every attempt cost, in millionths of a US dollar; `None` when no rate card priced it.
+    pub cost_micro_usd: Option<u64>,
+    /// Attempts made: 1, or 2 after one refusal.
+    pub attempts: u32,
+}
+
+/// What [`Proposer::answer_in`] came back with: a patch at the target, or a move of the target.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub enum Answer {
+    Patch(Proposal),
+    Retarget(Retarget),
+}
+
+/// An accepted answer where a move is allowed, before the attempts are counted in.
+enum Reply {
+    Patch(Patch),
+    Move {
+        path: NodePath,
+        reason: String,
+        navigate_only: bool,
+    },
+}
+
+/// Whether the agent may move the target from `from` to `to` for `utterance`: `to` names a node
+/// of `doc` (`/` for a new page and `nav` for a menu entry always do), a move that asks again is
+/// not to `from` itself, and on the Components tab it stays at `/` or a `component:` path unless
+/// the instruction names a page.
+///
+/// # Errors
+///
+/// The [`Refusal`] `path_resolves`, `retarget_same` or `retarget_workspace`.
+pub fn check_retarget(
+    doc: &Document,
+    from: &NodePath,
+    to: &NodePath,
+    utterance: &str,
+    navigate_only: bool,
+    workspace: Workspace,
+) -> Result<(), Refusal> {
+    if uilab_doc::resolve(doc, to).is_err() {
+        return Err(Refusal {
+            check: "path_resolves".to_owned(),
+            message: format!(
+                "no node at `{to}`; move to a node that exists: `/` for a new page, `nav` for a \
+                 menu entry, or the page, section, overlay or region the instruction names"
+            ),
+        });
+    }
+    if to == from && !navigate_only {
+        return Err(Refusal {
+            check: "retarget_same".to_owned(),
+            message: format!("`{to}` is the target already; propose the patch here"),
+        });
+    }
+    let among_widgets =
+        to.0.first()
+            .is_none_or(|segment| segment.layer == Layer::Component);
+    if workspace == Workspace::Components && !among_widgets && !names_a_page(doc, utterance) {
+        return Err(Refusal {
+            check: "retarget_workspace".to_owned(),
+            message: format!(
+                "the instruction came from the Components tab and names no page; stay at `/` or \
+                 a `component:` path rather than `{to}`"
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Whether `utterance` names a page as a place: a page's name or title said in words that are not
+/// part of a widget name it also says ("the loan card" names the widget `loan_card`, not the page
+/// `loans`), and said as a place: followed by "page" ("the loans page"), after "page", or after
+/// in/on/to/into/onto/at, with or without "the" ("in members", "on the loans page"). A word that
+/// only matches a page ("show the loan's due date", "as wide as the page") names none.
+fn names_a_page(doc: &Document, utterance: &str) -> bool {
+    const PLACE: [&str; 6] = ["in", "on", "to", "into", "onto", "at"];
+    let said = words(utterance);
+    let mut free = vec![true; said.len()];
+    for widget in doc.widgets.keys() {
+        for (start, len) in runs_of(&said, widget) {
+            free[start..start + len].fill(false);
+        }
+    }
+    let word = |i: Option<usize>| i.and_then(|i| said.get(i)).map(String::as_str);
+    let as_place = |start: usize, len: usize| {
+        let before = word(start.checked_sub(1));
+        let preposition = |w: Option<&str>| w.is_some_and(|w| PLACE.contains(&w));
+        word(Some(start + len)).is_some_and(|w| same_word(w, "page"))
+            || before == Some("page")
+            || preposition(before)
+            || (before == Some("the") && preposition(word(start.checked_sub(2))))
+    };
+    let named = |name: &str| {
+        runs_of(&said, name)
+            .into_iter()
+            .any(|(start, len)| free[start..start + len].iter().all(|f| *f) && as_place(start, len))
+    };
+    doc.pages
+        .iter()
+        .any(|(name, page)| named(name) || page.title.as_deref().is_some_and(named))
+}
+
+/// Where `said` says `name` as whole words (underscores as spaces, plurals as [`same_word`]): the
+/// start and length of each run.
+fn runs_of(said: &[String], name: &str) -> Vec<(usize, usize)> {
+    let name = words(name);
+    if name.is_empty() {
+        return Vec::new();
+    }
+    said.windows(name.len())
+        .enumerate()
+        .filter(|(_, run)| {
+            run.iter()
+                .zip(&name)
+                .all(|(spoken, word)| same_word(spoken, word))
+        })
+        .map(|(start, _)| (start, name.len()))
+        .collect()
+}
+
 /// A goal broken into ordered steps, and what planning it took.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Plan {
@@ -211,6 +346,10 @@ impl Retry {
     const PLAN: Retry = Retry {
         answer: "plan",
         request: "goal",
+    };
+    const ANSWER: Retry = Retry {
+        answer: "answer",
+        request: "instruction",
     };
 
     /// The message that feeds a refusal back for the next attempt.
@@ -457,21 +596,88 @@ impl Proposer {
             config,
             request(doc, &context, target, utterance, fields, workspace),
             Retry::PATCH,
-            |structured| {
-                let patch =
-                    serde_json::from_value::<Patch>(structured).map_err(|error| Refusal {
-                        check: "patch_shape".to_owned(),
-                        message: error.to_string(),
-                    })?;
-                uilab_doc::admit(doc, &patch)?;
-                Ok(patch)
-            },
+            |structured| admitted_patch(doc, structured),
         )?;
         Ok(Proposal {
             patch: answered.value,
             turns: answered.turns,
             cost_micro_usd: answered.cost_micro_usd,
             attempts: answered.attempts,
+        })
+    }
+
+    /// Blocking. [`propose_in`](Self::propose_in), where the agent may instead move the target
+    /// once: an instruction that names a place outside the target ("a new page", "in the menu",
+    /// "on the members page") answers a [`Retarget`] there, which the caller carries out and then
+    /// asks [`propose_in`](Self::propose_in) at the new target; an instruction that only asks to
+    /// go somewhere answers one with `navigate_only`. The move is held to [`check_retarget`], with
+    /// the same one retry as a patch.
+    ///
+    /// # Errors
+    ///
+    /// As [`propose`](Self::propose).
+    pub fn answer_in(
+        &mut self,
+        doc: &Document,
+        target: &NodePath,
+        utterance: &str,
+        fields: &[(String, Vec<String>)],
+        workspace: Workspace,
+    ) -> Result<Answer, ProposeError> {
+        let context = uilab_doc::node_context(doc, target)?;
+        let schema = with_retarget(uilab_doc::patch_schema(doc, target)?);
+        let instructions = format!("{INSTRUCTIONS}\n\n{MOVE_INSTRUCTIONS}");
+        let config = self.loop_config(&instructions, schema)?;
+        let mut first = request(doc, &context, target, utterance, fields, workspace);
+        first.push_str(&places(doc));
+        let answered = self.attempts(config, first, Retry::ANSWER, |structured| {
+            if structured["op"] != "retarget" {
+                return admitted_patch(doc, structured).map(Reply::Patch);
+            }
+            let path = structured["path"].as_str().unwrap_or_default().trim();
+            if path.is_empty() {
+                return Err(Refusal {
+                    check: "retarget_shape".to_owned(),
+                    message: "a retarget names the `path` to move to".to_owned(),
+                });
+            }
+            let path: NodePath = path.parse().map_err(|error: PathError| Refusal {
+                check: "retarget_shape".to_owned(),
+                message: error.to_string(),
+            })?;
+            let navigate_only = structured["navigate_only"].as_bool().unwrap_or(false);
+            check_retarget(doc, target, &path, utterance, navigate_only, workspace)?;
+            let reason = structured["reason"]
+                .as_str()
+                .map(str::trim)
+                .filter(|reason| !reason.is_empty())
+                .unwrap_or("the instruction names another place")
+                .to_owned();
+            Ok(Reply::Move {
+                path,
+                reason,
+                navigate_only,
+            })
+        })?;
+        Ok(match answered.value {
+            Reply::Patch(patch) => Answer::Patch(Proposal {
+                patch,
+                turns: answered.turns,
+                cost_micro_usd: answered.cost_micro_usd,
+                attempts: answered.attempts,
+            }),
+            Reply::Move {
+                path,
+                reason,
+                navigate_only,
+            } => Answer::Retarget(Retarget {
+                path,
+                reason,
+                navigate_only,
+                turns: answered.turns,
+                cost_micro_usd: answered.cost_micro_usd,
+                attempts: answered.attempts,
+            }),
         })
     }
 
@@ -629,6 +835,53 @@ impl Proposer {
             message: refused.message,
         })
     }
+}
+
+/// A structured answer read as a patch and admitted against `doc`.
+fn admitted_patch(doc: &Document, structured: Value) -> Result<Patch, Refusal> {
+    let patch = serde_json::from_value::<Patch>(structured).map_err(|error| Refusal {
+        check: "patch_shape".to_owned(),
+        message: error.to_string(),
+    })?;
+    uilab_doc::admit(doc, &patch)?;
+    Ok(patch)
+}
+
+/// A patch schema that also admits `op: retarget` with a `path`, a `reason` and `navigate_only`.
+fn with_retarget(mut schema: Value) -> Value {
+    let properties = &mut schema["properties"];
+    if let Some(ops) = properties["op"]["enum"].as_array_mut() {
+        ops.push(Value::from("retarget"));
+    }
+    let op = properties["op"]["description"].as_str().unwrap_or_default();
+    properties["op"]["description"] = Value::from(format!(
+        "{op}; retarget moves the target to `path` instead of changing anything here, when the \
+         instruction names a place outside the target or only asks to go somewhere"
+    ));
+    properties["reason"]["description"] = Value::from(
+        "for decline: why nothing is proposed, or the answer to a question; for retarget: one \
+         line the operator reads, saying why the target moves",
+    );
+    properties["path"] = serde_json::json!({
+        "type": "string",
+        "minLength": 1,
+        "description": "for retarget only: the node path to move to: `/` for a new page, `nav` for a menu entry, or the page, section, overlay or region the instruction names"
+    });
+    properties["navigate_only"] = serde_json::json!({
+        "type": "boolean",
+        "description": "for retarget only: true when the instruction only asks to go to or select that place; nothing is proposed after the move"
+    });
+    schema
+}
+
+/// The places a move can go: the outline two levels deep, one node per line.
+fn places(doc: &Document) -> String {
+    let mut lines = String::new();
+    outline_lines(&uilab_doc::outline(doc), 0, 2, &mut lines);
+    format!(
+        "\n\nPlaces a move can go, the outline two levels deep (path, kind, title, view it \
+         reads):\n{lines}"
+    )
 }
 
 /// The sum of every attempt's cost, or `None` when any attempt was unpriced: a partial sum would
@@ -797,6 +1050,25 @@ asked for is not among them. An `opens` \
 value must name an overlay of the page or its shell. If a patch you proposed is refused, the \
 refusal names the check it failed; fix exactly that and answer again.";
 
+/// What the model is told, after [`INSTRUCTIONS`], where it may move the target.
+pub const MOVE_INSTRUCTIONS: &str = "\
+A patch changes only the target node and what is below it. When the instruction names a place \
+outside the target (\"a new page\", \"in the menu\", \"in the sidebar\", \"on the members page\", \
+\"the header\"), do not squeeze the change into the target: answer `op: retarget` with `path` set \
+to that place and a one-line `reason` the operator reads (\"a new page goes under the root\"). \
+The selection moves there and you are asked again at `path` with the same instruction; you can \
+move only once per instruction. `path` is a node that exists, listed with the instruction: `/` \
+to add a page (a page in the menu or sidebar is still added at `/`), `nav` to add a menu \
+section, `page:<name>` for a page, or the section, overlay or region the instruction names.
+When the instruction only asks to go somewhere or to select something (\"go to the members \
+page\", \"select the menu\", \"show me the loans page\"), answer `op: retarget` with \
+`navigate_only: true`: the selection moves and nothing is proposed.
+When the instruction names no other place (\"add a column\", \"make this a chart\", \"add a table \
+of overdue loans\" at a page), propose the patch at the target as usual; \"this\" and \"here\" mean \
+the target. On the Components tab, move only to `/` or a `component:` path unless the \
+instruction names a page; a widget's name does not name one (\"the loan card\" is the widget \
+`loan_card`, not the loans page).";
+
 /// What the planner is told about `ui-spec/1` and its job.
 pub const PLAN_INSTRUCTIONS: &str = "\
 You plan changes to one user-interface document in the `ui-spec/1` format. The operator states a \
@@ -903,7 +1175,7 @@ fn plan_request(
     workspace: Workspace,
 ) -> String {
     let mut outline = String::new();
-    outline_lines(&uilab_doc::outline(doc), 0, &mut outline);
+    outline_lines(&uilab_doc::outline(doc), 0, usize::MAX, &mut outline);
     format!(
         "Goal: \"{goal}\"\n\
          At most {max_steps} steps.\n\n\
@@ -936,8 +1208,8 @@ fn plan_request(
     )
 }
 
-/// The outline below `node`, one indented line per node.
-fn outline_lines(node: &uilab_doc::OutlineNode, depth: usize, out: &mut String) {
+/// The outline below `node`, one indented line per node, down to `max_depth` below the start.
+fn outline_lines(node: &uilab_doc::OutlineNode, depth: usize, max_depth: usize, out: &mut String) {
     use std::fmt::Write as _;
     let _ = write!(
         out,
@@ -954,8 +1226,11 @@ fn outline_lines(node: &uilab_doc::OutlineNode, depth: usize, out: &mut String) 
         let _ = write!(out, " reads {view}");
     }
     out.push('\n');
+    if depth >= max_depth {
+        return;
+    }
     for child in &node.children {
-        outline_lines(child, depth + 1, out);
+        outline_lines(child, depth + 1, max_depth, out);
     }
 }
 
