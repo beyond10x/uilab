@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T03:58:06Z",
+  "actor": "human:timo",
+  "artifact": "story:goal-planner",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "integration gate on wave/2026-09-30-w1 at 9ea30c4: validate 0, drift 0, widget check 62 passed + build 0, cargo test --workspace --release 105 passed 0 failed, clippy --release -D warnings 0, fmt 0",
+    "reference": "~/.cache/uilab-wave-w1/int/test.log"
+  }
+}
