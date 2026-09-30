@@ -160,3 +160,67 @@ test('preview hides the view a menu entry opens per row of', async () => {
   setMode('preview');
   assert.doesNotMatch(text(await renderCanvas(root)), /members\.All/);
 });
+
+// Pass 2 (adversary): the correction, attacked.
+
+/** The accessible name a button gets: its aria-label when it has one, else its visible text. */
+function accessibleNames(html: string, cls: string): string[] {
+  const out: string[] = [];
+  for (const m of html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)) {
+    const attrs = m[1];
+    if (!new RegExp(`class="[^"]*\\b${cls}\\b`).test(attrs)) continue;
+    const label = /aria-label="([^"]*)"/.exec(attrs)?.[1];
+    const visible = text(m[2].replace(/<span[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/span>/g, ''));
+    out.push(label ?? visible);
+  }
+  return out;
+}
+
+test('a draft account menu tells a screen reader its name is sample data, as it tells the eye', async () => {
+  state.rows = { 'draft.Me': { view: 'draft.Me', rows: [{ id: 's-1', name: 'Pat Doe' }] } };
+  setMode('preview');
+  const html = await renderCanvas(app('draft.Me'), 'shell:main/account');
+  assert.match(html, /class="chrome-account node selected"/, 'selection outline and sample tag together');
+  assert.match(text(html), /Pat Doe sample data/, 'the eye sees the marker');
+  const [name] = accessibleNames(html, 'chrome-account');
+  assert.match(name ?? '', /sample data/i, `the accessible name drops the sample marker: ${JSON.stringify(name)}`);
+});
+
+test('preview names no view in the empty line of any row-reading composite, in any rows state', async () => {
+  const kinds = ['collection', 'metric', 'record', 'chart'];
+  const states: { label: string; conn: string; view: string | undefined; rows?: Rows['rows']; want: [string, string] }[] = [
+    { label: 'connected, not loaded', conn: 'open', view: 'members.All', want: ['loading members.All…', 'loading…'] },
+    { label: 'disconnected, not loaded', conn: 'closed', view: 'members.All', want: ['no data yet (members.All)', 'no data yet'] },
+    { label: 'loaded, zero rows', conn: 'open', view: 'members.All', rows: [], want: ['no data yet (members.All)', 'no data yet'] },
+    { label: 'draft, loading', conn: 'open', view: 'draft.Stats', want: ['loading draft.Stats…', 'loading…'] },
+    { label: 'draft, zero rows', conn: 'open', view: 'draft.Stats', rows: [], want: ['no data yet (draft.Stats)', 'no data yet'] },
+    { label: 'no view', conn: 'open', view: undefined, want: ['no data yet (no view)', 'no data yet'] },
+  ];
+  for (const s of states) {
+    for (const kind of kinds) {
+      state.conn = s.conn;
+      state.rows = s.view && s.rows ? { [s.view]: { view: s.view, rows: s.rows } } : {};
+      const n = node('section', 'sec', kind, { path: `page:p/${kind}`, ...(s.view ? { view: s.view } : {}), props: { columns: ['name'], from: 'n' } });
+      const where = `${kind}, ${s.label}`;
+      setMode('structure');
+      const structure = text(await renderComposite(n));
+      assert.ok(structure.includes(s.want[0]), `${where}: structure ${JSON.stringify(structure)}`);
+      setMode('preview');
+      const preview = text(await renderComposite(n));
+      assert.ok(preview.includes(s.want[1]), `${where}: preview ${JSON.stringify(preview)}`);
+      if (s.view) assert.ok(!preview.includes(s.view), `${where}: preview names the view ${JSON.stringify(preview)}`);
+      assert.doesNotMatch(preview, /sample data/, `${where}: nothing made up is shown, so no sample tag`);
+    }
+  }
+});
+
+test('the bell is announced by the title its tooltip shows', async () => {
+  state.rows = {};
+  const doc = app('staff.Me');
+  const bell = doc.children[0].children[1];
+  bell.title = 'Alerts';
+  setMode('preview');
+  const html = await renderCanvas(doc);
+  assert.match(html, /class="chrome-bell[^"]*"[^>]*title="Alerts"|title="Alerts"[^>]*class="chrome-bell/, 'the tooltip reads the title');
+  assert.deepEqual(accessibleNames(html, 'chrome-bell'), ['Alerts']);
+});
