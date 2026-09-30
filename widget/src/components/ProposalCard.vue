@@ -47,3 +47,18 @@ const by = computed(() => operatorView(props.proposal.by));
     </div>
   </section>
 </template>
+
+<style scoped>
+.diff {
+  max-height: min(320px, 30vh);
+}
+
+.findings {
+  max-height: 18vh;
+  overflow: auto;
+}
+
+.proposal-head .path {
+  word-break: break-all;
+}
+</style>
