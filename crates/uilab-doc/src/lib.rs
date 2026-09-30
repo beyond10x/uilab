@@ -25,7 +25,9 @@ pub mod schema;
 pub use check::{CHECKS, Finding, Severity, check};
 pub use fixtures::{Fixtures, ViewRows, field_findings};
 pub use model::Document;
-pub use outline::{NodeContext, OutlineNode, node_context, outline, vocabulary, yaml_at};
+pub use outline::{
+    NodeContext, OutlineNode, node_context, outline, outline_at, vocabulary, yaml_at,
+};
 pub use patch::{Child, Patch, Refusal, admit, apply};
 pub use path::{Layer, NodePath, PathError, allowed_children, resolve};
 pub use schema::patch_schema;

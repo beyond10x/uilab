@@ -1,17 +1,22 @@
-//! `uilab serve`: the browser app, one WebSocket, and the session behind it.
+//! `uilab serve`: the browser app, one WebSocket, the operator API and the session behind them.
+//! `uilab op`: operate a running uilab from a shell.
 
+mod api;
 mod app;
 mod journal;
+mod op;
 mod wire;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
-use axum::routing::get;
+use axum::routing::{get, post};
 use clap::{Parser, Subcommand};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{broadcast, mpsc};
@@ -34,6 +39,8 @@ struct Cli {
 enum Command {
     /// Serve the editor over one document.
     Serve(Serve),
+    /// Operate a running uilab as a named operator.
+    Op(op::Op),
 }
 
 #[derive(clap::Args)]
@@ -81,18 +88,23 @@ fn default_model() -> String {
 }
 
 #[derive(Clone)]
-struct Shared {
-    inbox: mpsc::Sender<Cmd>,
-    out: broadcast::Sender<Server>,
+pub(crate) struct Shared {
+    pub(crate) inbox: mpsc::Sender<Cmd>,
+    pub(crate) out: broadcast::Sender<Server>,
 }
+
+static CONNECTIONS: AtomicU64 = AtomicU64::new(0);
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
-    let Command::Serve(serve) = Cli::parse().command;
-    if let Err(e) = run(serve).await {
+    let result = match Cli::parse().command {
+        Command::Serve(serve) => run(serve).await,
+        Command::Op(op) => op::run(op).await,
+    };
+    if let Err(e) = result {
         eprintln!("uilab: {e}");
         std::process::exit(1);
     }
@@ -124,7 +136,7 @@ async fn run(serve: Serve) -> Result<(), String> {
         journal: PathBuf::from(&serve.journal),
     };
 
-    let (out, _) = broadcast::channel(256);
+    let (out, _) = broadcast::channel(1024);
     let (inbox, rx) = mpsc::channel(1024);
     let app = {
         let out = out.clone();
@@ -134,10 +146,23 @@ async fn run(serve: Serve) -> Result<(), String> {
             .map_err(|e| e.to_string())??
     };
     tokio::spawn(app.run(rx));
+    let ticker = inbox.clone();
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(Duration::from_secs(10));
+        loop {
+            every.tick().await;
+            if ticker.send(Cmd::Tick).await.is_err() {
+                break;
+            }
+        }
+    });
 
     let shared = Shared { inbox, out };
     let router = Router::new()
         .route("/ws", get(socket))
+        .route("/api/operators", post(api::join))
+        .route("/api/act", post(api::act))
+        .route("/api/state", get(api::state))
         .fallback_service(ServeDir::new(&serve.assets))
         .with_state(shared);
     let listener = tokio::net::TcpListener::bind(serve.listen)
@@ -159,9 +184,15 @@ async fn socket(ws: WebSocketUpgrade, State(shared): State<Shared>) -> Response 
 }
 
 async fn connection(socket: WebSocket, shared: Shared) {
+    let operator = format!("ws-{}", CONNECTIONS.fetch_add(1, Ordering::Relaxed) + 1);
     let (mut sink, mut stream) = socket.split();
     let mut out = shared.out.subscribe();
-    let _ = shared.inbox.send(Cmd::Hello).await;
+    let _ = shared
+        .inbox
+        .send(Cmd::Connected {
+            operator: operator.clone(),
+        })
+        .await;
     let writer = tokio::spawn(async move {
         loop {
             match out.recv().await {
@@ -182,22 +213,27 @@ async fn connection(socket: WebSocket, shared: Shared) {
     while let Some(Ok(message)) = stream.next().await {
         let cmd = match message {
             Message::Text(text) => match Client::from_text(&text) {
-                Ok(client) => Cmd::Client(client),
+                Ok(client) => Cmd::Client {
+                    by: operator.clone(),
+                    message: client,
+                },
                 Err(e) => {
-                    let _ = shared
-                        .out
-                        .send(Server::failed(format!("unreadable message: {e}")));
+                    let _ = shared.out.send(Server::failed(
+                        format!("unreadable message: {e}"),
+                        Some(&operator),
+                    ));
                     continue;
                 }
             },
-            Message::Binary(bytes) => Cmd::Audio(
-                bytes
+            Message::Binary(bytes) => Cmd::Audio {
+                by: operator.clone(),
+                samples: bytes
                     .as_chunks::<4>()
                     .0
                     .iter()
                     .map(|b| f32::from_le_bytes(*b))
                     .collect(),
-            ),
+            },
             Message::Close(_) => break,
             _ => continue,
         };
@@ -206,4 +242,5 @@ async fn connection(socket: WebSocket, shared: Shared) {
         }
     }
     writer.abort();
+    let _ = shared.inbox.send(Cmd::Disconnected { operator }).await;
 }

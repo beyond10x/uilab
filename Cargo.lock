@@ -2196,6 +2196,8 @@ dependencies = [
  "axum",
  "clap",
  "futures-util",
+ "indexmap",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

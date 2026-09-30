@@ -208,3 +208,8 @@ pub fn vocabulary(doc: &Document, path: &NodePath) -> Vec<String> {
     }
     words
 }
+
+/// The outline of the subtree at `path`, or `None` when no node has that path.
+pub fn outline_at(doc: &Document, path: &NodePath) -> Option<OutlineNode> {
+    node(doc, path).ok()
+}

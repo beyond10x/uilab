@@ -9,13 +9,14 @@ use serde_json::{Number, Value};
 use uilab_doc::{Finding, OutlineNode, Severity};
 use uilab_wire::{
     EssPresence, UilabSessionDocumentId, UilabSessionNodePath, UilabSessionPatchOp,
-    UilabSessionProposalId, UilabWireDecide, UilabWireDocumentState, UilabWireFailed,
-    UilabWireFinding, UilabWireMic, UilabWireMicState, UilabWireOutlineNode,
-    UilabWireProposalShown, UilabWireReadRows, UilabWireRefused, UilabWireRows, UilabWireSay,
-    UilabWireSelect, UilabWireSeverity, UilabWireThinking, UilabWireTranscript,
+    UilabSessionProposalId, UilabWireChanged, UilabWireDecide, UilabWireDocumentState,
+    UilabWireFailed, UilabWireFinding, UilabWireHello, UilabWireMic, UilabWireMicState,
+    UilabWireOperator, UilabWireOperatorKind, UilabWireOutlineNode, UilabWirePresence,
+    UilabWireProposalShown, UilabWireReadRows, UilabWireRefused, UilabWireResync, UilabWireRows,
+    UilabWireSay, UilabWireSelect, UilabWireSeverity, UilabWireThinking, UilabWireTranscript,
 };
 
-/// Browser to server.
+/// Browser (or operator API) to server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum Client {
@@ -23,7 +24,7 @@ pub enum Client {
     Select(UilabWireSelect),
     /// Open or close the microphone; audio frames travel in between.
     Mic(UilabWireMic),
-    /// A typed instruction.
+    /// A typed instruction, at the selection or at `target`.
     Say(UilabWireSay),
     /// Accept a proposal.
     Accept(UilabWireDecide),
@@ -33,6 +34,10 @@ pub enum Client {
     Undo(UilabWireDecide),
     /// Fixture rows of a view.
     Rows(UilabWireReadRows),
+    /// Who is on this connection.
+    Hello(UilabWireHello),
+    /// Send a full snapshot; the sender missed a revision.
+    Resync(UilabWireResync),
 }
 
 /// Server to browser.
@@ -53,6 +58,10 @@ pub enum Server {
     Failed(UilabWireFailed),
     /// Fixture rows of a view.
     Rows(UilabWireRows),
+    /// Who is operating.
+    Presence(UilabWirePresence),
+    /// One accepted change, as a delta against the previous revision.
+    Changed(UilabWireChanged),
 }
 
 impl Server {
@@ -62,18 +71,37 @@ impl Server {
     }
 
     /// A failure message.
-    pub fn failed(message: impl Into<String>) -> Self {
+    pub fn failed(message: impl Into<String>, by: Option<&str>) -> Self {
         Server::Failed(UilabWireFailed {
             message: message.into(),
+            by: by_of(by),
         })
     }
 
     /// A refusal message.
-    pub fn refused(check: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn refused(check: impl Into<String>, message: impl Into<String>, by: Option<&str>) -> Self {
         Server::Refused(UilabWireRefused {
             check: check.into(),
             message: message.into(),
+            by: by_of(by),
         })
+    }
+
+    /// The operator the message is attributed to, if any.
+    pub fn by(&self) -> Option<&str> {
+        let presence = match self {
+            Server::Transcript(m) => &m.by,
+            Server::Thinking(m) => &m.by,
+            Server::Proposal(m) => &m.by,
+            Server::Refused(m) => &m.by,
+            Server::Failed(m) => &m.by,
+            Server::Changed(m) => return Some(&m.by),
+            Server::Document(_) | Server::Rows(_) | Server::Presence(_) => return None,
+        };
+        match presence {
+            EssPresence::Present(by) => Some(by),
+            EssPresence::Absent => None,
+        }
     }
 }
 
@@ -84,9 +112,26 @@ impl Client {
     }
 }
 
+fn by_of(by: Option<&str>) -> EssPresence<String> {
+    present(by.map(str::to_owned))
+}
+
 /// Whether a mic message opens the microphone.
 pub fn mic_open(mic: &UilabWireMic) -> bool {
     matches!(*mic.state, UilabWireMicState::V1)
+}
+
+/// Whether a hello or operator is an agent.
+pub fn is_agent(kind: &UilabWireOperatorKind) -> bool {
+    matches!(kind, UilabWireOperatorKind::V0)
+}
+
+pub fn operator_kind(agent: bool) -> Box<UilabWireOperatorKind> {
+    Box::new(if agent {
+        UilabWireOperatorKind::V0
+    } else {
+        UilabWireOperatorKind::V1
+    })
 }
 
 pub fn node_path(path: &str) -> Box<UilabSessionNodePath> {
@@ -146,6 +191,7 @@ pub struct DocumentParts<'a> {
     pub outline: &'a OutlineNode,
     pub findings: &'a [Finding],
     pub undoable: Option<String>,
+    pub revision: u64,
 }
 
 pub fn document(parts: DocumentParts<'_>) -> Server {
@@ -154,23 +200,72 @@ pub fn document(parts: DocumentParts<'_>) -> Server {
         file: parts.file.to_owned(),
         findings: findings(parts.findings),
         outline: outline(parts.outline),
+        revision: Number::from(parts.revision),
         selected: node_path(parts.selected),
         title: present(parts.title),
         undoable: present(parts.undoable.map(|id| proposal_id(&id))),
     })
 }
 
-pub fn transcript(text: &str, audio_ms: u64, took_ms: u64) -> Server {
+pub struct ChangedParts<'a> {
+    pub revision: u64,
+    pub by: &'a str,
+    pub op: &'a str,
+    pub changed: &'a str,
+    pub parent: &'a str,
+    pub node: Option<&'a OutlineNode>,
+    pub findings: &'a [Finding],
+}
+
+pub fn changed(parts: ChangedParts<'_>) -> Server {
+    Server::Changed(UilabWireChanged {
+        by: parts.by.to_owned(),
+        changed: node_path(parts.changed),
+        findings: findings(parts.findings),
+        node: present(parts.node.map(outline)),
+        op: op(parts.op),
+        parent: node_path(parts.parent),
+        revision: Number::from(parts.revision),
+    })
+}
+
+pub struct OperatorParts {
+    pub id: String,
+    pub name: String,
+    pub agent: bool,
+    pub last_seen_ms: u64,
+}
+
+pub fn presence(operators: Vec<OperatorParts>, selected_by: Option<String>) -> Server {
+    Server::Presence(UilabWirePresence {
+        operators: operators
+            .into_iter()
+            .map(|o| {
+                Box::new(UilabWireOperator {
+                    id: o.id,
+                    kind: operator_kind(o.agent),
+                    last_seen_ms: Number::from(o.last_seen_ms),
+                    name: o.name,
+                })
+            })
+            .collect(),
+        selected_by: present(selected_by),
+    })
+}
+
+pub fn transcript(text: &str, audio_ms: u64, took_ms: u64, by: Option<&str>) -> Server {
     Server::Transcript(UilabWireTranscript {
         text: text.to_owned(),
         audio_ms: Number::from(audio_ms),
         took_ms: Number::from(took_ms),
+        by: by_of(by),
     })
 }
 
-pub fn thinking(target: &str) -> Server {
+pub fn thinking(target: &str, by: Option<&str>) -> Server {
     Server::Thinking(UilabWireThinking {
         target: node_path(target),
+        by: by_of(by),
     })
 }
 
@@ -215,6 +310,7 @@ mod tests {
                 outline: &tree,
                 findings: std::slice::from_ref(&finding),
                 undoable: Some("p".into()),
+                revision: 3,
             }),
             document(DocumentParts {
                 document_id: "d",
@@ -224,28 +320,67 @@ mod tests {
                 outline: &tree,
                 findings: &[],
                 undoable: None,
+                revision: 0,
             }),
-            transcript("add a table", 2100, 340),
-            thinking("page:loans"),
+            transcript("add a table", 2100, 340, Some("op-1")),
+            transcript("add a table", 2100, 340, None),
+            thinking("page:loans", Some("op-2")),
             Server::Proposal(UilabWireProposalShown {
                 after: "a".into(),
                 before: "".into(),
+                by: by_of(Some("op-2")),
                 changed: node_path("page:loans/section:overdue"),
-                findings: findings(&[finding]),
+                findings: findings(std::slice::from_ref(&finding)),
                 op: op("Insert"),
                 outline: outline(&tree),
                 proposal_id: proposal_id("p"),
                 target: node_path("page:loans"),
                 utterance: "u".into(),
             }),
-            Server::refused("name_unique", "m"),
-            Server::failed("m"),
+            Server::refused("name_unique", "m", Some("op-1")),
+            Server::failed("m", None),
             rows(
                 "loans.All",
                 Some(4),
                 vec![serde_json::json!({"title": "x"})],
             ),
             rows("draft.X", None, vec![]),
+            presence(
+                vec![
+                    OperatorParts {
+                        id: "op-1".into(),
+                        name: "Timo".into(),
+                        agent: false,
+                        last_seen_ms: 0,
+                    },
+                    OperatorParts {
+                        id: "op-2".into(),
+                        name: "Claude".into(),
+                        agent: true,
+                        last_seen_ms: 1200,
+                    },
+                ],
+                Some("op-2".into()),
+            ),
+            presence(vec![], None),
+            changed(ChangedParts {
+                revision: 4,
+                by: "op-2",
+                op: "Insert",
+                changed: "page:loans/section:overdue",
+                parent: "page:loans",
+                node: Some(&tree.children[0]),
+                findings: std::slice::from_ref(&finding),
+            }),
+            changed(ChangedParts {
+                revision: 5,
+                by: "op-2",
+                op: "Remove",
+                changed: "page:loans/section:overdue",
+                parent: "page:loans",
+                node: None,
+                findings: &[],
+            }),
         ];
         for message in messages {
             let text = message.to_text();
@@ -268,10 +403,13 @@ mod tests {
             r#"{"type":"mic","value":{"state":"open"}}"#,
             r#"{"type":"mic","value":{"state":"closed"}}"#,
             r#"{"type":"say","value":{"text":"add a page"}}"#,
+            r#"{"type":"say","value":{"text":"add a table","target":"page:loans"}}"#,
             r#"{"type":"accept","value":{"proposal_id":"p"}}"#,
             r#"{"type":"reject","value":{"proposal_id":"p"}}"#,
             r#"{"type":"undo","value":{"proposal_id":"p"}}"#,
             r#"{"type":"rows","value":{"view":"loans.All"}}"#,
+            r#"{"type":"hello","value":{"name":"Claude","kind":"agent"}}"#,
+            r#"{"type":"resync","value":{"revision":2}}"#,
         ];
         for text in texts {
             let ours = Client::from_text(text).unwrap_or_else(|e| panic!("{text}: {e}"));
@@ -287,6 +425,17 @@ mod tests {
             Client::Mic(m) => m,
             _ => unreachable!(),
         }));
+        assert!(is_agent(match &Client::from_text(texts[9]).unwrap() {
+            Client::Hello(h) => &h.kind,
+            _ => unreachable!(),
+        }));
         assert!(Client::from_text(r#"{"type":"shout","value":{}}"#).is_err());
+    }
+
+    #[test]
+    fn messages_name_their_operator() {
+        assert_eq!(Server::refused("c", "m", Some("op-1")).by(), Some("op-1"));
+        assert_eq!(Server::failed("m", None).by(), None);
+        assert_eq!(thinking("/", Some("op-2")).by(), Some("op-2"));
     }
 }
