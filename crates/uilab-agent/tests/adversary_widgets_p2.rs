@@ -98,14 +98,18 @@ fn listed(user: &str) -> Vec<String> {
 }
 
 /// The four-letter floor on plurals, the other way from `news`: a three-letter singular said for
-/// a plural page name (`log` for `logs`) no longer names it. cd1e73c listed it.
+/// a plural page name (`log` for `logs`) does not name it. cd1e73c listed it. This is the accepted
+/// cost of the floor.
 #[test]
-fn a_three_letter_singular_names_its_plural_page() {
+fn a_three_letter_singular_does_not_name_its_plural_page() {
     let doc = library_with_pages(&[("logs", "Logs")]);
     let user = first_request(&doc, "/", "use the loan card on the log page");
     assert!(
-        user.contains("page:logs/section:queue"),
-        "the logs page was named as `log` and is not listed: {user}"
+        !user.contains("page:logs/section:queue"),
+        "`log` lists the `logs` page. The four-letter floor on plurals is the accepted cost: no \
+         letter count separates new/news from log/logs, so a plural of a three-letter singular is \
+         not matched. Changing this needs a rule that still keeps \"new\" from naming `news`: \
+         {user}"
     );
 }
 

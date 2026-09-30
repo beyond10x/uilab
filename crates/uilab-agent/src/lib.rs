@@ -942,12 +942,17 @@ fn named_pages<'a>(doc: &'a Document, target: &NodePath, utterance: &str) -> Vec
                     .all(|(spoken, word)| same_word(spoken, word))
             })
     };
-    doc.pages
-        .iter()
-        .filter(|(name, page)| {
-            own == Some(name.as_str()) || names(name) || page.title.as_deref().is_some_and(names)
-        })
-        .map(|(name, _)| name.as_str())
+    let own = own.and_then(|own| doc.pages.get_key_value(own).map(|(name, _)| name.as_str()));
+    own.into_iter()
+        .chain(
+            doc.pages
+                .iter()
+                .filter(|(name, page)| {
+                    own != Some(name.as_str())
+                        && (names(name) || page.title.as_deref().is_some_and(names))
+                })
+                .map(|(name, _)| name.as_str()),
+        )
         .collect()
 }
 
