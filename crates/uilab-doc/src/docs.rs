@@ -377,15 +377,17 @@ pub fn help_markdown() -> String {
     let _ = writeln!(
         out,
         "Select a node, then say or type one instruction. The agent answers with **one proposal** at \
-         that node; you accept or reject it, and undo an accepted one. Each instruction is one agent \
-         turn; for work that takes several changes, give a goal.\n"
+         that node; you accept or reject it, and undo an accepted one (a server started with \
+         `--auto-apply` applies each proposal at once). The agent may take a few turns, and tries \
+         again when a check refuses its answer; for work that takes several changes, give a goal.\n"
     );
     let _ = writeln!(out, "## Goals\n");
     let _ = writeln!(
         out,
         "Switch the toggle by the text field from **instruction** to **goal**, type what you want \
          done and press Enter. The agent plans it into steps, then proposes them one at a time at \
-         the node each step names; you accept or reject each proposal and the next step follows. \
+         the node each step names; each proposal waits for accept or reject as any other does \
+         (under `--auto-apply` it is applied at once), and the next step follows. \
          The goal panel in the sidebar lists the steps and where each stands, and **Stop** ends the \
          run. While a goal runs, no other instruction or goal is taken. A goal is typed; a spoken \
          instruction is always a single instruction.\n"
@@ -395,9 +397,11 @@ pub fn help_markdown() -> String {
         out,
         "Press `4` (or click **Components**) to see the document's widgets with previews. The tab \
          is a workspace of its own: an instruction given there builds widgets. With a widget or one \
-         of its body nodes selected, the agent works under the selected widget; otherwise it \
-         declares a new widget at the root, under `widgets:`. A page left selected on the canvas \
-         does not count there. A goal given on the tab keeps every step to it. `1` returns to the \
+         of its body nodes selected (a `component` node in the tree, or a node under one), the \
+         agent works under the selected widget; otherwise it declares a new widget at the root, \
+         under `widgets:`. A page left selected on the canvas does not count there, and neither \
+         does a board's widget (`wdg` in the tree), which is part of a page. A goal given on the \
+         tab is planned as widget work; each step goes to the node its plan names. `1` returns to the \
          UI, `2` shows the YAML and `3` the generated docs.\n"
     );
     let _ = writeln!(out, "## Where things can go\n");
