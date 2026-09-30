@@ -104,6 +104,77 @@ impl Fixtures {
     pub fn has(&self, view: &str) -> bool {
         self.views.contains_key(view)
     }
+
+    /// Every view with a fixture and the fields its rows carry, in first-seen order.
+    pub fn fields(&self) -> IndexMap<String, Vec<String>> {
+        self.views
+            .iter()
+            .map(|(view, rows)| {
+                let mut fields: Vec<String> = Vec::new();
+                for row in &rows.rows {
+                    for key in row.as_object().into_iter().flat_map(|o| o.keys()) {
+                        if !fields.contains(key) {
+                            fields.push(key.clone());
+                        }
+                    }
+                }
+                (view.clone(), fields)
+            })
+            .collect()
+    }
+}
+
+/// Columns, a metric's `from` and record fields that name a field the view's fixture rows do not
+/// have. A warning: the fixture may be incomplete, but more often the field was guessed.
+pub fn field_findings(doc: &Document, fixtures: &Fixtures) -> Vec<crate::Finding> {
+    let known = fixtures.fields();
+    let mut out = Vec::new();
+    for (path, composite) in crate::check::composites(doc) {
+        let Some(reads) = &composite.reads else {
+            continue;
+        };
+        let Some(fields) = known.get(&reads.view).filter(|f| !f.is_empty()) else {
+            continue;
+        };
+        let mut named: Vec<String> = Vec::new();
+        for key in ["columns", "fields"] {
+            for entry in composite
+                .props
+                .get(key)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                match entry {
+                    Value::String(field) => named.push(field.clone()),
+                    Value::Object(o) => {
+                        named.extend(o.get("field").and_then(Value::as_str).map(str::to_owned))
+                    }
+                    _ => {}
+                }
+            }
+        }
+        named.extend(
+            composite
+                .props
+                .get("from")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        );
+        for field in named.into_iter().filter(|f| !fields.contains(f)) {
+            out.push(crate::Finding {
+                check: "column_fields",
+                severity: crate::Severity::Warning,
+                path: path.to_string(),
+                message: format!(
+                    "`{field}` is not a field of `{}` rows ({})",
+                    reads.view,
+                    fields.join(", ")
+                ),
+            });
+        }
+    }
+    out
 }
 
 fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, FixtureError> {

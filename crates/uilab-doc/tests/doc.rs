@@ -354,3 +354,27 @@ fn context_names_what_can_go_here() {
         ]
     );
 }
+
+#[test]
+fn columns_that_name_no_fixture_field_are_warned() {
+    let mut doc = library();
+    let fixtures = Fixtures::load(&doc, &examples().join("library")).unwrap();
+    assert_eq!(
+        fixtures.fields()["loans.All"],
+        ["id", "title", "member", "due", "state"]
+    );
+    assert!(uilab_doc::field_findings(&doc, &fixtures).is_empty());
+    let list = doc.pages["members"].sections["list"].as_mut().unwrap();
+    list.reads.as_mut().unwrap().view = "loans.All".into();
+    let found = uilab_doc::field_findings(&doc, &fixtures);
+    let named: Vec<&str> = found
+        .iter()
+        .map(|f| f.message.split('`').nth(1).unwrap())
+        .collect();
+    assert_eq!(named, ["name", "joined", "loans", "standing"]);
+    assert!(
+        found
+            .iter()
+            .all(|f| f.check == "column_fields" && f.severity == Severity::Warning)
+    );
+}

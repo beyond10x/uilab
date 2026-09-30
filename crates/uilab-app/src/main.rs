@@ -1,6 +1,7 @@
 //! `uilab serve`: the browser app, one WebSocket, and the session behind it.
 
 mod app;
+mod journal;
 mod wire;
 
 use std::net::SocketAddr;
@@ -64,6 +65,14 @@ struct Serve {
     /// Messages endpoint the agent uses (origin plus `/v1`).
     #[arg(long)]
     base_url: Option<String>,
+    /// Where each run keeps its journal: events.jsonl and one WAV per utterance.
+    #[arg(long, default_value_t = default_journal())]
+    journal: String,
+}
+
+fn default_journal() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    format!("{home}/.cache/uilab/sessions")
 }
 
 fn default_model() -> String {
@@ -112,6 +121,7 @@ async fn run(serve: Serve) -> Result<(), String> {
         doc: serve.doc.clone(),
         stt,
         proposer,
+        journal: PathBuf::from(&serve.journal),
     };
 
     let (out, _) = broadcast::channel(256);

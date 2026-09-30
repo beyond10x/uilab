@@ -170,6 +170,22 @@ impl Proposer {
         target: &NodePath,
         utterance: &str,
     ) -> Result<Proposal, ProposeError> {
+        self.propose_with(doc, target, utterance, &[])
+    }
+
+    /// [`propose`](Self::propose), telling the model which fields each view's rows carry, so
+    /// columns, `from` and form fields name real fields rather than guessed ones.
+    ///
+    /// # Errors
+    ///
+    /// As [`propose`](Self::propose).
+    pub fn propose_with(
+        &mut self,
+        doc: &Document,
+        target: &NodePath,
+        utterance: &str,
+        fields: &[(String, Vec<String>)],
+    ) -> Result<Proposal, ProposeError> {
         let context = uilab_doc::node_context(doc, target)?;
         let schema = uilab_doc::patch_schema(doc, target)?;
         let answer =
@@ -186,7 +202,7 @@ impl Proposer {
         let mut items = Vec::new();
         let mut turns = 0;
         let mut costs = Vec::new();
-        let mut input = request(doc, &context, utterance);
+        let mut input = request(doc, &context, utterance, fields);
         let mut refusal = None;
         for attempt in 1..=MAX_ATTEMPTS {
             let mut tools = NoTools;
@@ -349,12 +365,21 @@ non-draft view name.
 Names of new nodes (sections, overlays, pages, widgets, items) are short, lower-case, and use \
 underscores: `overdue`, `due_soon`. They must be unique among their siblings. Use `insert` to \
 add a child under the target, `replace` to change the target node itself (give the whole new \
-node, keeping what the operator did not ask to change), and `remove` to delete it. An `opens` \
+node, keeping what the operator did not ask to change), and `remove` to delete it. Prefer the \
+smallest change: insert under the node the operator points at rather than replacing its parent. \
+Columns, a metric's `from` and form or record fields name fields of the rows the composite \
+reads; when a view's fields are listed, use only those, and read a `draft.` view when the data \
+asked for is not among them. An `opens` \
 value must name an overlay of the page or its shell. If a patch you proposed is refused, the \
 refusal names the check it failed; fix exactly that and answer again.";
 
 /// The first message of a run: the utterance and the node's context.
-fn request(doc: &Document, context: &NodeContext, utterance: &str) -> String {
+fn request(
+    doc: &Document,
+    context: &NodeContext,
+    utterance: &str,
+    fields: &[(String, Vec<String>)],
+) -> String {
     let join = |items: Vec<String>| {
         if items.is_empty() {
             "none".to_owned()
@@ -379,7 +404,8 @@ fn request(doc: &Document, context: &NodeContext, utterance: &str) -> String {
          Child layers it can take: {layers}\n\
          Composite kinds a new composite child can be: {kinds}\n\
          Existing children: {children}\n\
-         Views the document already reads: {views}\n\n\
+         Views the document already reads: {views}\n\
+         Fields of each view's rows: {fields}\n\n\
          The target node as YAML:\n```yaml\n{yaml}```",
         path = context.path,
         kind = context.kind,
@@ -388,6 +414,12 @@ fn request(doc: &Document, context: &NodeContext, utterance: &str) -> String {
         kinds = join(kinds),
         children = join(context.children.clone()),
         views = join(known_views(doc)),
+        fields = join(
+            fields
+                .iter()
+                .map(|(view, names)| format!("{view} ({})", names.join(", ")))
+                .collect(),
+        ),
         yaml = context.yaml,
     )
 }
