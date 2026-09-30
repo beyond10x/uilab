@@ -73,12 +73,56 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
 
-/** The header's findings badge for the document's findings. */
-export function findingsBadge(findings: readonly Pick<Finding, 'severity'>[]): FindingsBadge {
-  const errors = findings.filter((f) => f.severity === 'error').length;
-  const warnings = findings.filter((f) => f.severity === 'warning').length;
+/** The header's findings badge for the document's findings; draft reads are not counted. */
+export function findingsBadge(findings: readonly Pick<Finding, 'severity' | 'check'>[]): FindingsBadge {
+  const counted = faults(findings);
+  const errors = counted.filter((f) => f.severity === 'error').length;
+  const warnings = counted.filter((f) => f.severity === 'warning').length;
   const title = errors || warnings ? `${plural(errors, 'error')}, ${plural(warnings, 'warning')}` : 'no findings';
   return { errors, warnings, title };
+}
+
+/**
+ * The check that reports a read of a `draft.` view. The check still reports it (the agent, the eval
+ * and `/api/state` see it); the sidebar shows it as data to model, not as a warning.
+ */
+export const DRAFT_READ = 'draft_read';
+
+/** The findings that are faults: every finding but a draft read, in order. */
+export function faults<F extends Pick<Finding, 'check'>>(findings: readonly F[]): F[] {
+  return findings.filter((f) => f.check !== DRAFT_READ);
+}
+
+/** The view a draft read's message names (``reads `draft.X`, …``), or `null` when it names none. */
+export function draftView(message: string): string | null {
+  return /reads `([^`]+)`/.exec(message)?.[1] ?? null;
+}
+
+/** A draft view and the sections that read it, in document order. */
+export interface DraftView {
+  view: string;
+  paths: string[];
+}
+
+/**
+ * The document's open data needs: each draft view once, in the order the document first reads it,
+ * with every section that reads it. A message that names no view is listed under the message.
+ */
+export function draftViews(findings: readonly Pick<Finding, 'check' | 'path' | 'message'>[]): DraftView[] {
+  const byView = new Map<string, DraftView>();
+  for (const f of findings) {
+    if (f.check !== DRAFT_READ) continue;
+    const view = draftView(f.message) ?? f.message;
+    const entry = byView.get(view) ?? { view, paths: [] };
+    if (!entry.paths.includes(f.path)) entry.paths.push(f.path);
+    byView.set(view, entry);
+  }
+  return [...byView.values()];
+}
+
+/** The collapsed draft list's label. */
+export function draftsLabel(n: number): string {
+  return plural(n, 'draft view');
 }
 
 /** The name a chip edit sends: trimmed, and only when it is not blank and differs from the current one. */

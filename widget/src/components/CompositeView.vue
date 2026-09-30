@@ -151,14 +151,15 @@ function display(v: unknown): string {
       </div>
     </template>
 
-    <template v-else-if="kind === 'chart' && chartBars.length">
-      <div class="chart-bars">
-        <div v-for="b in chartBars" :key="b.label" class="chart-bar">
+    <template v-else-if="kind === 'chart' && (chartBars.length || emptyLine)">
+      <div v-if="chartBars.length" class="chart-bars">
+        <div v-for="(b, i) in chartBars" :key="i" class="chart-bar">
           <span class="chart-label">{{ b.label }}</span>
           <span class="chart-fill" :style="{ width: b.pct + '%' }"></span>
           <span class="chart-value">{{ b.value }}</span>
         </div>
       </div>
+      <p v-else class="empty">{{ emptyLine }}</p>
     </template>
 
     <template v-else-if="kind !== 'board'">
