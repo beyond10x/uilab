@@ -8,8 +8,8 @@ use serde_json::Value;
 
 use crate::check::{Finding, Severity, composites};
 use crate::fixtures::Fixtures;
-use crate::model::{CompositeKind, Document, NavPages};
-use crate::path::Layer;
+use crate::model::{Composite, CompositeKind, Document, NavPages, NodeBody, PrimitiveKind};
+use crate::path::{Layer, NodePath};
 
 /// The document's documentation as Markdown.
 pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) -> String {
@@ -136,6 +136,8 @@ pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) 
         );
     }
     out.push('\n');
+
+    widgets_markdown(&mut out, doc, &all);
 
     // Data.
     let _ = writeln!(out, "## Data\n");
@@ -270,6 +272,73 @@ pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) 
     out
 }
 
+/// The Widgets section: each declared widget with its summary, params, body and use sites.
+fn widgets_markdown(out: &mut String, doc: &Document, all: &[(NodePath, &Composite)]) {
+    let _ = writeln!(out, "## Widgets\n");
+    if doc.widgets.is_empty() {
+        let _ = writeln!(out, "The document declares no widgets.\n");
+        return;
+    }
+    let inline = |value: &Value| match value {
+        Value::String(s) => format!("`{s}`"),
+        other => format!("`{other}`"),
+    };
+    for (name, widget) in &doc.widgets {
+        let _ = writeln!(out, "### {name}\n");
+        let _ = writeln!(out, "{}\n", widget.summary);
+        if let Some(text) = &widget.doc {
+            let _ = writeln!(out, "{text}\n");
+        }
+        let arrange = serde_json::to_value(widget.arrangement()).unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "Arranged as a {}.\n",
+            arrange.as_str().unwrap_or("column")
+        );
+        if widget.params.is_empty() {
+            let _ = writeln!(out, "No params.\n");
+        } else {
+            let _ = writeln!(
+                out,
+                "| param | type | required | default | note |\n|---|---|---|---|---|"
+            );
+            for (param, declared) in &widget.params {
+                let _ = writeln!(
+                    out,
+                    "| `{param}` | {} | {} | {} | {} |",
+                    inline(&declared.ty),
+                    if declared.required { "yes" } else { "no" },
+                    declared.default.as_ref().map_or("-".to_owned(), inline),
+                    declared.note.as_deref().unwrap_or("")
+                );
+            }
+            out.push('\n');
+        }
+        let body: Vec<String> = widget
+            .body
+            .iter()
+            .map(|n| {
+                let kind = match &n.body {
+                    NodeBody::Composite(c) => c.component.as_str(),
+                    NodeBody::Primitive(p) => p.primitive.as_str(),
+                };
+                format!("`{}` ({kind})", n.name)
+            })
+            .collect();
+        let _ = writeln!(out, "Body: {}\n", body.join(", "));
+        let used: Vec<String> = all
+            .iter()
+            .filter(|(_, c)| c.component.widget() == Some(name.as_str()))
+            .map(|(p, _)| format!("`{p}`"))
+            .collect();
+        if used.is_empty() {
+            let _ = writeln!(out, "Not used yet.\n");
+        } else {
+            let _ = writeln!(out, "Used at: {}\n", used.join(", "));
+        }
+    }
+}
+
 /// Calls `visit(key, value)` for every string value under a JSON value.
 fn collect(value: &Value, visit: &mut impl FnMut(&str, &str)) {
     match value {
@@ -307,6 +376,10 @@ pub fn help_markdown() -> String {
             Layer::Section,
             "a region of a page; a board holds widgets, a collection holds items per row",
         ),
+        (
+            Layer::Component,
+            "a widget: an app-defined composite with params and a body",
+        ),
     ] {
         let children: Vec<&str> = [
             Layer::Shell,
@@ -317,6 +390,8 @@ pub fn help_markdown() -> String {
             Layer::Overlay,
             Layer::Widget,
             Layer::Item,
+            Layer::Component,
+            Layer::Node,
         ]
         .into_iter()
         .filter(|c| crate::path::may_contain(layer, *c))
@@ -331,6 +406,19 @@ pub fn help_markdown() -> String {
     }
     let _ = writeln!(out, "\n## Component kinds\n");
     for kind in CompositeKind::ALL {
+        let _ = writeln!(out, "- **{}**: {}", kind.as_str(), kind.summary());
+    }
+    let _ = writeln!(out, "\n## Widgets and primitives\n");
+    let _ = writeln!(
+        out,
+        "A **widget** is an app-defined composite, declared under `widgets:` at the root with a \
+         `summary`, typed `params` and a `body` of named nodes. Use it wherever a composite kind \
+         goes (a section, an overlay, a board widget, a collection item) as \
+         `component: <widget>` with `args` for its params. A widget is never named like a \
+         built-in kind and never contains itself.\n\n\
+         A node of a widget body is a composite, a widget instance, or one of these primitives:\n"
+    );
+    for kind in PrimitiveKind::ALL {
         let _ = writeln!(out, "- **{}**: {}", kind.as_str(), kind.summary());
     }
     let _ = writeln!(out, "\n## What the agent proposes\n");

@@ -23,7 +23,8 @@ pub struct OutlineNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
     /// A composite's props other than `component`, `reads`, `widgets` and `item`: what a renderer
-    /// needs to draw it (columns, title, from, fields).
+    /// needs to draw it (columns, title, from, fields, a widget instance's args). A primitive's
+    /// props; a widget's params and arrangement.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub props: Option<serde_json::Value>,
     /// Its children.
@@ -50,6 +51,13 @@ fn node(doc: &Document, path: &NodePath) -> Result<OutlineNode, PathError> {
         NodeRef::Page(p) => doc
             .shell_of(p)
             .map(|shell| serde_json::json!({"shell": shell})),
+        NodeRef::Component(w) => Some(serde_json::json!({
+            "params": w.params,
+            "arrange": w.arrangement(),
+        })),
+        NodeRef::Primitive(p) => Some(serde_json::Value::Object(
+            p.props.clone().into_iter().collect(),
+        )),
         _ => found
             .composite()
             .filter(|c| !c.props.is_empty())
@@ -59,6 +67,7 @@ fn node(doc: &Document, path: &NodePath) -> Result<OutlineNode, PathError> {
         NodeRef::Root(d) => (d.title.clone(), None),
         NodeRef::Page(p) => (p.title.clone(), None),
         NodeRef::NavSection(s) => (s.label.clone(), None),
+        NodeRef::Component(w) => (Some(w.summary.clone()), None),
         NodeRef::Overlay(o) => (
             o.body
                 .props
@@ -176,6 +185,8 @@ fn node_yaml(node: NodeRef<'_>) -> String {
         NodeRef::Page(p) => crate::model::to_yaml(p),
         NodeRef::Overlay(o) => crate::model::to_yaml(o),
         NodeRef::Composite(c) => crate::model::to_yaml(c),
+        NodeRef::Component(w) => crate::model::to_yaml(w),
+        NodeRef::Primitive(p) => crate::model::to_yaml(p),
     };
     text.unwrap_or_default()
 }

@@ -45,6 +45,9 @@ pub struct Document {
     /// App-defined page templates; kept as data, not addressed by uilab.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub page_kinds: IndexMap<String, Value>,
+    /// App-defined composites, usable wherever a composite kind is.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub widgets: IndexMap<String, Widget>,
     /// Every route of the app.
     pub pages: IndexMap<String, Page>,
     /// Keys this subset does not type.
@@ -197,11 +200,12 @@ pub struct Page {
 /// A composite: what a section or an overlay renders, and what nests inside another composite.
 ///
 /// A section is a composite with section keys (`load`, `depends_on`, `states`, `live`) among its
-/// props; `ui-spec/1` writes them inline in the same map.
+/// props; `ui-spec/1` writes them inline in the same map. A composite whose `component` names a
+/// widget is a widget instance, and its `args` prop supplies the widget's params.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Composite {
-    /// Kind of the composite.
-    pub component: CompositeKind,
+    /// Kind of the composite, or the widget it instantiates.
+    pub component: Component,
     /// The composite's data.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reads: Option<Reads>,
@@ -332,6 +336,334 @@ impl CompositeKind {
             CompositeKind::GraphEditor => "nodes and edges edited as a whole",
             CompositeKind::RichText => "formatted text",
             CompositeKind::References => "what uses a record",
+        }
+    }
+
+    /// The kind a document spells `name`, if it is one.
+    pub fn parse(name: &str) -> Option<CompositeKind> {
+        CompositeKind::ALL.into_iter().find(|k| k.as_str() == name)
+    }
+}
+
+/// What a composite's `component` names: a built-in kind, or a widget the document declares.
+///
+/// A name that is a composite kind is always the kind; any other name is a widget, whether or not
+/// the document declares it (the `widget_resolves` check decides that).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Component {
+    /// A member of the composite union.
+    Builtin(CompositeKind),
+    /// An app-defined widget, by name.
+    Widget(String),
+}
+
+impl Component {
+    /// The built-in kind, for a built-in.
+    pub fn kind(&self) -> Option<CompositeKind> {
+        match self {
+            Component::Builtin(kind) => Some(*kind),
+            Component::Widget(_) => None,
+        }
+    }
+
+    /// The widget's name, for a widget instance.
+    pub fn widget(&self) -> Option<&str> {
+        match self {
+            Component::Builtin(_) => None,
+            Component::Widget(name) => Some(name),
+        }
+    }
+
+    /// The name the document spells.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Component::Builtin(kind) => kind.as_str(),
+            Component::Widget(name) => name,
+        }
+    }
+}
+
+impl From<CompositeKind> for Component {
+    fn from(kind: CompositeKind) -> Self {
+        Component::Builtin(kind)
+    }
+}
+
+impl PartialEq<CompositeKind> for Component {
+    fn eq(&self, other: &CompositeKind) -> bool {
+        self.kind() == Some(*other)
+    }
+}
+
+impl Serialize for Component {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for Component {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        if name.is_empty() {
+            return Err(serde::de::Error::custom("`component` is empty"));
+        }
+        Ok(CompositeKind::parse(&name).map_or(Component::Widget(name), Component::Builtin))
+    }
+}
+
+impl Composite {
+    /// A widget instance's arguments: the `args` prop.
+    pub fn args(&self) -> Option<&Value> {
+        self.props.get("args")
+    }
+}
+
+/// An app-defined composite with typed parameters, usable wherever a composite kind is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Widget {
+    /// One line shown in pickers and docs.
+    pub summary: String,
+    /// Longer description for authors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
+    /// Typed parameters, supplied by an instance's `args`.
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub params: IndexMap<String, Param>,
+    /// How body nodes are arranged; `column` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arrange: Option<Arrange>,
+    /// Named nodes, in order; each may read `args.<param>`.
+    #[serde(deserialize_with = "unique_nodes")]
+    pub body: Vec<Node>,
+    /// Keys this subset does not type.
+    #[serde(flatten)]
+    pub extra: IndexMap<String, Value>,
+}
+
+impl Widget {
+    /// How the body is arranged.
+    pub fn arrangement(&self) -> Arrange {
+        self.arrange.unwrap_or(Arrange::Column)
+    }
+
+    /// The body node named `name`.
+    pub fn node(&self, name: &str) -> Option<&Node> {
+        self.body.iter().find(|n| n.name == name)
+    }
+}
+
+fn unique_nodes<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<Node>, D::Error> {
+    let nodes = Vec::<Node>::deserialize(deserializer)?;
+    for (i, node) in nodes.iter().enumerate() {
+        if nodes[..i].iter().any(|n| n.name == node.name) {
+            return Err(serde::de::Error::custom(format!(
+                "two nodes of the body are named `{}`",
+                node.name
+            )));
+        }
+    }
+    Ok(nodes)
+}
+
+/// One parameter of a widget.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Param {
+    /// Its type: a primitive name, a constructor map or a named type.
+    #[serde(rename = "type")]
+    pub ty: Value,
+    /// Whether every instance must supply it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
+    /// Value used when an instance does not supply it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<Value>,
+    /// Author remark.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// How a widget arranges its body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Arrange {
+    /// Side by side.
+    Row,
+    /// One below the other.
+    Column,
+    /// In a grid.
+    Grid,
+}
+
+/// One named node of a widget body: a composite, a widget instance or a primitive.
+///
+/// Exactly one of `component` and `primitive` is written; a node in a list carries `name`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "serde_json::Map<String, Value>",
+    into = "serde_json::Map<String, Value>"
+)]
+pub struct Node {
+    /// Its name, unique in the body.
+    pub name: String,
+    /// What it is.
+    pub body: NodeBody,
+}
+
+/// What a node is.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NodeBody {
+    /// A built-in composite or a widget instance.
+    Composite(Box<Composite>),
+    /// A renderer-neutral leaf.
+    Primitive(Primitive),
+}
+
+impl Node {
+    /// The composite, for a composite or a widget instance.
+    pub fn composite(&self) -> Option<&Composite> {
+        match &self.body {
+            NodeBody::Composite(c) => Some(c.as_ref()),
+            NodeBody::Primitive(_) => None,
+        }
+    }
+
+    /// The primitive, for a primitive.
+    pub fn primitive(&self) -> Option<&Primitive> {
+        match &self.body {
+            NodeBody::Composite(_) => None,
+            NodeBody::Primitive(p) => Some(p),
+        }
+    }
+
+    /// Reads a node's fields without its name, as a patch carries them, and names it `name`.
+    pub fn named(name: &str, fields: &Value) -> Result<Node, String> {
+        let mut map = fields
+            .as_object()
+            .cloned()
+            .ok_or_else(|| "a node is a map".to_owned())?;
+        map.insert("name".into(), Value::String(name.to_owned()));
+        Node::try_from(map)
+    }
+}
+
+impl TryFrom<serde_json::Map<String, Value>> for Node {
+    type Error = String;
+
+    fn try_from(mut map: serde_json::Map<String, Value>) -> Result<Self, Self::Error> {
+        let name = match map.remove("name") {
+            Some(Value::String(name)) if !name.is_empty() => name,
+            Some(_) => return Err("a node's `name` is a non-empty string".into()),
+            None => return Err("a node in a list carries `name`".into()),
+        };
+        let body = match (map.contains_key("component"), map.contains_key("primitive")) {
+            (true, false) => NodeBody::Composite(
+                serde_json::from_value(Value::Object(map))
+                    .map_err(|e| format!("node `{name}`: {e}"))?,
+            ),
+            (false, true) => NodeBody::Primitive(
+                serde_json::from_value(Value::Object(map))
+                    .map_err(|e| format!("node `{name}`: {e}"))?,
+            ),
+            _ => {
+                return Err(format!(
+                    "node `{name}` has exactly one of `component` and `primitive`"
+                ));
+            }
+        };
+        Ok(Node { name, body })
+    }
+}
+
+impl From<Node> for serde_json::Map<String, Value> {
+    fn from(node: Node) -> Self {
+        let mut map = serde_json::Map::new();
+        map.insert("name".into(), Value::String(node.name));
+        let fields = match node.body {
+            NodeBody::Composite(c) => serde_json::to_value(c),
+            NodeBody::Primitive(p) => serde_json::to_value(p),
+        };
+        if let Ok(Value::Object(fields)) = fields {
+            map.extend(fields);
+        }
+        map
+    }
+}
+
+/// A renderer-neutral leaf: a caption, a badge, a button, an image.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Primitive {
+    /// Kind of primitive.
+    pub primitive: PrimitiveKind,
+    /// Its props (`text`, `src`, `action`, `visible`, …), in document order.
+    #[serde(flatten)]
+    pub props: IndexMap<String, Value>,
+}
+
+/// The nine primitive kinds of `ui-spec/1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrimitiveKind {
+    /// A run of text.
+    Text,
+    /// A short value in a toned pill.
+    Badge,
+    /// A semantic icon.
+    Icon,
+    /// A button that runs one action.
+    Button,
+    /// Text that navigates.
+    Link,
+    /// A single free input.
+    Input,
+    /// An on/off switch.
+    Toggle,
+    /// An image with alternative text.
+    Image,
+    /// A visual separator.
+    Divider,
+}
+
+impl PrimitiveKind {
+    /// Every primitive kind, in declaration order.
+    pub const ALL: [PrimitiveKind; 9] = [
+        PrimitiveKind::Text,
+        PrimitiveKind::Badge,
+        PrimitiveKind::Icon,
+        PrimitiveKind::Button,
+        PrimitiveKind::Link,
+        PrimitiveKind::Input,
+        PrimitiveKind::Toggle,
+        PrimitiveKind::Image,
+        PrimitiveKind::Divider,
+    ];
+
+    /// The name the document spells.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PrimitiveKind::Text => "text",
+            PrimitiveKind::Badge => "badge",
+            PrimitiveKind::Icon => "icon",
+            PrimitiveKind::Button => "button",
+            PrimitiveKind::Link => "link",
+            PrimitiveKind::Input => "input",
+            PrimitiveKind::Toggle => "toggle",
+            PrimitiveKind::Image => "image",
+            PrimitiveKind::Divider => "divider",
+        }
+    }
+
+    /// One line on when to use the kind.
+    pub fn summary(self) -> &'static str {
+        match self {
+            PrimitiveKind::Text => "a caption, heading or formatted value (`text` or `field`)",
+            PrimitiveKind::Badge => "a short value in a toned pill (`tone` or `tone_by`)",
+            PrimitiveKind::Icon => "a semantic icon with an accessible `label`",
+            PrimitiveKind::Button => "a button that runs one `action`",
+            PrimitiveKind::Link => "text that opens a page (`to`) or an address (`href`)",
+            PrimitiveKind::Input => "one free input bound to state (`binds`)",
+            PrimitiveKind::Toggle => "an on/off switch bound to state or running an action",
+            PrimitiveKind::Image => "an image with required `alt` text",
+            PrimitiveKind::Divider => "a visual separator",
         }
     }
 }
