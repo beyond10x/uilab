@@ -640,8 +640,9 @@ fn a_document_with_widgets_round_trips() {
         ["loan", "compact"],
         "params keep their order"
     );
-    assert!(card.params["loan"].required);
-    assert!(!card.params["compact"].required);
+    let param = |name: &str| serde_json::to_value(&card.params[name]).unwrap();
+    assert_eq!(param("loan")["required"], json!(true));
+    assert!(param("compact").get("required").is_none());
     assert_eq!(card.params["compact"].default, Some(json!(false)));
     assert_eq!(
         card.body
@@ -1192,4 +1193,149 @@ fn docs_list_widgets_with_params_and_use_sites_and_help_names_them() {
             kind.as_str()
         );
     }
+}
+
+/// A param keeps what it declares as written: an explicit `required: false`, an explicit
+/// `default: null`, and a key this subset does not type.
+#[test]
+fn a_param_keeps_what_it_declares_as_written() {
+    let text = WIDGETS.replace(
+        "      state: {type: string, required: true}\n",
+        "      state: {type: string, required: true}\n      tone: {type: string, required: false, default: null, label: Tone}\n",
+    );
+    let doc = Document::from_yaml(&text).unwrap();
+    let yaml = doc.to_yaml().unwrap();
+    for kept in ["required: false", "default: null", "label: Tone"] {
+        assert!(yaml.contains(kept), "`{kept}` was dropped:\n{yaml}");
+    }
+    assert_eq!(Document::from_yaml(&yaml).unwrap(), doc);
+    assert!(check(&doc).is_empty(), "{:#?}", check(&doc));
+}
+
+/// Every Node position `ui-spec/1` has that this subset keeps as untyped props: an instance there
+/// is checked like one in a typed position, reported at the composite that holds it.
+#[test]
+fn widget_instances_in_untyped_node_positions_are_checked() {
+    let list = "page:overview/section:list";
+    let with_prop = |key: &str, value: serde_json::Value| {
+        let mut doc = with_widgets();
+        doc.pages["overview"].sections["list"]
+            .as_mut()
+            .unwrap()
+            .props
+            .insert(key.into(), value);
+        doc
+    };
+    let missing = json!({"component": "loan_tile"});
+    for (key, value) in [
+        ("children", json!([{"name": "n", "component": "loan_tile"}])),
+        ("parts", json!([{"name": "n", "component": "loan_tile"}])),
+        ("choices", json!([{"name": "n", "component": "loan_tile"}])),
+        ("metrics", json!([{"name": "n", "component": "loan_tile"}])),
+        ("toolbar", json!([{"name": "n", "component": "loan_tile"}])),
+        ("expand", missing.clone()),
+        (
+            "columns",
+            json!([{"field": "state", "as": "choice", "choice": missing.clone()}]),
+        ),
+        ("tabs", json!([{"name": "t", "form": missing.clone()}])),
+        (
+            "children",
+            json!([{"name": "box", "component": "record", "parts": [{"name": "deep", "component": "loan_tile"}]}]),
+        ),
+    ] {
+        let doc = with_prop(key, value.clone());
+        assert_eq!(
+            errors(&doc),
+            [("widget_resolves", list.to_owned())],
+            "{key}: {value}"
+        );
+    }
+
+    let doc = with_prop(
+        "children",
+        json!([{"name": "badge", "component": "state_badge", "args": {"state": "row.state", "colour": "red"}}]),
+    );
+    assert_eq!(errors(&doc), [("widget_args", list.to_owned())]);
+    let message = &check(&doc)[0].message;
+    assert!(
+        message.starts_with("`children/badge`: unknown arg `colour`"),
+        "{message}"
+    );
+
+    let doc = with_prop(
+        "toolbar",
+        json!([{"name": "badge", "component": "state_badge"}]),
+    );
+    assert_eq!(errors(&doc), [("widget_args", list.to_owned())]);
+
+    let mut literal = with_widgets();
+    literal.pages["overview"].sections.insert(
+        "latest".into(),
+        Some(composite(
+            json!({"component": "loan_card", "args": {"loan": {"component": "loan_tile"}}}),
+        )),
+    );
+    assert!(
+        errors(&literal).is_empty(),
+        "an args literal is data, not a node"
+    );
+
+    let mut recursive = with_widgets();
+    recursive.widgets["state_badge"].body.push(
+        serde_json::from_value(json!({"name": "box", "component": "record",
+            "children": [{"name": "back", "component": "state_badge", "args": {"state": "x"}}]}))
+        .unwrap(),
+    );
+    assert_eq!(
+        errors(&recursive),
+        [(
+            "widget_recursion",
+            "component:state_badge/node:box".to_owned()
+        )]
+    );
+
+    let doc = with_prop(
+        "parts",
+        json!([{"name": "badge", "component": "state_badge", "args": {"state": "row.state"}}]),
+    );
+    assert!(errors(&doc).is_empty());
+    assert_eq!(
+        admit(
+            &doc,
+            &Patch::Remove {
+                target: path("component:state_badge")
+            }
+        )
+        .unwrap_err()
+        .check,
+        "widget_resolves",
+        "a widget used only in an untyped position cannot be removed"
+    );
+}
+
+/// The agent is offered declared widgets wherever a composite child can go, except the ones that
+/// would make the widget it is editing contain itself.
+#[test]
+fn the_agent_context_offers_widgets_that_do_not_recurse() {
+    let doc = with_widgets();
+    let kinds = |at: &str| node_context(&doc, &path(at)).unwrap().composite_kinds;
+    let widgets = |at: &str| -> Vec<&str> {
+        kinds(at)
+            .into_iter()
+            .filter(|k| doc.widgets.contains_key(*k))
+            .collect()
+    };
+    assert_eq!(kinds("page:overview").len(), 16);
+    assert_eq!(widgets("page:overview"), ["loan_card", "state_badge"]);
+    assert_eq!(
+        widgets("page:overview/section:board"),
+        ["loan_card", "state_badge"]
+    );
+    assert_eq!(widgets("component:loan_card"), ["state_badge"]);
+    assert!(
+        widgets("component:state_badge").is_empty(),
+        "loan_card holds state_badge, so neither can go into state_badge"
+    );
+    assert!(kinds("page:overview/section:latest").is_empty());
 }

@@ -466,20 +466,43 @@ fn unique_nodes<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec
 }
 
 /// One parameter of a widget.
+///
+/// What the document writes is kept as written: an explicit `required: false` and an explicit
+/// `default: null` survive a round trip, and keys this subset does not type stay in `extra`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Param {
     /// Its type: a primitive name, a constructor map or a named type.
     #[serde(rename = "type")]
     pub ty: Value,
-    /// Whether every instance must supply it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub required: bool,
-    /// Value used when an instance does not supply it.
+    /// Whether every instance must supply it, as written; absent means not required.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+    /// Value used when an instance does not supply it. `Some(Value::Null)` is an explicit
+    /// `default: null`; `None` is no default.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub default: Option<Value>,
     /// Author remark.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Keys this subset does not type, in document order.
+    #[serde(flatten)]
+    pub extra: IndexMap<String, Value>,
+}
+
+impl Param {
+    /// Whether every instance must supply it.
+    pub fn is_required(&self) -> bool {
+        self.required.unwrap_or(false)
+    }
+}
+
+/// A field that is present, whatever its value: `null` included.
+fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(deserializer).map(Some)
 }
 
 /// How a widget arranges its body.

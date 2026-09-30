@@ -365,34 +365,105 @@ fn check_widgets(out: &mut Findings, doc: &Document) {
         }
     }
     for (path, composite) in composites(doc) {
-        let Some(name) = composite.component.widget() else {
-            continue;
-        };
-        let Some(widget) = doc.widgets.get(name) else {
-            out.push(
-                "widget_resolves",
-                &path,
-                format!("`{name}` is neither a composite kind nor a declared widget"),
-            );
-            continue;
-        };
-        check_args(out, &path, name, widget, composite.args());
-        if let Some(Layer::Component) = path.0.first().map(|s| s.layer) {
-            let within = &path.0[0].name;
-            if name == within || reaches(doc, name, within) {
+        for instance in instances_in(composite) {
+            let name = instance.widget;
+            let at = instance
+                .trail
+                .as_ref()
+                .map_or(String::new(), |t| format!("`{t}`: "));
+            let Some(widget) = doc.widgets.get(name) else {
                 out.push(
-                    "widget_recursion",
+                    "widget_resolves",
                     &path,
-                    format!("widget `{within}` contains itself through `{name}`"),
+                    format!("{at}`{name}` is neither a composite kind nor a declared widget"),
                 );
+                continue;
+            };
+            check_args(out, &path, &at, name, widget, instance.args);
+            if let Some(Layer::Component) = path.0.first().map(|s| s.layer) {
+                let within = &path.0[0].name;
+                if name == within || reaches(doc, name, within) {
+                    out.push(
+                        "widget_recursion",
+                        &path,
+                        format!("{at}widget `{within}` contains itself through `{name}`"),
+                    );
+                }
             }
         }
     }
 }
 
+/// A widget instance held by a composite: the composite itself, or one written in its untyped
+/// props.
+struct Instance<'a> {
+    /// From the composite to the instance through its props (`children/badge`); `None` for the
+    /// composite itself.
+    trail: Option<String>,
+    /// The widget it names.
+    widget: &'a str,
+    /// Its `args`.
+    args: Option<&'a Value>,
+}
+
+/// The widget instances a composite holds without going through its typed `widgets` and `item`:
+/// the composite itself when it is one, then every instance in its untyped props, however deep.
+///
+/// `ui-spec/1` expects a Node in `children`, `parts`, `expand`, `choices`, `metrics`, `toolbar`, a
+/// field's `choice` and a tab's `form`; this subset keeps those as props. Any object there whose
+/// `component` is not a composite kind is a widget instance. An `args` value is data, not nodes,
+/// and is not searched.
+fn instances_in(composite: &Composite) -> Vec<Instance<'_>> {
+    fn walk<'a>(value: &'a Value, trail: String, out: &mut Vec<Instance<'a>>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(Value::String(name)) = map.get("component")
+                    && CompositeKind::parse(name).is_none()
+                {
+                    out.push(Instance {
+                        trail: Some(trail.clone()),
+                        widget: name,
+                        args: map.get("args"),
+                    });
+                }
+                for (key, v) in map {
+                    if key != "args" {
+                        walk(v, format!("{trail}/{key}"), out);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    let segment = item
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map_or(i.to_string(), str::to_owned);
+                    walk(item, format!("{trail}/{segment}"), out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(name) = composite.component.widget() {
+        out.push(Instance {
+            trail: None,
+            widget: name,
+            args: composite.args(),
+        });
+    }
+    for (key, value) in &composite.props {
+        if key != "args" {
+            walk(value, key.clone(), &mut out);
+        }
+    }
+    out
+}
+
 fn check_args(
     out: &mut Findings,
     path: &NodePath,
+    at: &str,
     name: &str,
     widget: &Widget,
     args: Option<&Value>,
@@ -405,7 +476,7 @@ fn check_args(
             out.push(
                 "widget_args",
                 path,
-                format!("the args of `{name}` are not a map of param to value"),
+                format!("{at}the args of `{name}` are not a map of param to value"),
             );
             return;
         }
@@ -415,29 +486,27 @@ fn check_args(
             out.push(
                 "widget_args",
                 path,
-                format!("unknown arg `{arg}`: widget `{name}` declares no such param"),
+                format!("{at}unknown arg `{arg}`: widget `{name}` declares no such param"),
             );
         }
     }
     for (param, declared) in &widget.params {
-        if declared.required && !args.contains_key(param) {
+        if declared.is_required() && !args.contains_key(param) {
             out.push(
                 "widget_args",
                 path,
-                format!("missing required arg `{param}` of widget `{name}`"),
+                format!("{at}missing required arg `{param}` of widget `{name}`"),
             );
         }
     }
 }
 
-/// The widgets a widget's body instantiates, however deep.
+/// The widgets a widget's body instantiates, however deep, typed or held in props.
 fn uses(widget: &Widget) -> Vec<&str> {
     let mut stack: Vec<&Composite> = widget.body.iter().filter_map(Node::composite).collect();
     let mut out = Vec::new();
     while let Some(composite) = stack.pop() {
-        if let Some(name) = composite.component.widget() {
-            out.push(name);
-        }
+        out.extend(instances_in(composite).into_iter().map(|i| i.widget));
         stack.extend(composite.widgets.values());
         stack.extend(composite.item.values());
     }
@@ -445,7 +514,7 @@ fn uses(widget: &Widget) -> Vec<&str> {
 }
 
 /// Whether widget `from` contains widget `to`, directly or through other widgets.
-fn reaches(doc: &Document, from: &str, to: &str) -> bool {
+pub(crate) fn reaches(doc: &Document, from: &str, to: &str) -> bool {
     let mut seen = HashSet::new();
     let mut stack = vec![from];
     while let Some(name) = stack.pop() {

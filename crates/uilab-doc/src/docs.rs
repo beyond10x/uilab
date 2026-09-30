@@ -307,7 +307,7 @@ fn widgets_markdown(out: &mut String, doc: &Document, all: &[(NodePath, &Composi
                     out,
                     "| `{param}` | {} | {} | {} | {} |",
                     inline(&declared.ty),
-                    if declared.required { "yes" } else { "no" },
+                    if declared.is_required() { "yes" } else { "no" },
                     declared.default.as_ref().map_or("-".to_owned(), inline),
                     declared.note.as_deref().unwrap_or("")
                 );

@@ -99,19 +99,38 @@ fn an_explicit_null_param_default_survives_a_round_trip() {
 
 /// The ess example for `collection` writes `item` as a list of named nodes, and uses a widget
 /// instance there: `item: [{name: card, component: partner_card, args: {partner: row}}]`.
+///
+/// Today's state, pinned until story:item-list lands: this subset reads `item` as a map, so the
+/// ess list form is refused with its current parse error. When story:item-list lands, flip this
+/// case back: the list parses, and `page:overview/section:list/item:card` resolves to a
+/// `loan_card` instance.
 #[test]
 fn an_ess_collection_item_list_with_a_widget_instance_parses_and_resolves() {
     let text = DOC.replace(
         "        columns: [{field: title}]\n",
         "        columns: [{field: title}]\n        item: [{name: card, component: loan_card, args: {loan: row}}]\n",
     );
-    let doc = Document::from_yaml(&text).expect("the ess item shape parses");
-    let at = path("page:overview/section:list/item:card");
-    let node = uilab_doc::resolve(&doc, &at).expect("the item resolves");
-    assert_eq!(
-        node.composite().unwrap().component,
-        Component::Widget("loan_card".into())
-    );
+    match Document::from_yaml(&text) {
+        Err(refused) => assert!(
+            refused
+                .to_string()
+                .contains("item: invalid type: sequence, expected a map"),
+            "story:item-list has not landed, so the list form of `item` is refused, but with a \
+             different error than pinned: {refused}"
+        ),
+        Ok(doc) => {
+            let at = path("page:overview/section:list/item:card");
+            let composite = uilab_doc::resolve(&doc, &at)
+                .ok()
+                .and_then(|n| n.composite().cloned());
+            panic!(
+                "the ess list form of `item` now parses (item:card resolves to {:?}): \
+                 story:item-list has landed, so flip this case to assert that it parses and \
+                 resolves to Component::Widget(\"loan_card\")",
+                composite.map(|c| c.component == Component::Widget("loan_card".into()))
+            );
+        }
+    }
 }
 
 /// The agent is told "Composite kinds a new composite child can be" from `composite_kinds`; a

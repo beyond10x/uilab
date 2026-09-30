@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use crate::check::reaches;
 use crate::model::{CompositeKind, Document};
 use crate::path::{Layer, NodePath, NodeRef, PathError, allowed_children, children, resolve};
 
@@ -103,7 +104,7 @@ fn node(doc: &Document, path: &NodePath) -> Result<OutlineNode, PathError> {
 
 /// What an agent needs to know to propose a patch at one node.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct NodeContext {
+pub struct NodeContext<'a> {
     /// The node.
     pub path: String,
     /// Its layer.
@@ -114,8 +115,9 @@ pub struct NodeContext {
     pub ancestors: Vec<String>,
     /// Layers a new child can take here.
     pub allowed_children: Vec<Layer>,
-    /// Composite kinds a new composite child can be.
-    pub composite_kinds: Vec<&'static str>,
+    /// What a new composite child can be: every built-in kind, then every declared widget that
+    /// would not make a widget contain itself.
+    pub composite_kinds: Vec<&'a str>,
     /// Existing children, as `layer:name`.
     pub children: Vec<String>,
     /// The node itself, as YAML.
@@ -123,11 +125,25 @@ pub struct NodeContext {
 }
 
 /// The context of the node at `path`.
-pub fn node_context(doc: &Document, path: &NodePath) -> Result<NodeContext, PathError> {
+pub fn node_context<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeContext<'a>, PathError> {
     let found = resolve(doc, path)?;
     let allowed = allowed_children(doc, path)?;
     let composite_kinds = if allowed.iter().any(|l| l.is_composite()) {
-        CompositeKind::ALL.iter().map(|k| k.as_str()).collect()
+        let within = path
+            .0
+            .first()
+            .filter(|s| s.layer == Layer::Component)
+            .map(|s| s.name.as_str());
+        CompositeKind::ALL
+            .iter()
+            .map(|k| k.as_str())
+            .chain(
+                doc.widgets
+                    .keys()
+                    .map(String::as_str)
+                    .filter(|w| within.is_none_or(|own| *w != own && !reaches(doc, w, own))),
+            )
+            .collect()
     } else {
         Vec::new()
     };
