@@ -3,6 +3,7 @@
 
 mod api;
 mod app;
+mod eval;
 mod journal;
 mod op;
 mod wire;

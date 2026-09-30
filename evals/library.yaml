@@ -1,0 +1,102 @@
+suite: library
+document: examples/library/library.ui.yaml
+cases:
+  - id: overdue-table
+    target: page:loans
+    say: add a table of overdue loans with the title, the member and the due date
+    expect: {op: Insert, layer: section, component: collection}
+
+  - id: filler-words
+    target: page:loans
+    say: um so can you like add uh a list of loans that are due soon please
+    expect: {op: Insert, layer: section, component: collection}
+
+  - id: misheard-kind
+    target: page:overview
+    say: add a collections of recent members
+    expect: {op: Insert, layer: section, component: collection}
+
+  - id: metric-count
+    target: page:members
+    say: add a number showing how many members we have
+    expect: {op: Insert, layer: section, component: metric}
+
+  - id: chart
+    target: page:overview
+    say: add a chart of loans per week
+    expect: {op: Insert, layer: section, component: chart}
+
+  - id: filter-bar
+    target: page:loans
+    say: add a filter bar to search loans by title and member
+    expect: {op: Insert, layer: section, component: filter_bar}
+
+  - id: record
+    target: page:members
+    say: add a details card for the selected member with name, joined and standing
+    expect: {op: Insert, layer: section, component: record}
+
+  - id: drawer-form
+    target: page:members
+    say: add a drawer to add a new member with name and email
+    expect: {op: Insert, layer: overlay, component: form}
+
+  - id: confirm-dialog
+    target: page:loans
+    say: add a confirmation dialog before a loan is cancelled
+    expect: {op: Insert, layer: overlay, component: confirm}
+
+  - id: new-page-in-menu
+    target: /
+    say: add a page for reservations in the circulation menu with a table of reservations
+    expect: {op: Insert, layer: page}
+
+  - id: new-hidden-page
+    target: /
+    say: add a settings page for library opening hours
+    expect: {op: Insert, layer: page}
+
+  - id: nav-section
+    target: nav
+    say: add a menu section called reports
+    expect: {op: Insert, layer: nav_section}
+
+  - id: rename-title
+    target: page:members/section:list
+    say: give this table the title all members
+    expect: {op: Replace, layer: section, component: collection}
+
+  - id: add-column
+    target: page:loans/section:list
+    say: also show the member in this table
+    expect: {op: Replace, layer: section, component: collection}
+
+  - id: remove-section
+    target: page:overview/section:recent
+    say: remove this
+    expect: {op: Remove, layer: section}
+
+  - id: board-widget
+    target: page:overview
+    say: add a dashboard board with a widget for overdue loans
+    expect: {op: Insert, layer: section, component: board}
+
+  - id: item-in-collection
+    target: page:members/section:list
+    say: show a small metric of open loans in each member row
+    expect: {op: Insert, layer: item, component: metric}
+
+  - id: shell-overlay
+    target: shell:app
+    say: add a help popover available on every page
+    expect: {op: Insert, layer: overlay}
+
+  - id: german
+    target: page:members
+    say: füge eine Tabelle mit den Mitgliedern hinzu, mit Name und Beitrittsdatum
+    expect: {op: Insert, layer: section, component: collection}
+
+  - id: row-action
+    target: page:members/section:list
+    say: add an edit action on each row that opens a drawer to edit the member
+    expect: {op: Replace, layer: section, component: collection}

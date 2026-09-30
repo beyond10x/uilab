@@ -23,6 +23,7 @@ uilab-agent = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 indexmap = { workspace = true }
+serde_yaml = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time"] }

@@ -53,6 +53,23 @@ pub enum OpCommand {
     Undo { id: Option<String> },
     /// Print the document: revision, selection, findings and the tree.
     State,
+    /// Run an instruction suite, judge each proposal, reject it, and write a report.
+    Eval {
+        /// The suite file.
+        suite: PathBuf,
+        /// Round number, part of the report name.
+        #[arg(long, default_value_t = 1)]
+        round: u32,
+        /// Report directory.
+        #[arg(long, default_value = "evals/reports")]
+        out: PathBuf,
+        /// The agent model the server runs, for the report.
+        #[arg(long, default_value = uilab_agent::DEFAULT_MODEL)]
+        model: String,
+        /// Run only these case ids.
+        #[arg(long)]
+        only: Vec<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -111,6 +128,69 @@ pub async fn run(op: Op) -> Result<(), String> {
         OpCommand::State => {
             let document: Server = get(&http, &format!("{}/api/state", cached.server)).await?;
             print(&document, op.json);
+            return Ok(());
+        }
+        OpCommand::Eval {
+            suite,
+            round,
+            out,
+            model,
+            only,
+        } => {
+            let suite = crate::eval::load(&suite)?;
+            if cached.operator_id.is_empty() {
+                cached.kind = "agent".into();
+                join(&http, &op.name, &mut cached).await?;
+            }
+            let mut outcomes = Vec::new();
+            for case in suite
+                .cases
+                .iter()
+                .filter(|c| only.is_empty() || only.contains(&c.id))
+            {
+                let say = client(
+                    serde_json::json!({"type": "say", "value": {"text": case.say, "target": case.target}}),
+                )?;
+                let started = std::time::Instant::now();
+                let acted = match act(&http, &cached, &say).await {
+                    Err(e) if e.starts_with("404") => {
+                        join(&http, &op.name, &mut cached).await?;
+                        act(&http, &cached, &say).await?
+                    }
+                    other => other?,
+                };
+                let ms = crate::eval::elapsed(started);
+                let outcome = crate::eval::judge(case, &acted.messages, ms);
+                println!(
+                    "{} {:<20} {:>6} ms  {}{}",
+                    if outcome.pass { "pass" } else { "FAIL" },
+                    outcome.id,
+                    outcome.ms,
+                    outcome.got,
+                    if outcome.pass {
+                        String::new()
+                    } else {
+                        format!("  [{}]", outcome.reasons.join("; "))
+                    },
+                );
+                for m in &acted.messages {
+                    if let Server::Proposal(p) = m {
+                        let reject = client(
+                            serde_json::json!({"type": "reject", "value": {"proposal_id": p.proposal_id.0}}),
+                        )?;
+                        act(&http, &cached, &reject).await?;
+                    }
+                }
+                outcomes.push(outcome);
+            }
+            let path = crate::eval::report(&out, &suite, round, &model, &outcomes)?;
+            let passed = outcomes.iter().filter(|o| o.pass).count();
+            println!(
+                "{passed} of {} pass; report {}",
+                outcomes.len(),
+                path.display()
+            );
+            save(&op.name, &cached)?;
             return Ok(());
         }
         OpCommand::Say { target, text } => client(serde_json::json!({
