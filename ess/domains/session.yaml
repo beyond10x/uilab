@@ -1,0 +1,402 @@
+domain: uilab.session
+
+summary: >-
+  One open UI document, the node the operator has selected in it, and the patches an agent proposes
+  there. A patch changes the document only when the operator accepts it.
+
+naming:
+  wire: session
+  display: Session
+
+types:
+  - name: uilab.session.DocumentId
+    kind: newtype
+    of: Uuid
+
+  - name: uilab.session.ProposalId
+    kind: newtype
+    of: Uuid
+
+  # A node path: `/`-separated segments of `<layer>:<name>`, keyed by name and never by position, so
+  # adding a sibling does not move an existing path. `shell:app/region:nav`, `page:deals/section:list`.
+  - name: uilab.session.NodePath
+    kind: newtype
+    of: String
+
+  # The node a patch inserts or replaces with, as ui-spec/1 YAML read into JSON. Absent for Remove.
+  - name: uilab.session.PatchBody
+    kind: newtype
+    of: Json
+
+  - name: uilab.session.PatchOp
+    kind: enum
+    variants: [Insert, Replace, Remove]
+
+entities:
+  - name: uilab.session.Document
+    identity:
+      name: document_id
+      type: uilab.session.DocumentId
+    fields:
+      - name: path
+        type: String
+      - name: selected
+        type: uilab.session.NodePath
+    relations:
+      - name: proposals
+        kind: owns
+        target: uilab.session.Proposal
+        cardinality: many
+        via: document_id
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+  # A proposal that fails a document check is refused by ProposePatch and never exists, so every
+  # proposal here was admissible against the document it was made on.
+  - name: uilab.session.Proposal
+    identity:
+      name: proposal_id
+      type: uilab.session.ProposalId
+    fields:
+      - name: document_id
+        type: uilab.session.DocumentId
+      - name: target
+        type: uilab.session.NodePath
+      - name: op
+        type: uilab.session.PatchOp
+      - name: utterance
+        type: String
+    lifecycle:
+      initial: Proposed
+      states: [Proposed, Accepted, Rejected, Undone]
+      terminal: [Rejected, Undone]
+      transitions:
+        - name: accept
+          from: [Proposed]
+          to: Accepted
+        - name: reject
+          from: [Proposed]
+          to: Rejected
+        - name: undo
+          from: [Accepted]
+          to: Undone
+
+# The operator decides; the agent only proposes. Neither holds the other's commands.
+actors:
+  - name: uilab.session.Operator
+    may:
+      - uilab.session.OpenDocument
+      - uilab.session.SelectNode
+      - uilab.session.AcceptProposal
+      - uilab.session.RejectProposal
+      - uilab.session.UndoProposal
+    naming:
+      display: Operator
+
+  - name: uilab.session.Agent
+    may:
+      - uilab.session.ProposePatch
+    naming:
+      display: Agent
+
+errors:
+  - name: uilab.session.DocumentUnreadable
+    summary: The file is not a ui-spec/1 document, so nothing was opened.
+    fields:
+      - name: path
+        type: String
+
+  - name: uilab.session.DocumentNotOpen
+    summary: No open document has this id, so nothing changed.
+    fields:
+      - name: document_id
+        type: uilab.session.DocumentId
+
+  - name: uilab.session.NodeNotFound
+    summary: No node of the document has this path, so the selection did not change.
+    fields:
+      - name: path
+        type: uilab.session.NodePath
+
+  - name: uilab.session.PatchRefused
+    summary: The patch fails a document check, so no proposal was made.
+    fields:
+      - name: check
+        type: String
+
+  - name: uilab.session.ProposalStateConflict
+    summary: The proposal is not in a state this command acts from, so nothing moved.
+    fields:
+      - name: state
+        type: uilab.session.Proposal.State
+
+commands:
+  - name: uilab.session.OpenDocument
+    naming:
+      wire: open-document
+      display: Open a document
+    input:
+      - name: path
+        type: String
+    outcomes:
+      - name: opened
+        creates: uilab.session.Document
+        instance: document_id
+        sets:
+          path: input.path
+        emits:
+          - uilab.session.DocumentOpened
+        payload:
+          uilab.session.DocumentOpened:
+            document_id: {generated: true}
+            path: input.path
+        summary: The document is open with its root selected.
+
+      - name: unreadable
+        external: the file does not parse as a ui-spec/1 document
+        error: uilab.session.DocumentUnreadable
+        summary: Nothing was opened.
+
+  - name: uilab.session.SelectNode
+    naming:
+      wire: select-node
+      display: Select a node
+    input:
+      - name: document_id
+        type: uilab.session.DocumentId
+      - name: path
+        type: uilab.session.NodePath
+    outcomes:
+      - name: selected
+        updates: uilab.session.Document
+        instance: document_id
+        sets:
+          selected: input.path
+        emits:
+          - uilab.session.NodeSelected
+        payload:
+          uilab.session.NodeSelected:
+            document_id: input.document_id
+            path: input.path
+        summary: The node at the path is selected; proposals are made there.
+
+      - name: unknown-document
+        external: no document with this id is open
+        error: uilab.session.DocumentNotOpen
+        summary: The selection did not change.
+
+      - name: not-found
+        external: the document has no node at this path
+        error: uilab.session.NodeNotFound
+        summary: The selection did not change.
+
+  - name: uilab.session.ProposePatch
+    naming:
+      wire: propose-patch
+      display: Propose a patch
+    input:
+      - name: document_id
+        type: uilab.session.DocumentId
+      - name: target
+        type: uilab.session.NodePath
+      - name: op
+        type: uilab.session.PatchOp
+      - name: utterance
+        type: String
+      - name: body
+        type: Optional<uilab.session.PatchBody>
+    outcomes:
+      - name: proposed
+        creates: uilab.session.Proposal
+        instance: proposal_id
+        sets:
+          document_id: input.document_id
+          target: input.target
+          op: input.op
+          utterance: input.utterance
+        emits:
+          - uilab.session.PatchProposed
+        payload:
+          uilab.session.PatchProposed:
+            proposal_id: {generated: true}
+            document_id: input.document_id
+            target: input.target
+            op: input.op
+        summary: The patch passes every document check and waits for the operator.
+
+      - name: refused
+        external: the patched document fails a document check
+        error: uilab.session.PatchRefused
+        summary: No proposal was made and the document is unchanged.
+
+  - name: uilab.session.AcceptProposal
+    naming:
+      wire: accept-proposal
+      display: Accept a proposal
+    input:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+    outcomes:
+      - name: accepted
+        moves: uilab.session.Proposal.accept
+        instance: proposal_id
+        emits:
+          - uilab.session.ProposalAccepted
+        payload:
+          uilab.session.ProposalAccepted:
+            proposal_id: input.proposal_id
+        summary: The patch is applied and the document is saved.
+
+      - name: stale
+        external: the document changed since the proposal and the patch no longer applies
+        error: uilab.session.PatchRefused
+        summary: The proposal stays waiting and the document is unchanged.
+
+      - name: wrong-state
+        wrong_state: true
+        error: uilab.session.ProposalStateConflict
+        summary: The proposal is not waiting, so the document is unchanged.
+
+  - name: uilab.session.RejectProposal
+    naming:
+      wire: reject-proposal
+      display: Reject a proposal
+    input:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+    outcomes:
+      - name: rejected
+        moves: uilab.session.Proposal.reject
+        instance: proposal_id
+        emits:
+          - uilab.session.ProposalRejected
+        payload:
+          uilab.session.ProposalRejected:
+            proposal_id: input.proposal_id
+        summary: The patch is dropped and the document is unchanged.
+
+      - name: wrong-state
+        wrong_state: true
+        error: uilab.session.ProposalStateConflict
+        summary: The proposal is not waiting, so nothing was rejected.
+
+  - name: uilab.session.UndoProposal
+    naming:
+      wire: undo-proposal
+      display: Undo a proposal
+    input:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+    outcomes:
+      - name: undone
+        moves: uilab.session.Proposal.undo
+        instance: proposal_id
+        emits:
+          - uilab.session.ProposalUndone
+        payload:
+          uilab.session.ProposalUndone:
+            proposal_id: input.proposal_id
+        summary: The document is back to what it was before the patch, and saved.
+
+      - name: stale
+        external: a later change to the document would be lost by undoing this one
+        error: uilab.session.PatchRefused
+        summary: The document is unchanged.
+
+      - name: wrong-state
+        wrong_state: true
+        error: uilab.session.ProposalStateConflict
+        summary: The proposal was never applied, so there is nothing to undo.
+
+events:
+  - name: uilab.session.DocumentOpened
+    fields:
+      - name: document_id
+        type: uilab.session.DocumentId
+      - name: path
+        type: String
+
+  - name: uilab.session.NodeSelected
+    fields:
+      - name: document_id
+        type: uilab.session.DocumentId
+      - name: path
+        type: uilab.session.NodePath
+
+  - name: uilab.session.PatchProposed
+    fields:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+      - name: document_id
+        type: uilab.session.DocumentId
+      - name: target
+        type: uilab.session.NodePath
+      - name: op
+        type: uilab.session.PatchOp
+
+  - name: uilab.session.ProposalAccepted
+    fields:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+
+  - name: uilab.session.ProposalRejected
+    fields:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+
+  - name: uilab.session.ProposalUndone
+    fields:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+
+views:
+  - name: uilab.session.Documents
+    source: uilab.session.Document
+    consistency: read_your_writes
+    fields:
+      - name: document_id
+        type: uilab.session.DocumentId
+      - name: path
+        type: String
+      - name: selected
+        type: uilab.session.NodePath
+    naming:
+      wire: documents
+      display: Documents
+
+  - name: uilab.session.Proposals
+    source: uilab.session.Proposal
+    consistency: read_your_writes
+    fields:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+      - name: document_id
+        type: uilab.session.DocumentId
+      - name: target
+        type: uilab.session.NodePath
+      - name: op
+        type: uilab.session.PatchOp
+      - name: utterance
+        type: String
+      - name: state
+        type: uilab.session.Proposal.State
+    naming:
+      wire: proposals
+      display: Proposals
+
+  - name: uilab.session.Pending
+    source: uilab.session.Proposal
+    consistency: read_your_writes
+    filter: state == Proposed
+    fields:
+      - name: proposal_id
+        type: uilab.session.ProposalId
+      - name: target
+        type: uilab.session.NodePath
+      - name: op
+        type: uilab.session.PatchOp
+    naming:
+      wire: pending
+      display: Pending proposals

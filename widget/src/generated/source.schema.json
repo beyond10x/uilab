@@ -1,0 +1,660 @@
+{
+  "$defs": {
+    "uilab.session.DocumentId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "DocumentId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "uilab.session.DocumentId"
+    },
+    "uilab.session.NodePath": {
+      "title": "NodePath",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "uilab.session.NodePath"
+    },
+    "uilab.session.PatchOp": {
+      "enum": [
+        "Insert",
+        "Replace",
+        "Remove"
+      ],
+      "title": "PatchOp",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "uilab.session.PatchOp"
+    },
+    "uilab.session.ProposalId": {
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "title": "ProposalId",
+      "type": "string",
+      "x-ess-kind": "newtype",
+      "x-ess-name": "uilab.session.ProposalId"
+    },
+    "uilab.wire.ClientMessage": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "accept",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Decide"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "accept",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "mic",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Mic"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "mic",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "reject",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Decide"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "reject",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "rows",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.ReadRows"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "rows",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "say",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Say"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "say",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "select",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Select"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "select",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "undo",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Decide"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "undo",
+          "type": "object"
+        }
+      ],
+      "title": "ClientMessage",
+      "x-ess-kind": "union",
+      "x-ess-name": "uilab.wire.ClientMessage",
+      "x-ess-union-tag": "type"
+    },
+    "uilab.wire.Decide": {
+      "additionalProperties": false,
+      "properties": {
+        "proposal_id": {
+          "$ref": "#/$defs/uilab.session.ProposalId"
+        }
+      },
+      "required": [
+        "proposal_id"
+      ],
+      "title": "Decide",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Decide"
+    },
+    "uilab.wire.DocumentState": {
+      "additionalProperties": false,
+      "properties": {
+        "document_id": {
+          "$ref": "#/$defs/uilab.session.DocumentId"
+        },
+        "file": {
+          "type": "string"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/uilab.wire.Finding"
+          },
+          "type": "array"
+        },
+        "outline": {
+          "$ref": "#/$defs/uilab.wire.OutlineNode"
+        },
+        "selected": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "title": {
+          "type": "string"
+        },
+        "undoable": {
+          "$ref": "#/$defs/uilab.session.ProposalId"
+        }
+      },
+      "required": [
+        "document_id",
+        "file",
+        "selected",
+        "outline",
+        "findings"
+      ],
+      "title": "DocumentState",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.DocumentState"
+    },
+    "uilab.wire.Failed": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "Failed",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Failed"
+    },
+    "uilab.wire.Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/uilab.wire.Severity"
+        }
+      },
+      "required": [
+        "check",
+        "severity",
+        "path",
+        "message"
+      ],
+      "title": "Finding",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Finding"
+    },
+    "uilab.wire.Mic": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/uilab.wire.MicState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "Mic",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Mic"
+    },
+    "uilab.wire.MicState": {
+      "enum": [
+        "open",
+        "closed"
+      ],
+      "title": "MicState",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "uilab.wire.MicState"
+    },
+    "uilab.wire.OutlineNode": {
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "items": {
+            "$ref": "#/$defs/uilab.wire.OutlineNode"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "layer": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "props": {},
+        "title": {
+          "type": "string"
+        },
+        "view": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "layer",
+        "name",
+        "kind",
+        "children"
+      ],
+      "title": "OutlineNode",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.OutlineNode"
+    },
+    "uilab.wire.ProposalShown": {
+      "additionalProperties": false,
+      "properties": {
+        "after": {
+          "type": "string"
+        },
+        "before": {
+          "type": "string"
+        },
+        "changed": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/uilab.wire.Finding"
+          },
+          "type": "array"
+        },
+        "op": {
+          "$ref": "#/$defs/uilab.session.PatchOp"
+        },
+        "outline": {
+          "$ref": "#/$defs/uilab.wire.OutlineNode"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/uilab.session.ProposalId"
+        },
+        "target": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "utterance": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "target",
+        "changed",
+        "op",
+        "utterance",
+        "before",
+        "after",
+        "findings",
+        "outline"
+      ],
+      "title": "ProposalShown",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.ProposalShown"
+    },
+    "uilab.wire.ReadRows": {
+      "additionalProperties": false,
+      "properties": {
+        "view": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "view"
+      ],
+      "title": "ReadRows",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.ReadRows"
+    },
+    "uilab.wire.Refused": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "check",
+        "message"
+      ],
+      "title": "Refused",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Refused"
+    },
+    "uilab.wire.Rows": {
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "items": {},
+          "type": "array"
+        },
+        "total": {
+          "type": "integer"
+        },
+        "view": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "view",
+        "rows"
+      ],
+      "title": "Rows",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Rows"
+    },
+    "uilab.wire.Say": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "Say",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Say"
+    },
+    "uilab.wire.Select": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "Select",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Select"
+    },
+    "uilab.wire.ServerMessage": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "document",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.DocumentState"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "document",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "failed",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Failed"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "failed",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "proposal",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.ProposalShown"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "proposal",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "refused",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Refused"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "refused",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "rows",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Rows"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "rows",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "thinking",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Thinking"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "thinking",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "transcript",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Transcript"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "transcript",
+          "type": "object"
+        }
+      ],
+      "title": "ServerMessage",
+      "x-ess-kind": "union",
+      "x-ess-name": "uilab.wire.ServerMessage",
+      "x-ess-union-tag": "type"
+    },
+    "uilab.wire.Severity": {
+      "enum": [
+        "error",
+        "warning"
+      ],
+      "title": "Severity",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "uilab.wire.Severity"
+    },
+    "uilab.wire.Thinking": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "title": "Thinking",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Thinking"
+    },
+    "uilab.wire.Transcript": {
+      "additionalProperties": false,
+      "properties": {
+        "audio_ms": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "took_ms": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "text",
+        "audio_ms",
+        "took_ms"
+      ],
+      "title": "Transcript",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Transcript"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-ess-provenance": {
+    "contract_digest": "slice-sha256/2:722db7ad0bfb3dee692a0fd2f48c9c89fc52856ec55df3333976092691be30fd",
+    "source_digest": "55369e6e2fd022d062872af44b9c252bf6b80b0b82da849d828e32c4bf780a9f",
+    "specification_version": "v1",
+    "system": "uilab"
+  }
+}

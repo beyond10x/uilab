@@ -1,0 +1,1193 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "uilab-session",
+    "summary": "Holds the open document, the selection and every proposal made against it.",
+    "description": "The HTTP surface of `uilab-session`, one of the components of `uilab` v1.\n\nEvery path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport; they are not returned here.\n\nThis component declares `reached_by: network`, so its callers are not deployed with it and this contract is the surface they reach it through. That declaration is also why the views its domains declare have paths here: a GET under `views` per projection, answering every row it holds. There is no page size, no cursor, no ordering and no filter parameter, because the specification states none — a view's filter is part of the projection, not of the request.",
+    "version": "v1",
+    "x-ess-provenance": {
+      "system": "uilab",
+      "specification_version": "v1",
+      "source_digest": "55369e6e2fd022d062872af44b9c252bf6b80b0b82da849d828e32c4bf780a9f",
+      "contract_digest": "slice-sha256/2:c49454ceb9a01bd3427c10a242c4c41dd42f5a10258cd980365deda9e4b9659a"
+    },
+    "x-ess-reached-by": "network"
+  },
+  "tags": [
+    {
+      "name": "session",
+      "description": "One open UI document, the node the operator has selected in it, and the patches an agent proposes there. A patch changes the document only when the operator accepts it."
+    }
+  ],
+  "paths": {
+    "/session/commands/accept-proposal": {
+      "post": {
+        "operationId": "uilab.session.AcceptProposal",
+        "summary": "Accept a proposal",
+        "tags": [
+          "session"
+        ],
+        "x-ess-may-invoke": [
+          "uilab.session.Operator"
+        ],
+        "requestBody": {
+          "description": "The input `uilab.session.AcceptProposal` declares.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/uilab.session.AcceptProposal.Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.AcceptProposal.accepted.Response"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Outcome `wrong-state`: the input was acceptable and the subject is in a state this command does not act from. Resending the same request changes nothing until something else moves it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.AcceptProposal.wrong-state.Response"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Outcome `stale`: something outside the request refused. The input was acceptable, so the caller has nothing to correct and a retry is meaningful.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.AcceptProposal.stale.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/commands/open-document": {
+      "post": {
+        "operationId": "uilab.session.OpenDocument",
+        "summary": "Open a document",
+        "tags": [
+          "session"
+        ],
+        "x-ess-may-invoke": [
+          "uilab.session.Operator"
+        ],
+        "requestBody": {
+          "description": "The input `uilab.session.OpenDocument` declares.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/uilab.session.OpenDocument.Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Outcome `opened`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.OpenDocument.opened.Response"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Outcome `unreadable`: something outside the request refused. The input was acceptable, so the caller has nothing to correct and a retry is meaningful.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.OpenDocument.unreadable.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/commands/propose-patch": {
+      "post": {
+        "operationId": "uilab.session.ProposePatch",
+        "summary": "Propose a patch",
+        "tags": [
+          "session"
+        ],
+        "x-ess-may-invoke": [
+          "uilab.session.Agent"
+        ],
+        "requestBody": {
+          "description": "The input `uilab.session.ProposePatch` declares.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/uilab.session.ProposePatch.Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Outcome `proposed`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.ProposePatch.proposed.Response"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Outcome `refused`: something outside the request refused. The input was acceptable, so the caller has nothing to correct and a retry is meaningful.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.ProposePatch.refused.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/commands/reject-proposal": {
+      "post": {
+        "operationId": "uilab.session.RejectProposal",
+        "summary": "Reject a proposal",
+        "tags": [
+          "session"
+        ],
+        "x-ess-may-invoke": [
+          "uilab.session.Operator"
+        ],
+        "requestBody": {
+          "description": "The input `uilab.session.RejectProposal` declares.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/uilab.session.RejectProposal.Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Outcome `rejected`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.RejectProposal.rejected.Response"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Outcome `wrong-state`: the input was acceptable and the subject is in a state this command does not act from. Resending the same request changes nothing until something else moves it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.RejectProposal.wrong-state.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/commands/select-node": {
+      "post": {
+        "operationId": "uilab.session.SelectNode",
+        "summary": "Select a node",
+        "tags": [
+          "session"
+        ],
+        "x-ess-may-invoke": [
+          "uilab.session.Operator"
+        ],
+        "requestBody": {
+          "description": "The input `uilab.session.SelectNode` declares.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/uilab.session.SelectNode.Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Outcome `selected`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.SelectNode.selected.Response"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Outcomes `unknown-document` and `not-found`: something outside the request refused. The input was acceptable, so the caller has nothing to correct and a retry is meaningful.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "discriminator": {
+                    "mapping": {
+                      "not-found": "#/components/schemas/uilab.session.SelectNode.not-found.Response",
+                      "unknown-document": "#/components/schemas/uilab.session.SelectNode.unknown-document.Response"
+                    },
+                    "propertyName": "outcome"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/uilab.session.SelectNode.unknown-document.Response"
+                    },
+                    {
+                      "$ref": "#/components/schemas/uilab.session.SelectNode.not-found.Response"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/commands/undo-proposal": {
+      "post": {
+        "operationId": "uilab.session.UndoProposal",
+        "summary": "Undo a proposal",
+        "tags": [
+          "session"
+        ],
+        "x-ess-may-invoke": [
+          "uilab.session.Operator"
+        ],
+        "requestBody": {
+          "description": "The input `uilab.session.UndoProposal` declares.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/uilab.session.UndoProposal.Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Outcome `undone`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.UndoProposal.undone.Response"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Outcome `wrong-state`: the input was acceptable and the subject is in a state this command does not act from. Resending the same request changes nothing until something else moves it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.UndoProposal.wrong-state.Response"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Outcome `stale`: something outside the request refused. The input was acceptable, so the caller has nothing to correct and a retry is meaningful.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.UndoProposal.stale.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/views/documents": {
+      "get": {
+        "operationId": "uilab.session.Documents",
+        "summary": "Documents",
+        "tags": [
+          "session"
+        ],
+        "x-ess-consistency": "read_your_writes",
+        "responses": {
+          "200": {
+            "description": "Every row of `uilab.session.Documents`, a projection of `uilab.session.Document`. Contains every instance. Read-your-writes: a caller that has just issued a command sees its effect here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.Documents.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/views/pending": {
+      "get": {
+        "operationId": "uilab.session.Pending",
+        "summary": "Pending proposals",
+        "tags": [
+          "session"
+        ],
+        "x-ess-consistency": "read_your_writes",
+        "responses": {
+          "200": {
+            "description": "Every row of `uilab.session.Pending`, a projection of `uilab.session.Proposal`. Contains the instances where `state == Proposed` holds. Read-your-writes: a caller that has just issued a command sees its effect here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.Pending.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session/views/proposals": {
+      "get": {
+        "operationId": "uilab.session.Proposals",
+        "summary": "Proposals",
+        "tags": [
+          "session"
+        ],
+        "x-ess-consistency": "read_your_writes",
+        "responses": {
+          "200": {
+            "description": "Every row of `uilab.session.Proposals`, a projection of `uilab.session.Proposal`. Contains every instance. Read-your-writes: a caller that has just issued a command sees its effect here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/uilab.session.Proposals.Response"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "uilab.session.AcceptProposal.Input": {
+        "title": "Accept a proposal input",
+        "x-ess-name": "uilab.session.AcceptProposal",
+        "x-ess-kind": "command-input",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.AcceptProposal.accepted.Response": {
+        "additionalProperties": false,
+        "description": "The patch is applied and the document is saved. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Accepted`, along `accept`. The instance is the one `proposal_id` names. Emits `ProposalAccepted`, published to consumers rather than returned here.",
+        "properties": {
+          "outcome": {
+            "const": "accepted",
+            "description": "Which declared outcome the command took."
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "uilab.session.AcceptProposal.stale.Response": {
+        "additionalProperties": false,
+        "description": "The proposal stays waiting and the document is unchanged. Decided outside the request: the document changed since the proposal and the patch no longer applies.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.PatchRefused",
+            "description": "The patch fails a document check, so no proposal was made.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "stale",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.PatchRefused.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "uilab.session.AcceptProposal.wrong-state.Response": {
+        "additionalProperties": false,
+        "description": "The proposal is not waiting, so the document is unchanged. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's. For an instance no record carries, `payload` is absent, because an instance that does not exist has nothing for the error to describe.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.ProposalStateConflict",
+            "description": "The proposal is not in a state this command acts from, so nothing moved.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "wrong-state",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.ProposalStateConflict.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error"
+        ],
+        "type": "object"
+      },
+      "uilab.session.DocumentId": {
+        "title": "DocumentId",
+        "x-ess-name": "uilab.session.DocumentId",
+        "x-ess-kind": "newtype",
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+      },
+      "uilab.session.DocumentNotOpen.Error": {
+        "title": "DocumentNotOpen payload",
+        "description": "No open document has this id, so nothing changed.",
+        "x-ess-name": "uilab.session.DocumentNotOpen",
+        "x-ess-kind": "error-payload",
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "$ref": "#/components/schemas/uilab.session.DocumentId"
+          }
+        },
+        "required": [
+          "document_id"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.DocumentUnreadable.Error": {
+        "title": "DocumentUnreadable payload",
+        "description": "The file is not a ui-spec/1 document, so nothing was opened.",
+        "x-ess-name": "uilab.session.DocumentUnreadable",
+        "x-ess-kind": "error-payload",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.Documents.Response": {
+        "additionalProperties": false,
+        "description": "The rows of `uilab.session.Documents`.",
+        "properties": {
+          "rows": {
+            "description": "Every row the projection holds, in the order it holds them.",
+            "items": {
+              "$ref": "#/components/schemas/uilab.session.Documents.Row"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "uilab.session.Documents.Row": {
+        "title": "Documents row",
+        "x-ess-name": "uilab.session.Documents",
+        "x-ess-kind": "view-row",
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "$ref": "#/components/schemas/uilab.session.DocumentId"
+          },
+          "path": {
+            "type": "string"
+          },
+          "selected": {
+            "$ref": "#/components/schemas/uilab.session.NodePath"
+          }
+        },
+        "required": [
+          "document_id",
+          "path",
+          "selected"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.NodeNotFound.Error": {
+        "title": "NodeNotFound payload",
+        "description": "No node of the document has this path, so the selection did not change.",
+        "x-ess-name": "uilab.session.NodeNotFound",
+        "x-ess-kind": "error-payload",
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/components/schemas/uilab.session.NodePath"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.NodePath": {
+        "title": "NodePath",
+        "x-ess-name": "uilab.session.NodePath",
+        "x-ess-kind": "newtype",
+        "type": "string"
+      },
+      "uilab.session.OpenDocument.Input": {
+        "title": "Open a document input",
+        "x-ess-name": "uilab.session.OpenDocument",
+        "x-ess-kind": "command-input",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.OpenDocument.opened.Response": {
+        "additionalProperties": false,
+        "description": "The document is open with its root selected. Taken when no other outcome's condition matched. A `uilab.session.Document` now exists, in `Open`. Its identity is published as `document_id` on `uilab.session.DocumentOpened`. Emits `DocumentOpened`, published to consumers rather than returned here.",
+        "properties": {
+          "outcome": {
+            "const": "opened",
+            "description": "Which declared outcome the command took."
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "uilab.session.OpenDocument.unreadable.Response": {
+        "additionalProperties": false,
+        "description": "Nothing was opened. Decided outside the request: the file does not parse as a ui-spec/1 document.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.DocumentUnreadable",
+            "description": "The file is not a ui-spec/1 document, so nothing was opened.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "unreadable",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.DocumentUnreadable.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "uilab.session.PatchBody": {
+        "title": "PatchBody",
+        "x-ess-name": "uilab.session.PatchBody",
+        "x-ess-kind": "newtype"
+      },
+      "uilab.session.PatchOp": {
+        "title": "PatchOp",
+        "x-ess-name": "uilab.session.PatchOp",
+        "x-ess-kind": "enum",
+        "type": "string",
+        "enum": [
+          "Insert",
+          "Replace",
+          "Remove"
+        ]
+      },
+      "uilab.session.PatchRefused.Error": {
+        "title": "PatchRefused payload",
+        "description": "The patch fails a document check, so no proposal was made.",
+        "x-ess-name": "uilab.session.PatchRefused",
+        "x-ess-kind": "error-payload",
+        "type": "object",
+        "properties": {
+          "check": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "check"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.Pending.Response": {
+        "additionalProperties": false,
+        "description": "The rows of `uilab.session.Pending`.",
+        "properties": {
+          "rows": {
+            "description": "Every row the projection holds, in the order it holds them.",
+            "items": {
+              "$ref": "#/components/schemas/uilab.session.Pending.Row"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "uilab.session.Pending.Row": {
+        "title": "Pending proposals row",
+        "x-ess-name": "uilab.session.Pending",
+        "x-ess-kind": "view-row",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          },
+          "target": {
+            "$ref": "#/components/schemas/uilab.session.NodePath"
+          },
+          "op": {
+            "$ref": "#/components/schemas/uilab.session.PatchOp"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "target",
+          "op"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.Proposal.State": {
+        "title": "State",
+        "x-ess-name": "uilab.session.Proposal.State",
+        "x-ess-kind": "enum",
+        "type": "string",
+        "enum": [
+          "Accepted",
+          "Proposed",
+          "Rejected",
+          "Undone"
+        ]
+      },
+      "uilab.session.ProposalId": {
+        "title": "ProposalId",
+        "x-ess-name": "uilab.session.ProposalId",
+        "x-ess-kind": "newtype",
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+      },
+      "uilab.session.ProposalStateConflict.Error": {
+        "title": "ProposalStateConflict payload",
+        "description": "The proposal is not in a state this command acts from, so nothing moved.",
+        "x-ess-name": "uilab.session.ProposalStateConflict",
+        "x-ess-kind": "error-payload",
+        "type": "object",
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/uilab.session.Proposal.State"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.Proposals.Response": {
+        "additionalProperties": false,
+        "description": "The rows of `uilab.session.Proposals`.",
+        "properties": {
+          "rows": {
+            "description": "Every row the projection holds, in the order it holds them.",
+            "items": {
+              "$ref": "#/components/schemas/uilab.session.Proposals.Row"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "uilab.session.Proposals.Row": {
+        "title": "Proposals row",
+        "x-ess-name": "uilab.session.Proposals",
+        "x-ess-kind": "view-row",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          },
+          "document_id": {
+            "$ref": "#/components/schemas/uilab.session.DocumentId"
+          },
+          "target": {
+            "$ref": "#/components/schemas/uilab.session.NodePath"
+          },
+          "op": {
+            "$ref": "#/components/schemas/uilab.session.PatchOp"
+          },
+          "utterance": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/uilab.session.Proposal.State"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "document_id",
+          "target",
+          "op",
+          "utterance",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.ProposePatch.Input": {
+        "title": "Propose a patch input",
+        "x-ess-name": "uilab.session.ProposePatch",
+        "x-ess-kind": "command-input",
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "$ref": "#/components/schemas/uilab.session.DocumentId"
+          },
+          "target": {
+            "$ref": "#/components/schemas/uilab.session.NodePath"
+          },
+          "op": {
+            "$ref": "#/components/schemas/uilab.session.PatchOp"
+          },
+          "utterance": {
+            "type": "string"
+          },
+          "body": {
+            "$ref": "#/components/schemas/uilab.session.PatchBody"
+          }
+        },
+        "required": [
+          "document_id",
+          "target",
+          "op",
+          "utterance"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.ProposePatch.proposed.Response": {
+        "additionalProperties": false,
+        "description": "The patch passes every document check and waits for the operator. Taken when no other outcome's condition matched. A `uilab.session.Proposal` now exists, in `Proposed`. Its identity is published as `proposal_id` on `uilab.session.PatchProposed`. Emits `PatchProposed`, published to consumers rather than returned here.",
+        "properties": {
+          "outcome": {
+            "const": "proposed",
+            "description": "Which declared outcome the command took."
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "uilab.session.ProposePatch.refused.Response": {
+        "additionalProperties": false,
+        "description": "No proposal was made and the document is unchanged. Decided outside the request: the patched document fails a document check.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.PatchRefused",
+            "description": "The patch fails a document check, so no proposal was made.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "refused",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.PatchRefused.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "uilab.session.RejectProposal.Input": {
+        "title": "Reject a proposal input",
+        "x-ess-name": "uilab.session.RejectProposal",
+        "x-ess-kind": "command-input",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.RejectProposal.rejected.Response": {
+        "additionalProperties": false,
+        "description": "The patch is dropped and the document is unchanged. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Rejected`, along `reject`. The instance is the one `proposal_id` names. Emits `ProposalRejected`, published to consumers rather than returned here.",
+        "properties": {
+          "outcome": {
+            "const": "rejected",
+            "description": "Which declared outcome the command took."
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "uilab.session.RejectProposal.wrong-state.Response": {
+        "additionalProperties": false,
+        "description": "The proposal is not waiting, so nothing was rejected. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's. For an instance no record carries, `payload` is absent, because an instance that does not exist has nothing for the error to describe.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.ProposalStateConflict",
+            "description": "The proposal is not in a state this command acts from, so nothing moved.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "wrong-state",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.ProposalStateConflict.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error"
+        ],
+        "type": "object"
+      },
+      "uilab.session.SelectNode.Input": {
+        "title": "Select a node input",
+        "x-ess-name": "uilab.session.SelectNode",
+        "x-ess-kind": "command-input",
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "$ref": "#/components/schemas/uilab.session.DocumentId"
+          },
+          "path": {
+            "$ref": "#/components/schemas/uilab.session.NodePath"
+          }
+        },
+        "required": [
+          "document_id",
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.SelectNode.not-found.Response": {
+        "additionalProperties": false,
+        "description": "The selection did not change. Decided outside the request: the document has no node at this path.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.NodeNotFound",
+            "description": "No node of the document has this path, so the selection did not change.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "not-found",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.NodeNotFound.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "uilab.session.SelectNode.selected.Response": {
+        "additionalProperties": false,
+        "description": "The node at the path is selected; proposals are made there. Taken when no other outcome's condition matched. A `uilab.session.Document` has changed, and its state is unchanged. The instance is the one `document_id` names. Emits `NodeSelected`, published to consumers rather than returned here.",
+        "properties": {
+          "outcome": {
+            "const": "selected",
+            "description": "Which declared outcome the command took."
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "uilab.session.SelectNode.unknown-document.Response": {
+        "additionalProperties": false,
+        "description": "The selection did not change. Decided outside the request: no document with this id is open.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.DocumentNotOpen",
+            "description": "No open document has this id, so nothing changed.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "unknown-document",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.DocumentNotOpen.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "uilab.session.UndoProposal.Input": {
+        "title": "Undo a proposal input",
+        "x-ess-name": "uilab.session.UndoProposal",
+        "x-ess-kind": "command-input",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.UndoProposal.stale.Response": {
+        "additionalProperties": false,
+        "description": "The document is unchanged. Decided outside the request: a later change to the document would be lost by undoing this one.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.PatchRefused",
+            "description": "The patch fails a document check, so no proposal was made.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "stale",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.PatchRefused.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error",
+          "payload"
+        ],
+        "type": "object"
+      },
+      "uilab.session.UndoProposal.undone.Response": {
+        "additionalProperties": false,
+        "description": "The document is back to what it was before the patch, and saved. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Undone`, along `undo`. The instance is the one `proposal_id` names. Emits `ProposalUndone`, published to consumers rather than returned here.",
+        "properties": {
+          "outcome": {
+            "const": "undone",
+            "description": "Which declared outcome the command took."
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "uilab.session.UndoProposal.wrong-state.Response": {
+        "additionalProperties": false,
+        "description": "The proposal was never applied, so there is nothing to undo. Taken when the subject is in a state none of this command's declared moves start from. Which states those are is the lifecycle's answer, not this command's. For an instance no record carries, `payload` is absent, because an instance that does not exist has nothing for the error to describe.",
+        "properties": {
+          "error": {
+            "const": "uilab.session.ProposalStateConflict",
+            "description": "The proposal is not in a state this command acts from, so nothing moved.",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "wrong-state",
+            "description": "Which declared outcome the command took."
+          },
+          "payload": {
+            "$ref": "#/components/schemas/uilab.session.ProposalStateConflict.Error"
+          }
+        },
+        "required": [
+          "outcome",
+          "error"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "x-ess-entities": {
+    "uilab.session.Document": {
+      "title": "Document",
+      "x-ess-name": "uilab.session.Document",
+      "x-ess-kind": "entity",
+      "type": "object",
+      "properties": {
+        "document_id": {
+          "$ref": "#/x-ess-entities/uilab.session.DocumentId"
+        },
+        "path": {
+          "type": "string"
+        },
+        "selected": {
+          "$ref": "#/x-ess-entities/uilab.session.NodePath"
+        },
+        "state": {
+          "$ref": "#/x-ess-entities/uilab.session.Document.State"
+        }
+      },
+      "required": [
+        "document_id",
+        "path",
+        "selected",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "uilab.session.Document.State": {
+      "title": "State",
+      "x-ess-name": "uilab.session.Document.State",
+      "x-ess-kind": "enum",
+      "type": "string",
+      "enum": [
+        "Open"
+      ]
+    },
+    "uilab.session.DocumentId": {
+      "title": "DocumentId",
+      "x-ess-name": "uilab.session.DocumentId",
+      "x-ess-kind": "newtype",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "uilab.session.NodePath": {
+      "title": "NodePath",
+      "x-ess-name": "uilab.session.NodePath",
+      "x-ess-kind": "newtype",
+      "type": "string"
+    },
+    "uilab.session.PatchOp": {
+      "title": "PatchOp",
+      "x-ess-name": "uilab.session.PatchOp",
+      "x-ess-kind": "enum",
+      "type": "string",
+      "enum": [
+        "Insert",
+        "Replace",
+        "Remove"
+      ]
+    },
+    "uilab.session.Proposal": {
+      "title": "Proposal",
+      "x-ess-name": "uilab.session.Proposal",
+      "x-ess-kind": "entity",
+      "type": "object",
+      "properties": {
+        "proposal_id": {
+          "$ref": "#/x-ess-entities/uilab.session.ProposalId"
+        },
+        "document_id": {
+          "$ref": "#/x-ess-entities/uilab.session.DocumentId",
+          "x-ess-relation": {
+            "name": "proposals",
+            "kind": "owns",
+            "source": "uilab.session.Document",
+            "target": "uilab.session.Proposal",
+            "cardinality": "many",
+            "via": "document_id",
+            "$ref": "#/x-ess-entities/uilab.session.Document"
+          }
+        },
+        "target": {
+          "$ref": "#/x-ess-entities/uilab.session.NodePath"
+        },
+        "op": {
+          "$ref": "#/x-ess-entities/uilab.session.PatchOp"
+        },
+        "utterance": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/x-ess-entities/uilab.session.Proposal.State"
+        }
+      },
+      "required": [
+        "proposal_id",
+        "document_id",
+        "target",
+        "op",
+        "utterance",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "uilab.session.Proposal.State": {
+      "title": "State",
+      "x-ess-name": "uilab.session.Proposal.State",
+      "x-ess-kind": "enum",
+      "type": "string",
+      "enum": [
+        "Accepted",
+        "Proposed",
+        "Rejected",
+        "Undone"
+      ]
+    },
+    "uilab.session.ProposalId": {
+      "title": "ProposalId",
+      "x-ess-name": "uilab.session.ProposalId",
+      "x-ess-kind": "newtype",
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    }
+  }
+}

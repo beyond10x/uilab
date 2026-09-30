@@ -1,0 +1,23 @@
+components:
+  - component: uilab-session
+    summary: Holds the open document, the selection and every proposal made against it.
+    owns:
+      domains:
+        - uilab.session
+    accepts:
+      commands:
+        - uilab.session.OpenDocument
+        - uilab.session.SelectNode
+        - uilab.session.ProposePatch
+        - uilab.session.AcceptProposal
+        - uilab.session.RejectProposal
+        - uilab.session.UndoProposal
+    publishes:
+      events:
+        - uilab.session.DocumentOpened
+        - uilab.session.NodeSelected
+        - uilab.session.PatchProposed
+        - uilab.session.ProposalAccepted
+        - uilab.session.ProposalRejected
+        - uilab.session.ProposalUndone
+    reached_by: network

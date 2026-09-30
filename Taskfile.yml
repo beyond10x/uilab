@@ -1,0 +1,74 @@
+version: '3'
+
+vars:
+  SPEC: ess
+  GEN: generated
+  WIRE_ROOTS: --root uilab.wire.ClientMessage --root uilab.wire.ServerMessage
+
+env:
+  CARGO_TARGET_DIR: '{{.HOME}}/.cache/b10x-target/uilab'
+
+tasks:
+  default:
+    cmds: [{task: check}]
+
+  validate:
+    desc: Validate the specification.
+    cmds:
+      - ess validate --path {{.SPEC}}
+
+  generate:
+    desc: Regenerate every tree the specification determines.
+    cmds:
+      - rm -rf {{.GEN}} widget/src/generated
+      - mkdir -p {{.GEN}}/rust widget/src/generated
+      - ess generate synthesize --path {{.SPEC}} --target rust --out {{.GEN}}/rust/uilab
+      - ess generate types --path {{.SPEC}} {{.WIRE_ROOTS}} --target rust --package uilab-wire --out {{.GEN}}/rust/uilab-wire
+      - ess generate types --path {{.SPEC}} {{.WIRE_ROOTS}} --target typescript --out widget/src/generated
+      - ess verify conform synthesize --path {{.SPEC}} --out {{.GEN}}/suite.json
+
+  drift:
+    desc: Fail when a committed generated tree is not what the specification determines.
+    cmds:
+      - rm -rf .build/drift && mkdir -p .build/drift/rust
+      - ess generate synthesize --path {{.SPEC}} --target rust --out .build/drift/rust/uilab
+      - ess generate types --path {{.SPEC}} {{.WIRE_ROOTS}} --target rust --package uilab-wire --out .build/drift/rust/uilab-wire
+      - ess generate types --path {{.SPEC}} {{.WIRE_ROOTS}} --target typescript --out .build/drift/ts
+      - ess verify conform synthesize --path {{.SPEC}} --out .build/drift/suite.json
+      - diff -r --exclude=.ess-output .build/drift/rust {{.GEN}}/rust
+      - diff -r --exclude=.ess-output .build/drift/ts widget/src/generated
+      - diff .build/drift/suite.json {{.GEN}}/suite.json
+
+  widget:
+    desc: Build the browser app into widget/dist, which the server embeds.
+    dir: widget
+    cmds:
+      - pnpm install --frozen-lockfile
+      - pnpm build
+
+  rust:
+    desc: Test, lint and format-check the workspace.
+    cmds:
+      - cargo test --workspace --locked
+      - cargo clippy --workspace --all-targets --locked -- -D warnings
+      - cargo fmt --all --check
+
+  check:
+    desc: The gate.
+    cmds:
+      - task: validate
+      - task: drift
+      - task: widget
+      - task: rust
+
+  model:
+    desc: Download the speech model (about 1.6 GB) to ~/.cache/uilab/models.
+    cmds:
+      - mkdir -p {{.HOME}}/.cache/uilab/models
+      - test -s {{.HOME}}/.cache/uilab/models/ggml-large-v3-turbo.bin || curl -fL -o {{.HOME}}/.cache/uilab/models/ggml-large-v3-turbo.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin
+
+  run:
+    desc: Serve uilab on http://127.0.0.1:8740 over a document.
+    deps: [widget]
+    cmds:
+      - cargo run --release -p uilab-app -- serve --doc {{.CLI_ARGS | default "examples/library/library.ui.yaml"}}

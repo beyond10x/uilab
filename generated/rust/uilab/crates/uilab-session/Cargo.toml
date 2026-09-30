@@ -1,0 +1,13 @@
+# generated from uilab v1
+# model digest 55369e6e2fd022d062872af44b9c252bf6b80b0b82da849d828e32c4bf780a9f
+# contract digest c7e76b5222a53b2b047350c46d9086d71ebcc13314a0ee6ce79ea111afb83928
+# do not edit: regenerate with `ess synthesize`
+
+[package]
+name = "uilab-session"
+description = "The `uilab-session` component of the `uilab` specification, v1: its port, generated."
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+uilab-types = { path = "../uilab-types" }

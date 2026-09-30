@@ -1,0 +1,15 @@
+# uilab edits one UI document by voice. An operator selects a node, speaks, and an agent proposes a
+# patch at that node; the operator accepts, rejects or undoes it. The document itself is data in the
+# `ui-spec/1` format and is not modelled here: its nodes are addressed by path, and whether a patch
+# is admissible is decided by the document checks, which the host runs.
+format: ess/15
+system: uilab
+version: v1
+
+summary: >-
+  A voice-driven editor for one UI document. The operator holds the selection and the decision;
+  the agent holds only the proposal.
+
+domains:
+  - uilab.session
+  - uilab.wire

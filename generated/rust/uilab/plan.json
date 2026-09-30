@@ -1,0 +1,480 @@
+{
+  "provenance": {
+    "system": "uilab",
+    "specification_version": "v1",
+    "source_digest": "55369e6e2fd022d062872af44b9c252bf6b80b0b82da849d828e32c4bf780a9f",
+    "contract_digest": "c7e76b5222a53b2b047350c46d9086d71ebcc13314a0ee6ce79ea111afb83928"
+  },
+  "scope": {
+    "profile": "component-skeletons"
+  },
+  "capabilities": [
+    {
+      "kind": "domain_type",
+      "source": "uilab.session.Document.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.session.DocumentId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.session.NodePath",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.session.PatchBody",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.session.PatchOp",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.session.Proposal.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.session.ProposalId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.ClientMessage",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Decide",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.DocumentState",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Failed",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Finding",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Mic",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.MicState",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.OutlineNode",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.ProposalShown",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.ReadRows",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Refused",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Rows",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Say",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Select",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.ServerMessage",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Severity",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Thinking",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Transcript",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
+      "source": "uilab.session.Document",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
+      "source": "uilab.session.Proposal",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "uilab.session.AcceptProposal",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "uilab.session.AcceptProposal",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "external",
+          "cause": "the document changed since the proposal and the patch no longer applies"
+        },
+        "contract": "given `uilab.session.AcceptProposal` input, decide and enact exactly one outcome — `accepted` otherwise, takes `accept` of `uilab.session.Proposal`, emits `uilab.session.ProposalAccepted`; `stale` externally decided (the document changed since the proposal and the patch no longer applies), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "uilab.session.OpenDocument",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "uilab.session.OpenDocument",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "external",
+          "cause": "the file does not parse as a ui-spec/1 document"
+        },
+        "contract": "given `uilab.session.OpenDocument` input, decide and enact exactly one outcome — `opened` otherwise, creates `uilab.session.Document`, emits `uilab.session.DocumentOpened`; `unreadable` externally decided (the file does not parse as a ui-spec/1 document), error `uilab.session.DocumentUnreadable`"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "uilab.session.ProposePatch",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "uilab.session.ProposePatch",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "external",
+          "cause": "the patched document fails a document check"
+        },
+        "contract": "given `uilab.session.ProposePatch` input, decide and enact exactly one outcome — `proposed` otherwise, creates `uilab.session.Proposal`, emits `uilab.session.PatchProposed`; `refused` externally decided (the patched document fails a document check), error `uilab.session.PatchRefused`"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "uilab.session.RejectProposal",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "uilab.session.RejectProposal",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "unspecified_algorithm"
+        },
+        "contract": "given `uilab.session.RejectProposal` input, decide and enact exactly one outcome — `rejected` otherwise, takes `reject` of `uilab.session.Proposal`, emits `uilab.session.ProposalRejected`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "uilab.session.SelectNode",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "uilab.session.SelectNode",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "external",
+          "cause": "no document with this id is open"
+        },
+        "contract": "given `uilab.session.SelectNode` input, decide and enact exactly one outcome — `selected` otherwise, updates `uilab.session.Document`, emits `uilab.session.NodeSelected`; `unknown-document` externally decided (no document with this id is open), error `uilab.session.DocumentNotOpen`; `not-found` externally decided (the document has no node at this path), error `uilab.session.NodeNotFound`"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "uilab.session.UndoProposal",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "uilab.session.UndoProposal",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "external",
+          "cause": "a later change to the document would be lost by undoing this one"
+        },
+        "contract": "given `uilab.session.UndoProposal` input, decide and enact exactly one outcome — `undone` otherwise, takes `undo` of `uilab.session.Proposal`, emits `uilab.session.ProposalUndone`; `stale` externally decided (a later change to the document would be lost by undoing this one), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "uilab.session.DocumentOpened",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "uilab.session.NodeSelected",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "uilab.session.PatchProposed",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "uilab.session.ProposalAccepted",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "uilab.session.ProposalRejected",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "uilab.session.ProposalUndone",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "uilab.session.DocumentNotOpen",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "uilab.session.DocumentUnreadable",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "uilab.session.NodeNotFound",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "uilab.session.PatchRefused",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "uilab.session.ProposalStateConflict",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "uilab.session.Documents",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "uilab.session.Documents",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "projection_maintenance"
+        },
+        "contract": "a query answering `uilab.session.Documents` with rows projected from `uilab.session.Document` at `read_your_writes` consistency"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "uilab.session.Pending",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "uilab.session.Pending",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "projection_maintenance"
+        },
+        "contract": "a query answering `uilab.session.Pending` with rows projected from `uilab.session.Proposal` at `read_your_writes` consistency, containing instances where `state == Proposed`"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "uilab.session.Proposals",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "uilab.session.Proposals",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "projection_maintenance"
+        },
+        "contract": "a query answering `uilab.session.Proposals` with rows projected from `uilab.session.Proposal` at `read_your_writes` consistency"
+      }
+    },
+    {
+      "kind": "actor_grants",
+      "source": "uilab.session.Agent",
+      "disposition": {
+        "disposition": "refused",
+        "reason": "needs_caller_identity",
+        "stage": "planning",
+        "detail": "may invoke `uilab.session.ProposePatch`; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling"
+      }
+    },
+    {
+      "kind": "actor_grants",
+      "source": "uilab.session.Operator",
+      "disposition": {
+        "disposition": "refused",
+        "reason": "needs_caller_identity",
+        "stage": "planning",
+        "detail": "may invoke `uilab.session.AcceptProposal`, `uilab.session.OpenDocument`, `uilab.session.RejectProposal`, `uilab.session.SelectNode`, `uilab.session.UndoProposal`; a grant is checked against a caller identity, which types do not carry, and enforcement belongs to the layer that knows who is calling"
+      }
+    },
+    {
+      "kind": "component_port",
+      "source": "uilab-session",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "component_transport",
+      "source": "uilab-session",
+      "disposition": {
+        "disposition": "generated"
+      }
+    }
+  ]
+}
