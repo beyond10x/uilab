@@ -1,14 +1,14 @@
 <!--
   generated from uilab v1
-  model digest b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a
-  contract digest 382360f755c7a7fe5f6fc4cb540326082dab33d91dbb381976dae34503c8a0e5
+  model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
+  contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — uilab v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-74 capabilities: **63 generated**, **9 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+75 capabilities: **64 generated**, **9 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -33,6 +33,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `uilab.wire.Hello` |
 | domain type | `uilab.wire.Mic` |
 | domain type | `uilab.wire.MicState` |
+| domain type | `uilab.wire.Moved` |
 | domain type | `uilab.wire.Operator` |
 | domain type | `uilab.wire.OperatorKind` |
 | domain type | `uilab.wire.OutlineNode` |

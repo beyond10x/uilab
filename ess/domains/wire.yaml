@@ -283,6 +283,24 @@ types:
       - name: message
         type: String
 
+  - name: uilab.wire.Moved
+    kind: struct
+    fields:
+      - name: by
+        type: Optional<String>
+      - name: selected_by
+        type: String
+      - name: from
+        type: uilab.session.NodePath
+      - name: to
+        type: uilab.session.NodePath
+      - name: reason
+        type: String
+      - name: navigate_only
+        type: Boolean
+      - name: utterance
+        type: String
+
   - name: uilab.wire.GoalState
     kind: enum
     variants: [planning, running, done, stopped, failed]
@@ -333,6 +351,7 @@ types:
       proposal: uilab.wire.ProposalShown
       refused: uilab.wire.Refused
       failed: uilab.wire.Failed
+      moved: uilab.wire.Moved
       rows: uilab.wire.Rows
       presence: uilab.wire.Presence
       changed: uilab.wire.Changed

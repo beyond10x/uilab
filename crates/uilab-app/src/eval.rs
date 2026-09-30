@@ -43,6 +43,15 @@ pub struct Expect {
     /// The words are not an instruction: the case passes only when the agent declines.
     #[serde(default)]
     pub declined: bool,
+    /// The agent moves the target to this path before it proposes (or instead of proposing).
+    #[serde(default)]
+    pub moved_to: Option<String>,
+    /// The agent must not move the target.
+    #[serde(default)]
+    pub stays: bool,
+    /// The instruction only navigates: the case passes only when nothing is proposed.
+    #[serde(default)]
+    pub navigate_only: bool,
 }
 
 #[derive(Serialize)]
@@ -66,7 +75,8 @@ pub fn load(path: &Path) -> Result<Suite, String> {
     serde_yaml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Judges what one `say` caused against the case.
+/// Judges what one `say` caused against the case: the move the agent made, if any, and the
+/// proposal, refusal or navigation that ended it.
 pub fn judge(case: &Case, messages: &[Server], ms: u64) -> Outcome {
     let mut reasons = Vec::new();
     let mut warnings = Vec::new();
@@ -76,7 +86,31 @@ pub fn judge(case: &Case, messages: &[Server], ms: u64) -> Outcome {
         Server::Proposal(p) => Some(p),
         _ => None,
     });
+    let moved = messages.iter().find_map(|m| match m {
+        Server::Moved(m) => Some(m),
+        _ => None,
+    });
+    match (&case.expect.moved_to, moved) {
+        (Some(want), None) => reasons.push(format!("no move, expected a move to {want}")),
+        (Some(want), Some(m)) if &m.to.0 != want => {
+            reasons.push(format!("moved to {}, expected a move to {want}", m.to.0));
+        }
+        _ => {}
+    }
+    if case.expect.stays
+        && let Some(m) = moved
+    {
+        reasons.push(format!("moved to {}, expected no move", m.to.0));
+    }
     match proposal {
+        None if case.expect.navigate_only && moved.is_some_and(|m| m.navigate_only) => {
+            got = format!("moved to {} (navigate only)", moved.map_or("", |m| &m.to.0));
+        }
+        Some(p) if case.expect.navigate_only => {
+            got = format!("proposed at {}", p.changed.0);
+            after = p.after.clone();
+            reasons.push(format!("{got}, expected no proposal after a navigation"));
+        }
         None => {
             let why = messages.iter().find_map(|m| match m {
                 Server::Refused(r) => Some(format!("refused {}: {}", r.check, r.message)),
@@ -163,6 +197,10 @@ pub fn judge(case: &Case, messages: &[Server], ms: u64) -> Outcome {
     {
         reasons.push(format!("{ms} ms, over {max} ms"));
     }
+    let got = match moved {
+        Some(m) if proposal.is_some() => format!("moved to {}; {got}", m.to.0),
+        _ => got,
+    };
     Outcome {
         id: case.id.clone(),
         target: case.target.clone(),
@@ -289,6 +327,7 @@ mod tests {
             component: Some("confirm".into()),
             max_ms: None,
             declined: false,
+            ..Expect::default()
         };
         let page = "kind: list_page\nsections:\n  list: {component: collection}\noverlays:\n  cancel: {kind: dialog, component: confirm}\n";
         let out = judge(
@@ -314,6 +353,7 @@ mod tests {
             component: Some("collection".into()),
             max_ms: None,
             declined: false,
+            ..Expect::default()
         };
         let out = judge(
             &case(expect),
@@ -335,6 +375,7 @@ mod tests {
             component: Some("form".into()),
             max_ms: Some(5),
             declined: false,
+            ..Expect::default()
         };
         let out = judge(
             &case(expect.clone()),
@@ -353,5 +394,105 @@ mod tests {
         );
         assert!(!refused.pass);
         assert!(refused.reasons[0].starts_with("refused opens_resolves"));
+    }
+
+    fn moved(to: &str, navigate_only: bool) -> Server {
+        serde_json::from_value(serde_json::json!({
+            "type": "moved",
+            "value": {
+                "by": "api-1", "selected_by": "api-1", "from": "page:loans/section:list",
+                "to": to, "reason": "r", "navigate_only": navigate_only, "utterance": "u",
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_case_expecting_a_move_passes_only_on_a_move_there() {
+        let expect = Expect {
+            moved_to: Some("/".into()),
+            op: Some("Insert".into()),
+            layer: Some("page".into()),
+            ..Expect::default()
+        };
+        let page = proposal("kind: list_page\n", "page:overdue", "Insert");
+        let out = judge(
+            &case(expect.clone()),
+            &[moved("/", false), page.clone()],
+            10,
+        );
+        assert!(out.pass, "{:?}", out.reasons);
+        assert!(out.got.contains("moved to /"), "{}", out.got);
+
+        let out = judge(&case(expect.clone()), std::slice::from_ref(&page), 10);
+        assert_eq!(out.reasons, ["no move, expected a move to /"]);
+        let out = judge(&case(expect), &[moved("nav", false), page], 10);
+        assert_eq!(out.reasons, ["moved to nav, expected a move to /"]);
+    }
+
+    #[test]
+    fn a_navigation_case_passes_on_a_move_and_no_proposal() {
+        let expect = Expect {
+            moved_to: Some("page:members".into()),
+            navigate_only: true,
+            ..Expect::default()
+        };
+        let out = judge(&case(expect.clone()), &[moved("page:members", true)], 10);
+        assert!(out.pass, "{:?}", out.reasons);
+        let out = judge(
+            &case(expect.clone()),
+            &[
+                moved("page:members", false),
+                proposal("component: record\n", "page:members/section:x", "Insert"),
+            ],
+            10,
+        );
+        assert!(!out.pass);
+        assert!(
+            out.reasons
+                .iter()
+                .any(|r| r.contains("expected no proposal")),
+            "{:?}",
+            out.reasons
+        );
+    }
+
+    #[test]
+    fn a_case_that_stays_fails_on_a_move() {
+        let expect = Expect {
+            stays: true,
+            ..Expect::default()
+        };
+        let list = proposal(
+            "component: collection\n",
+            "page:loans/section:list",
+            "Replace",
+        );
+        assert!(judge(&case(expect.clone()), std::slice::from_ref(&list), 10).pass);
+        let out = judge(&case(expect), &[moved("/", false), list], 10);
+        assert_eq!(out.reasons, ["moved to /, expected no move"]);
+    }
+
+    #[test]
+    fn the_library_suite_loads_with_its_move_cases() {
+        let suite = load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evals/library.yaml"),
+        )
+        .unwrap();
+        let by_id = |id: &str| {
+            suite
+                .cases
+                .iter()
+                .find(|c| c.id == id)
+                .unwrap_or_else(|| panic!("case {id}"))
+        };
+        let new_page = by_id("retarget-new-page");
+        assert_eq!(new_page.target, "page:loans/section:list");
+        assert_eq!(new_page.expect.moved_to.as_deref(), Some("/"));
+        assert_eq!(new_page.expect.layer.as_deref(), Some("page"));
+        let navigate = by_id("retarget-navigate");
+        assert!(navigate.expect.navigate_only);
+        assert_eq!(navigate.expect.moved_to.as_deref(), Some("page:members"));
+        assert!(by_id("retarget-none").expect.stays);
     }
 }

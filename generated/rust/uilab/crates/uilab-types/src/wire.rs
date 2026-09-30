@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a
-// contract digest 382360f755c7a7fe5f6fc4cb540326082dab33d91dbb381976dae34503c8a0e5
+// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
+// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
 // do not edit: regenerate with `ess synthesize`
 
 //! wire — `uilab.wire`.
@@ -185,6 +185,25 @@ pub enum MicState {
     Closed,
 }
 
+/// Moved — `uilab.wire.Moved`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Moved {
+    /// `by` — `Optional<String>`.
+    pub by: Option<String>,
+    /// `selected_by` — `String`.
+    pub selected_by: String,
+    /// `from` — `uilab.session.NodePath`.
+    pub from: crate::session::NodePath,
+    /// `to` — `uilab.session.NodePath`.
+    pub to: crate::session::NodePath,
+    /// `reason` — `String`.
+    pub reason: String,
+    /// `navigate_only` — `Boolean`.
+    pub navigate_only: bool,
+    /// `utterance` — `String`.
+    pub utterance: String,
+}
+
 /// Operator — `uilab.wire.Operator`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Operator {
@@ -329,6 +348,8 @@ pub enum ServerMessage {
     Failed(Failed),
     /// Tagged `goal` — `uilab.wire.Goal`.
     Goal(Goal),
+    /// Tagged `moved` — `uilab.wire.Moved`.
+    Moved(Moved),
     /// Tagged `presence` — `uilab.wire.Presence`.
     Presence(Presence),
     /// Tagged `proposal` — `uilab.wire.ProposalShown`.

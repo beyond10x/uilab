@@ -120,3 +120,18 @@ cases:
     target: page:overview
     say: show me how creative you can be
     expect: {}
+
+  - id: retarget-new-page
+    target: page:loans/section:list
+    say: create a new page in the sidebar for overdue loans
+    expect: {moved_to: /, op: Insert, layer: page}
+
+  - id: retarget-navigate
+    target: page:loans/section:list
+    say: go to the members page
+    expect: {moved_to: "page:members", navigate_only: true}
+
+  - id: retarget-none
+    target: page:loans/section:list
+    say: give this table the title current loans
+    expect: {stays: true, op: Replace, layer: section, component: collection}
