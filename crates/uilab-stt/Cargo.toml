@@ -1,0 +1,25 @@
+[package]
+name = "uilab-stt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["vulkan"]
+cuda = ["whisper-rs/cuda"]
+vulkan = ["whisper-rs/vulkan"]
+
+[[bin]]
+name = "uilab-stt"
+path = "src/bin/uilab-stt.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+hound = "3.5"
+log = "0.4"
+thiserror.workspace = true
+whisper-rs = { version = "0.16", features = ["log_backend"] }
