@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
+import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
 import { columnsOf, fieldsOf, isDraftView, propsOf } from '../lib/outline.ts';
 import { marks, requestRows, select, state, tint } from '../store.ts';
 
@@ -11,6 +12,8 @@ const kind = computed(() => (props.node.layer === 'overlay' ? props.node.kind.sp
 const p = computed(() => propsOf(props.node));
 const view = computed(() => props.node.view);
 const draft = computed(() => isDraftView(view.value));
+/** Preview drops the `name · kind · view` label; the sample-data tag stays in both modes. */
+const preview = computed(() => canvasMode.mode.value === 'preview');
 const needsRows = computed(() => ['collection', 'metric', 'record', 'chart'].includes(kind.value));
 const rows = computed(() => (view.value ? state.rows[view.value] : undefined));
 const rowObjects = computed<Record<string, unknown>[]>(() => {
@@ -18,16 +21,21 @@ const rowObjects = computed<Record<string, unknown>[]>(() => {
   return all.filter((r) => !!r && typeof r === 'object' && !Array.isArray(r)) as Record<string, unknown>[];
 });
 
+const sampled = computed(() => draft.value && rowObjects.value.length > 0);
+
 watchEffect(() => {
   if (needsRows.value) requestRows(view.value);
 });
 
-const emptyLine = computed(() => {
-  if (!view.value) return 'no data yet (no view)';
-  if (!rows.value) return state.conn === 'open' ? `loading ${view.value}…` : `no data yet (${view.value})`;
-  if (rowObjects.value.length === 0) return `no data yet (${view.value})`;
-  return null;
-});
+const emptyLine = computed(() =>
+  emptyLineText({
+    view: view.value,
+    loaded: !!rows.value,
+    count: rowObjects.value.length,
+    connOpen: state.conn === 'open',
+    preview: preview.value,
+  }),
+);
 
 const columns = computed(() => columnsOf(props.node));
 const rowActions = computed(() => {
@@ -89,7 +97,7 @@ function display(v: unknown): string {
     :data-path="node.path"
     @click.stop="select(node.path)"
   >
-    <div class="card-label">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span><span v-if="draft && rowObjects.length" class="sample-tag" title="made-up rows: this view has no model binding yet">sample data</span></div>
+    <div v-if="!preview || sampled" class="card-label"><template v-if="!preview">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span></template><span v-if="sampled" class="sample-tag" title="made-up rows: this view has no model binding yet">sample data</span></div>
     <h3 v-if="title" class="card-title">{{ title }}</h3>
 
     <template v-if="kind === 'collection'">
@@ -130,7 +138,7 @@ function display(v: unknown): string {
         <p v-if="!fields.length" class="empty">no fields</p>
         <div class="form-actions">
           <button type="button" disabled>Submit</button>
-          <span v-if="does" class="muted small">→ {{ does }}</span>
+          <span v-if="does && !preview" class="muted small">→ {{ does }}</span>
         </div>
       </form>
     </template>
@@ -163,7 +171,7 @@ function display(v: unknown): string {
     </template>
 
     <template v-else-if="kind !== 'board'">
-      <div class="placeholder">{{ kind }}<span v-if="view"> · {{ view }}</span></div>
+      <div class="placeholder">{{ kind }}<span v-if="view && !preview"> · {{ view }}</span></div>
     </template>
 
     <div v-if="node.children.length" class="children" :class="{ grid: kind === 'board' }">

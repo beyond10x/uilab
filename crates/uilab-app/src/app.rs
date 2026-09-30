@@ -30,6 +30,10 @@ use crate::wire::{self, ChangedParts, Client, DocumentParts, OperatorParts, Serv
 /// An operator the API registered and has not heard from for this long is gone.
 pub const API_OPERATOR_TTL: Duration = Duration::from_secs(60);
 
+/// The operator the session's agent acts as when it moves the selection for a human's
+/// instruction; an agent operator moves it as itself.
+pub const AGENT_OPERATOR: &str = "agent";
+
 /// What the session task is told.
 pub enum Cmd {
     /// A browser connected; it is an anonymous human until it says hello.
@@ -60,6 +64,17 @@ pub enum Cmd {
         review: bool,
         /// The goal and step index the proposal carries out, when a goal asked for it.
         step: Option<(String, usize)>,
+    },
+    /// The agent answered an instruction with a move of its target instead of a patch.
+    Moved {
+        by: String,
+        /// Where the instruction was asked.
+        from: NodePath,
+        utterance: String,
+        retarget: uilab_agent::Retarget,
+        ms: u64,
+        review: bool,
+        workspace: uilab_agent::Workspace,
     },
     /// The agent came back with a goal's plan.
     Planned {
@@ -106,8 +121,17 @@ struct Operator {
     name: String,
     agent: bool,
     last_seen: Instant,
-    /// Registered through the API rather than a connection, so it expires.
-    api: bool,
+    /// Held by no connection (registered through the API, or the session's own agent that moved
+    /// the selection for a human), so it expires after [`API_OPERATOR_TTL`] unheard.
+    expires: bool,
+}
+
+/// Why the agent's move of an instruction's target was not made.
+enum MoveRefused {
+    /// A check refused it; the operator reads the check and message.
+    Refused { check: String, message: String },
+    /// The session could not select the path.
+    Failed(String),
 }
 
 pub struct App {
@@ -136,6 +160,8 @@ pub struct App {
     /// Where the microphone was opened; the transcription is proposed there.
     listening_in: uilab_agent::Workspace,
     busy: bool,
+    /// The instruction in flight was moved once already; a second move is refused.
+    moved: bool,
     /// The latest goal; kept after it ends so a browser that connects later still sees it.
     goal: Option<Goal>,
     next_goal: u64,
@@ -240,6 +266,7 @@ impl App {
             audio: None,
             listening_in: uilab_agent::Workspace::App,
             busy: false,
+            moved: false,
             goal: None,
             next_goal: 0,
             out,
@@ -346,7 +373,7 @@ impl App {
                         name: "anonymous".into(),
                         agent: false,
                         last_seen: Instant::now(),
-                        api: false,
+                        expires: false,
                     },
                 );
                 // The snapshot goes to the new connection alone; everybody else already has it,
@@ -383,7 +410,7 @@ impl App {
                         name,
                         agent,
                         last_seen: Instant::now(),
-                        api: true,
+                        expires: true,
                     },
                 );
                 let _ = reply.send(id);
@@ -418,11 +445,19 @@ impl App {
                     .filter(|g| g.is_active())
                     .map(|g| g.by.clone());
                 self.operators.retain(|id, o| {
-                    !o.api
+                    !o.expires
                         || o.last_seen.elapsed() < API_OPERATOR_TTL
                         || running.as_deref() == Some(id.as_str())
                 });
                 if self.operators.len() != before {
+                    // Presence never names a selector it no longer lists.
+                    if self
+                        .selected_by
+                        .as_ref()
+                        .is_some_and(|by| !self.operators.contains_key(by))
+                    {
+                        self.selected_by = None;
+                    }
                     self.send_presence();
                 }
             }
@@ -545,6 +580,65 @@ impl App {
                     }
                 }
             }
+            Cmd::Moved {
+                by,
+                from,
+                utterance,
+                retarget,
+                ms,
+                review,
+                workspace,
+            } => {
+                self.busy = false;
+                let to = retarget.path.clone();
+                let navigate_only = retarget.navigate_only;
+                let outcome = self.move_target(&by, &from, &utterance, &retarget, workspace);
+                let mut entry = json!({
+                    "by": by,
+                    "utterance": utterance,
+                    "from": from.to_string(),
+                    "to": to.to_string(),
+                    "reason": retarget.reason,
+                    "navigate_only": navigate_only,
+                    "ms": ms,
+                    "attempts": retarget.attempts,
+                    "turns": retarget.turns,
+                });
+                match &outcome {
+                    Ok(()) => entry["outcome"] = json!("moved"),
+                    Err(MoveRefused::Refused { check, message }) => {
+                        entry["outcome"] = json!("refused");
+                        entry["check"] = json!(check);
+                        entry["message"] = json!(message);
+                    }
+                    Err(MoveRefused::Failed(message)) => {
+                        entry["outcome"] = json!("failed");
+                        entry["message"] = json!(message);
+                    }
+                }
+                self.journal.write("retarget", entry);
+                match outcome {
+                    Ok(()) if navigate_only => {}
+                    Ok(()) => {
+                        self.moved = true;
+                        self.start_propose(
+                            &by,
+                            utterance,
+                            Some(to),
+                            review,
+                            None,
+                            workspace,
+                            false,
+                        );
+                    }
+                    Err(MoveRefused::Refused { check, message }) => {
+                        self.send(Server::refused(check, message, Some(&by)));
+                    }
+                    Err(MoveRefused::Failed(message)) => {
+                        self.send(Server::failed(message, Some(&by)));
+                    }
+                }
+            }
             Cmd::Planned {
                 goal_id,
                 result,
@@ -569,6 +663,78 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Checks and makes the agent's move of an instruction's target: selects the new path as the
+    /// agent (the operator itself when it is an agent; otherwise the session's own agent
+    /// operator, which expires like an API operator) and says why. A second move for one
+    /// instruction, a move [`uilab_agent::check_retarget`] refuses and a path the session cannot
+    /// select are refused and change nothing. The caller journals the outcome and asks again.
+    fn move_target(
+        &mut self,
+        by: &str,
+        from: &NodePath,
+        utterance: &str,
+        retarget: &uilab_agent::Retarget,
+        workspace: uilab_agent::Workspace,
+    ) -> Result<(), MoveRefused> {
+        let to = &retarget.path;
+        if self.moved {
+            return Err(MoveRefused::Refused {
+                check: "retarget_once".to_owned(),
+                message: format!(
+                    "the agent asked to move the target again, to `{to}`; an instruction moves it \
+                     once"
+                ),
+            });
+        }
+        let navigate_only = retarget.navigate_only;
+        uilab_agent::check_retarget(&self.doc(), from, to, utterance, navigate_only, workspace)
+            .map_err(|refusal| MoveRefused::Refused {
+                check: refusal.check,
+                message: refusal.message,
+            })?;
+        match self.port.select_node(s::SelectNode {
+            document_id: self.document_id.clone(),
+            path: s::NodePath(to.to_string()),
+        }) {
+            Ok(s::SelectNodeOutcome::Selected { .. }) => {}
+            Ok(_) => {
+                return Err(MoveRefused::Refused {
+                    check: "path_resolves".to_owned(),
+                    message: format!("no node at `{to}`"),
+                });
+            }
+            Err(e) => return Err(MoveRefused::Failed(e.to_string())),
+        }
+        let mover = if self.operators.get(by).is_some_and(|o| o.agent) {
+            by.to_owned()
+        } else {
+            let agent = self
+                .operators
+                .entry(AGENT_OPERATOR.to_owned())
+                .or_insert_with(|| Operator {
+                    name: AGENT_OPERATOR.to_owned(),
+                    agent: true,
+                    last_seen: Instant::now(),
+                    expires: true,
+                });
+            agent.last_seen = Instant::now();
+            AGENT_OPERATOR.to_owned()
+        };
+        self.selected_by = Some(mover.clone());
+        self.send(wire::moved(wire::MovedParts {
+            by,
+            selected_by: &mover,
+            from: &from.to_string(),
+            to: &to.to_string(),
+            reason: &retarget.reason,
+            navigate_only,
+            utterance,
+        }));
+        self.send_document();
+        self.send_presence();
+        Ok(())
     }
 
     /// Applies one transition to the goal and does what follows: broadcast the goal and journal
@@ -626,7 +792,16 @@ impl App {
             return;
         }
         let step = Some((id, index));
-        if !self.start_propose(&by, instruction, Some(target), review, step, workspace) {
+        // A step already has its target from the plan: it does not move.
+        if !self.start_propose(
+            &by,
+            instruction,
+            Some(target),
+            review,
+            step,
+            workspace,
+            false,
+        ) {
             self.goal_next(|g| g.not_proposed(index, false));
         }
     }
@@ -1032,11 +1207,14 @@ impl App {
         }
         let review = review.unwrap_or(self.review);
         let target = placed(target.unwrap_or_else(|| self.selected()), workspace);
-        self.start_propose(by, utterance, Some(target), review, None, workspace);
+        self.start_propose(by, utterance, Some(target), review, None, workspace, true);
     }
 
-    /// Asks the agent for one patch off the runtime; the answer comes back as [`Cmd::Proposed`].
-    /// `false` when the last instruction is still being worked on, and nothing was started.
+    /// Asks the agent for one patch off the runtime; the answer comes back as [`Cmd::Proposed`],
+    /// or, with `may_move`, as [`Cmd::Moved`] when the agent moves the target instead. `may_move`
+    /// starts a new instruction, which may move once. `false` when the last instruction is still
+    /// being worked on, and nothing was started.
+    #[allow(clippy::too_many_arguments)]
     fn start_propose(
         &mut self,
         by: &str,
@@ -1045,6 +1223,7 @@ impl App {
         review: bool,
         step: Option<(String, usize)>,
         workspace: uilab_agent::Workspace,
+        may_move: bool,
     ) -> bool {
         if self.busy {
             self.send(Server::failed(
@@ -1052,6 +1231,9 @@ impl App {
                 Some(by),
             ));
             return false;
+        }
+        if may_move {
+            self.moved = false;
         }
         if let Some(pending) = self.pending.take() {
             let _ = self.port.reject_proposal(s::RejectProposal {
@@ -1070,16 +1252,37 @@ impl App {
         let by = by.to_owned();
         tokio::task::spawn_blocking(move || {
             let started = Instant::now();
-            let result = proposer
-                .lock()
-                .expect("the proposer lock")
-                .propose_in(&doc, &target, &utterance, &fields, workspace)
-                .map_err(|e| match e {
-                    uilab_agent::ProposeError::Refused { check, message } => (check, message),
-                    uilab_agent::ProposeError::Declined(reason) => ("declined".to_owned(), reason),
-                    other => ("agent".to_owned(), other.to_string()),
-                });
+            let answered = {
+                let mut proposer = proposer.lock().expect("the proposer lock");
+                if may_move {
+                    proposer.answer_in(&doc, &target, &utterance, &fields, workspace)
+                } else {
+                    proposer
+                        .propose_in(&doc, &target, &utterance, &fields, workspace)
+                        .map(uilab_agent::Answer::Patch)
+                }
+            };
             let ms = started.elapsed().as_millis() as u64;
+            let result = match answered {
+                Ok(uilab_agent::Answer::Retarget(retarget)) => {
+                    let _ = back.blocking_send(Cmd::Moved {
+                        by,
+                        from: target,
+                        utterance,
+                        retarget,
+                        ms,
+                        review,
+                        workspace,
+                    });
+                    return;
+                }
+                Ok(uilab_agent::Answer::Patch(proposal)) => Ok(proposal),
+                Err(uilab_agent::ProposeError::Refused { check, message }) => Err((check, message)),
+                Err(uilab_agent::ProposeError::Declined(reason)) => {
+                    Err(("declined".to_owned(), reason))
+                }
+                Err(other) => Err(("agent".to_owned(), other.to_string())),
+            };
             let _ = back.blocking_send(Cmd::Proposed {
                 by,
                 target,
@@ -2219,5 +2422,398 @@ pages:
             after.iter().all(|r| r.get("members").is_none()),
             "nothing in the document reads the view once the proposal is rejected: {after:?}"
         );
+    }
+
+    const NEW_PAGE: &str = "create a new page in the sidebar for overdue loans";
+
+    /// `by` says `text` with `page:loans/section:list` selected, and the agent is asked there.
+    fn say_at_the_loans_list(rig: &mut Rig, by: &str, text: &str) {
+        rig.client(
+            by,
+            r#"{"type":"select","value":{"path":"page:loans/section:list"}}"#,
+        );
+        rig.client(
+            by,
+            &format!(r#"{{"type":"say","value":{{"text":"{text}"}}}}"#),
+        );
+        assert_eq!(thinking_at(&rig.drain()), "page:loans/section:list");
+    }
+
+    /// The agent answers the instruction in flight with a move to `path`.
+    fn agent_moves(
+        rig: &mut Rig,
+        by: &str,
+        from: &str,
+        text: &str,
+        path: &str,
+        navigate_only: bool,
+    ) {
+        rig.app.handle_cmd(Cmd::Moved {
+            by: by.into(),
+            from: from.parse().unwrap(),
+            utterance: text.into(),
+            retarget: uilab_agent::Retarget {
+                path: path.parse().unwrap(),
+                reason: format!("the instruction is about {path}"),
+                navigate_only,
+                turns: 1,
+                cost_micro_usd: None,
+                attempts: 1,
+            },
+            ms: 1,
+            review: true,
+            workspace: uilab_agent::Workspace::App,
+        });
+    }
+
+    fn moves(messages: &[Server]) -> Vec<&uilab_wire::UilabWireMoved> {
+        messages
+            .iter()
+            .filter_map(|m| match m {
+                Server::Moved(moved) => Some(moved),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Found by the operator on 2026-09-30: "create a new page in the sidebar" with the loans
+    /// list selected was carried out inside the list.
+    #[test]
+    fn a_move_selects_the_path_as_the_agent_says_why_and_asks_again_there() {
+        let mut rig = rig(true);
+        rig.connect("ws-1");
+        rig.drain();
+        say_at_the_loans_list(&mut rig, "ws-1", NEW_PAGE);
+        agent_moves(
+            &mut rig,
+            "ws-1",
+            "page:loans/section:list",
+            NEW_PAGE,
+            "/",
+            false,
+        );
+
+        assert_eq!(rig.app.selected(), NodePath::root());
+        let messages = rig.drain();
+        let moved = moves(&messages);
+        assert_eq!(moved.len(), 1, "{messages:?}");
+        assert_eq!(moved[0].by, uilab_wire::EssPresence::Present("ws-1".into()));
+        assert_eq!(moved[0].selected_by, AGENT_OPERATOR);
+        assert_eq!(moved[0].from.0, "page:loans/section:list");
+        assert_eq!(moved[0].to.0, "/");
+        assert_eq!(moved[0].reason, "the instruction is about /");
+        assert!(!moved[0].navigate_only);
+        let presence = messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                Server::Presence(p) => Some(p),
+                _ => None,
+            })
+            .expect("presence says who moved the selection");
+        assert_eq!(
+            presence.selected_by,
+            uilab_wire::EssPresence::Present(AGENT_OPERATOR.into())
+        );
+        assert!(
+            presence
+                .operators
+                .iter()
+                .any(|o| o.id == AGENT_OPERATOR && wire::is_agent(&o.kind)),
+            "the agent is present: {presence:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|m| matches!(m, Server::Document(d) if d.selected.0 == "/"))
+        );
+        assert_eq!(
+            thinking_at(&messages),
+            "/",
+            "the same instruction is asked again at the new target"
+        );
+        assert!(rig.app.busy);
+        assert!(proposals(&messages).is_empty());
+    }
+
+    #[test]
+    fn an_agent_operator_moves_the_selection_as_itself() {
+        let mut rig = rig(true);
+        say_at_the_loans_list(&mut rig, "api-1", NEW_PAGE);
+        agent_moves(
+            &mut rig,
+            "api-1",
+            "page:loans/section:list",
+            NEW_PAGE,
+            "/",
+            false,
+        );
+        let messages = rig.drain();
+        assert_eq!(moves(&messages)[0].selected_by, "api-1");
+        assert_eq!(rig.app.selected_by.as_deref(), Some("api-1"));
+    }
+
+    #[test]
+    fn a_second_move_for_one_instruction_is_refused() {
+        let mut rig = rig(true);
+        say_at_the_loans_list(&mut rig, "api-1", NEW_PAGE);
+        agent_moves(
+            &mut rig,
+            "api-1",
+            "page:loans/section:list",
+            NEW_PAGE,
+            "/",
+            false,
+        );
+        rig.drain();
+        agent_moves(&mut rig, "api-1", "/", NEW_PAGE, "page:members", false);
+
+        let messages = rig.drain();
+        assert_eq!(
+            refusals(&messages),
+            [("retarget_once".to_owned(), Some("api-1".to_owned()))]
+        );
+        assert!(moves(&messages).is_empty());
+        assert!(!messages.iter().any(|m| matches!(m, Server::Thinking(_))));
+        assert_eq!(rig.app.selected(), NodePath::root(), "the selection stays");
+        assert!(!rig.app.busy);
+
+        // The next instruction may move again.
+        say_at_the_loans_list(&mut rig, "api-1", "go to the members page");
+        agent_moves(
+            &mut rig,
+            "api-1",
+            "page:loans/section:list",
+            "go to the members page",
+            "page:members",
+            true,
+        );
+        assert_eq!(moves(&rig.drain()).len(), 1);
+    }
+
+    #[test]
+    fn a_navigation_only_move_selects_and_proposes_nothing() {
+        let mut rig = rig(true);
+        let text = "go to the members page";
+        say_at_the_loans_list(&mut rig, "api-1", text);
+        agent_moves(
+            &mut rig,
+            "api-1",
+            "page:loans/section:list",
+            text,
+            "page:members",
+            true,
+        );
+
+        assert_eq!(rig.app.selected().to_string(), "page:members");
+        let messages = rig.drain();
+        let moved = moves(&messages);
+        assert_eq!(moved.len(), 1);
+        assert!(moved[0].navigate_only);
+        assert!(!messages.iter().any(|m| matches!(m, Server::Thinking(_))));
+        assert!(proposals(&messages).is_empty());
+        assert!(refusals(&messages).is_empty());
+        assert!(!rig.app.busy);
+    }
+
+    #[test]
+    fn a_move_to_a_path_that_does_not_resolve_is_refused() {
+        let mut rig = rig(true);
+        say_at_the_loans_list(&mut rig, "api-1", NEW_PAGE);
+        agent_moves(
+            &mut rig,
+            "api-1",
+            "page:loans/section:list",
+            NEW_PAGE,
+            "page:overdue",
+            false,
+        );
+
+        let messages = rig.drain();
+        assert_eq!(
+            refusals(&messages),
+            [("path_resolves".to_owned(), Some("api-1".to_owned()))]
+        );
+        assert!(moves(&messages).is_empty());
+        assert!(!messages.iter().any(|m| matches!(m, Server::Thinking(_))));
+        assert_eq!(rig.app.selected().to_string(), "page:loans/section:list");
+        assert!(!rig.app.busy);
+    }
+
+    /// Coordinator decision (round 2): the agent operator the session adds for a human's move
+    /// expires like an API operator: present while it keeps moving, pruned by `Tick` once it has
+    /// not moved for [`API_OPERATOR_TTL`], and presence says so.
+    #[test]
+    fn the_agent_added_for_a_humans_move_expires_like_an_api_operator() {
+        let mut rig = rig(true);
+        rig.connect("ws-1");
+        let text = "go to the members page";
+        say_at_the_loans_list(&mut rig, "ws-1", text);
+        agent_moves(
+            &mut rig,
+            "ws-1",
+            "page:loans/section:list",
+            text,
+            "page:members",
+            true,
+        );
+        rig.drain();
+
+        rig.app.handle_cmd(Cmd::Tick);
+        assert!(
+            rig.app.operators.contains_key(AGENT_OPERATOR),
+            "present right after its move"
+        );
+        rig.app.operators.get_mut(AGENT_OPERATOR).unwrap().last_seen = Instant::now()
+            .checked_sub(API_OPERATOR_TTL * 2)
+            .expect("the clock is past two TTLs");
+        rig.app.handle_cmd(Cmd::Tick);
+        assert!(!rig.app.operators.contains_key(AGENT_OPERATOR));
+        let presence = rig
+            .drain()
+            .into_iter()
+            .rev()
+            .find_map(|m| match m {
+                Server::Presence(p) => Some(p),
+                _ => None,
+            })
+            .expect("presence is sent when the agent leaves");
+        assert!(
+            !presence.operators.iter().any(|o| o.id == AGENT_OPERATOR),
+            "{presence:?}"
+        );
+        assert!(rig.app.operators.contains_key("ws-1"), "the human stays");
+    }
+
+    /// The `retarget` entries of the session journal, in order.
+    fn retarget_entries(rig: &Rig) -> Vec<serde_json::Value> {
+        std::fs::read_to_string(rig.app.journal.dir().join("events.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .filter(|entry| entry["event"] == "retarget")
+            .collect()
+    }
+
+    /// Coordinator decision (round 2): the journal writes one `retarget` entry per move the agent
+    /// asked for, after the check, with its outcome: `moved`, or `refused` with the check and
+    /// message that refused it.
+    #[test]
+    fn the_journal_writes_each_move_after_the_check_with_its_outcome() {
+        let mut rig = rig(true);
+        say_at_the_loans_list(&mut rig, "api-1", NEW_PAGE);
+        agent_moves(
+            &mut rig,
+            "api-1",
+            "page:loans/section:list",
+            NEW_PAGE,
+            "page:overdue",
+            false,
+        );
+        let entries = retarget_entries(&rig);
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        assert_eq!(entries[0]["outcome"], "refused");
+        assert_eq!(entries[0]["check"], "path_resolves");
+        assert!(
+            entries[0]["message"]
+                .as_str()
+                .is_some_and(|m| !m.is_empty())
+        );
+        assert_eq!(entries[0]["to"], "page:overdue");
+
+        say_at_the_loans_list(&mut rig, "api-1", NEW_PAGE);
+        agent_moves(
+            &mut rig,
+            "api-1",
+            "page:loans/section:list",
+            NEW_PAGE,
+            "/",
+            false,
+        );
+        agent_moves(&mut rig, "api-1", "/", NEW_PAGE, "page:members", false);
+        let entries = retarget_entries(&rig);
+        assert_eq!(entries.len(), 3, "{entries:?}");
+        assert_eq!(entries[1]["outcome"], "moved");
+        assert_eq!(entries[1]["to"], "/");
+        assert_eq!(entries[1]["from"], "page:loans/section:list");
+        assert_eq!(entries[1]["reason"], "the instruction is about /");
+        assert!(entries[1].get("check").is_none(), "{:?}", entries[1]);
+        assert_eq!(entries[2]["outcome"], "refused");
+        assert_eq!(entries[2]["check"], "retarget_once");
+        assert_eq!(entries[2]["to"], "page:members");
+    }
+
+    /// Adversary pass 2. Design: "presence shows who moved it". Once `Tick` prunes the session's
+    /// agent (round 2), the presence it sends still names the agent as the one who made the
+    /// selection, while no longer listing it; the widget's `operatorView` then falls back to a
+    /// human named "agent" (`kind` defaults to `human`), so the move reads as a person's.
+    #[test]
+    fn adversary_presence_names_no_selector_it_does_not_list_after_the_agent_expires() {
+        let mut rig = rig(true);
+        rig.connect("ws-1");
+        let text = "go to the members page";
+        say_at_the_loans_list(&mut rig, "ws-1", text);
+        agent_moves(
+            &mut rig,
+            "ws-1",
+            "page:loans/section:list",
+            text,
+            "page:members",
+            true,
+        );
+        rig.drain();
+        rig.app.operators.get_mut(AGENT_OPERATOR).unwrap().last_seen = Instant::now()
+            .checked_sub(API_OPERATOR_TTL * 2)
+            .expect("the clock is past two TTLs");
+        rig.app.handle_cmd(Cmd::Tick);
+        let presence = rig
+            .drain()
+            .into_iter()
+            .rev()
+            .find_map(|m| match m {
+                Server::Presence(p) => Some(p),
+                _ => None,
+            })
+            .expect("presence is sent when the agent leaves");
+        if let uilab_wire::EssPresence::Present(selector) = &presence.selected_by {
+            assert!(
+                presence.operators.iter().any(|o| &o.id == selector),
+                "presence names `{selector}` as the one who selected, but does not list it: \
+                 {presence:?}"
+            );
+        }
+    }
+
+    /// Adversary pass 2, a probe that holds: each move refreshes the session's agent, so a second
+    /// instruction's move after a long quiet keeps it present through the next `Tick`.
+    #[test]
+    fn adversary_a_later_move_keeps_the_agent_present() {
+        let mut rig = rig(true);
+        rig.connect("ws-1");
+        let text = "go to the members page";
+        say_at_the_loans_list(&mut rig, "ws-1", text);
+        agent_moves(
+            &mut rig,
+            "ws-1",
+            "page:loans/section:list",
+            text,
+            "page:members",
+            true,
+        );
+        rig.app.operators.get_mut(AGENT_OPERATOR).unwrap().last_seen = Instant::now()
+            .checked_sub(API_OPERATOR_TTL * 2)
+            .expect("the clock is past two TTLs");
+        say_at_the_loans_list(&mut rig, "ws-1", text);
+        agent_moves(
+            &mut rig,
+            "ws-1",
+            "page:loans/section:list",
+            text,
+            "page:members",
+            true,
+        );
+        rig.app.handle_cmd(Cmd::Tick);
+        assert!(rig.app.operators.contains_key(AGENT_OPERATOR));
+        assert_eq!(rig.app.selected_by.as_deref(), Some(AGENT_OPERATOR));
     }
 }

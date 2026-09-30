@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a
-// contract digest 382360f755c7a7fe5f6fc4cb540326082dab33d91dbb381976dae34503c8a0e5
+// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
+// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
 // do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
@@ -849,6 +849,75 @@ pub fn decode_uilab_wire_mic_state(value: &json::Value, at: &str) -> Result<uila
     })
 }
 
+/// Writes `uilab.wire.Moved` as JSON.
+pub fn encode_uilab_wire_moved(value: &uilab_types::wire::Moved, out: &mut String) {
+    out.push('{');
+    if let Some(held0) = &value.by {
+        json::member(out, "by");
+        json::push_text(out, &*held0);
+    }
+    json::member(out, "selected_by");
+    json::push_text(out, &value.selected_by);
+    json::member(out, "from");
+    encode_uilab_session_node_path(&value.from, out);
+    json::member(out, "to");
+    encode_uilab_session_node_path(&value.to, out);
+    json::member(out, "reason");
+    json::push_text(out, &value.reason);
+    json::member(out, "navigate_only");
+    json::push_bool(out, value.navigate_only);
+    json::member(out, "utterance");
+    json::push_text(out, &value.utterance);
+    out.push('}');
+}
+
+/// Reads `uilab.wire.Moved` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_moved(value: &json::Value, at: &str) -> Result<uilab_types::wire::Moved, json::DecodeError> {
+    Ok(uilab_types::wire::Moved {
+        by: match value.member("by") {
+            None | Some(json::Value::Null) => None,
+            Some(member0) => {
+                let at0 = json::nested(at, "by");
+                Some(json::text_at(member0, &at0, "a string")?.to_owned())
+            }
+        },
+        selected_by: {
+            let at1 = json::nested(at, "selected_by");
+            let member1 = json::member_at(value, at, "selected_by")?;
+            json::text_at(member1, &at1, "a string")?.to_owned()
+        },
+        from: {
+            let at2 = json::nested(at, "from");
+            let member2 = json::member_at(value, at, "from")?;
+            decode_uilab_session_node_path(member2, &at2)?
+        },
+        to: {
+            let at3 = json::nested(at, "to");
+            let member3 = json::member_at(value, at, "to")?;
+            decode_uilab_session_node_path(member3, &at3)?
+        },
+        reason: {
+            let at4 = json::nested(at, "reason");
+            let member4 = json::member_at(value, at, "reason")?;
+            json::text_at(member4, &at4, "a string")?.to_owned()
+        },
+        navigate_only: {
+            let at5 = json::nested(at, "navigate_only");
+            let member5 = json::member_at(value, at, "navigate_only")?;
+            json::bool_at(member5, &at5, "a boolean")?
+        },
+        utterance: {
+            let at6 = json::nested(at, "utterance");
+            let member6 = json::member_at(value, at, "utterance")?;
+            json::text_at(member6, &at6, "a string")?.to_owned()
+        },
+    })
+}
+
 /// Writes `uilab.wire.Operator` as JSON.
 pub fn encode_uilab_wire_operator(value: &uilab_types::wire::Operator, out: &mut String) {
     out.push('{');
@@ -1420,6 +1489,14 @@ pub fn encode_uilab_wire_server_message(value: &uilab_types::wire::ServerMessage
             encode_uilab_wire_goal(&*held, out);
             out.push('}');
         }
+        uilab_types::wire::ServerMessage::Moved(held) => {
+            out.push('{');
+            json::member(out, "type");
+            json::push_text(out, "moved");
+            json::member(out, "value");
+            encode_uilab_wire_moved(&*held, out);
+            out.push('}');
+        }
         uilab_types::wire::ServerMessage::Presence(held) => {
             out.push('{');
             json::member(out, "type");
@@ -1479,7 +1556,7 @@ pub fn encode_uilab_wire_server_message(value: &uilab_types::wire::ServerMessage
 pub fn decode_uilab_wire_server_message(value: &json::Value, at: &str) -> Result<uilab_types::wire::ServerMessage, json::DecodeError> {
     let tag = json::member_at(value, at, "type")?;
     let at_tag = json::nested(at, "type");
-    Ok(match json::text_at(tag, &at_tag, "one of `changed`, `document`, `failed`, `goal`, `presence`, `proposal`, `refused`, `rows`, `thinking`, `transcript`")? {
+    Ok(match json::text_at(tag, &at_tag, "one of `changed`, `document`, `failed`, `goal`, `moved`, `presence`, `proposal`, `refused`, `rows`, `thinking`, `transcript`")? {
         "changed" => uilab_types::wire::ServerMessage::Changed({
             let at0 = json::nested(at, "value");
             let member0 = json::member_at(value, at, "value")?;
@@ -1500,37 +1577,42 @@ pub fn decode_uilab_wire_server_message(value: &json::Value, at: &str) -> Result
             let member3 = json::member_at(value, at, "value")?;
             decode_uilab_wire_goal(member3, &at3)?
         }),
-        "presence" => uilab_types::wire::ServerMessage::Presence({
+        "moved" => uilab_types::wire::ServerMessage::Moved({
             let at4 = json::nested(at, "value");
             let member4 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_presence(member4, &at4)?
+            decode_uilab_wire_moved(member4, &at4)?
         }),
-        "proposal" => uilab_types::wire::ServerMessage::Proposal({
+        "presence" => uilab_types::wire::ServerMessage::Presence({
             let at5 = json::nested(at, "value");
             let member5 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_proposal_shown(member5, &at5)?
+            decode_uilab_wire_presence(member5, &at5)?
         }),
-        "refused" => uilab_types::wire::ServerMessage::Refused({
+        "proposal" => uilab_types::wire::ServerMessage::Proposal({
             let at6 = json::nested(at, "value");
             let member6 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_refused(member6, &at6)?
+            decode_uilab_wire_proposal_shown(member6, &at6)?
         }),
-        "rows" => uilab_types::wire::ServerMessage::Rows({
+        "refused" => uilab_types::wire::ServerMessage::Refused({
             let at7 = json::nested(at, "value");
             let member7 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_rows(member7, &at7)?
+            decode_uilab_wire_refused(member7, &at7)?
         }),
-        "thinking" => uilab_types::wire::ServerMessage::Thinking({
+        "rows" => uilab_types::wire::ServerMessage::Rows({
             let at8 = json::nested(at, "value");
             let member8 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_thinking(member8, &at8)?
+            decode_uilab_wire_rows(member8, &at8)?
         }),
-        "transcript" => uilab_types::wire::ServerMessage::Transcript({
+        "thinking" => uilab_types::wire::ServerMessage::Thinking({
             let at9 = json::nested(at, "value");
             let member9 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_transcript(member9, &at9)?
+            decode_uilab_wire_thinking(member9, &at9)?
         }),
-        other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `changed`, `document`, `failed`, `goal`, `presence`, `proposal`, `refused`, `rows`, `thinking`, `transcript`".to_owned(), found: format!("`{other}`") }),
+        "transcript" => uilab_types::wire::ServerMessage::Transcript({
+            let at10 = json::nested(at, "value");
+            let member10 = json::member_at(value, at, "value")?;
+            decode_uilab_wire_transcript(member10, &at10)?
+        }),
+        other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `changed`, `document`, `failed`, `goal`, `moved`, `presence`, `proposal`, `refused`, `rows`, `thinking`, `transcript`".to_owned(), found: format!("`{other}`") }),
     })
 }
 

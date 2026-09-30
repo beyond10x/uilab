@@ -11,7 +11,7 @@ use uilab_wire::{
     EssPresence, UilabSessionDocumentId, UilabSessionNodePath, UilabSessionPatchOp,
     UilabSessionProposalId, UilabWireChanged, UilabWireDecide, UilabWireDocumentState,
     UilabWireFailed, UilabWireFinding, UilabWireGoal, UilabWireGoalStep, UilabWireHello,
-    UilabWireMic, UilabWireMicState, UilabWireOperator, UilabWireOperatorKind,
+    UilabWireMic, UilabWireMicState, UilabWireMoved, UilabWireOperator, UilabWireOperatorKind,
     UilabWireOutlineNode, UilabWirePresence, UilabWireProposalShown, UilabWireReadRows,
     UilabWireRefused, UilabWireResync, UilabWireRows, UilabWireSay, UilabWireSelect,
     UilabWireSettings, UilabWireStartGoal, UilabWireStopGoal, UilabWireThinking,
@@ -66,6 +66,8 @@ pub enum Server {
     Refused(UilabWireRefused),
     /// Something failed that is not a check.
     Failed(UilabWireFailed),
+    /// The agent moved the selection for an instruction that names another place.
+    Moved(UilabWireMoved),
     /// Fixture rows of a view.
     Rows(UilabWireRows),
     /// Who is operating.
@@ -107,6 +109,7 @@ impl Server {
             Server::Proposal(m) => &m.by,
             Server::Refused(m) => &m.by,
             Server::Failed(m) => &m.by,
+            Server::Moved(m) => &m.by,
             Server::Changed(m) => return Some(&m.by),
             Server::Goal(m) => return Some(&m.by),
             Server::Document(_) | Server::Rows(_) | Server::Presence(_) => return None,
@@ -294,6 +297,30 @@ pub fn transcript(text: &str, audio_ms: u64, took_ms: u64, by: Option<&str>) -> 
     })
 }
 
+pub struct MovedParts<'a> {
+    /// The operator whose instruction it was.
+    pub by: &'a str,
+    /// Who moved the selection: the agent.
+    pub selected_by: &'a str,
+    pub from: &'a str,
+    pub to: &'a str,
+    pub reason: &'a str,
+    pub navigate_only: bool,
+    pub utterance: &'a str,
+}
+
+pub fn moved(parts: MovedParts<'_>) -> Server {
+    Server::Moved(UilabWireMoved {
+        by: by_of(Some(parts.by)),
+        from: node_path(parts.from),
+        navigate_only: parts.navigate_only,
+        reason: parts.reason.to_owned(),
+        selected_by: parts.selected_by.to_owned(),
+        to: node_path(parts.to),
+        utterance: parts.utterance.to_owned(),
+    })
+}
+
 pub fn thinking(target: &str, by: Option<&str>) -> Server {
     Server::Thinking(UilabWireThinking {
         target: node_path(target),
@@ -408,6 +435,24 @@ mod tests {
             }),
             Server::refused("name_unique", "m", Some("op-1")),
             Server::failed("m", None),
+            moved(MovedParts {
+                by: "op-1",
+                selected_by: "agent",
+                from: "page:loans/section:list",
+                to: "/",
+                reason: "a new page goes under the root",
+                navigate_only: false,
+                utterance: "create a new page",
+            }),
+            moved(MovedParts {
+                by: "op-2",
+                selected_by: "op-2",
+                from: "page:loans",
+                to: "page:members",
+                reason: "r",
+                navigate_only: true,
+                utterance: "go to the members page",
+            }),
             rows(
                 "loans.All",
                 Some(4),
@@ -514,6 +559,20 @@ mod tests {
         assert_eq!(Server::failed("m", None).by(), None);
         assert_eq!(thinking("/", Some("op-2")).by(), Some("op-2"));
         assert_eq!(goal(&goal_fixtures()[0]).by(), Some("api-1"));
+        let by_agent = moved(MovedParts {
+            by: "op-1",
+            selected_by: "agent",
+            from: "/",
+            to: "nav",
+            reason: "r",
+            navigate_only: false,
+            utterance: "u",
+        });
+        assert_eq!(
+            by_agent.by(),
+            Some("op-1"),
+            "a move is the instruction's operator's"
+        );
     }
 
     /// A goal in each state the runner reaches: planning, running mid-way, done, stopped, failed.

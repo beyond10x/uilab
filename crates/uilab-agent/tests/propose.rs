@@ -9,7 +9,9 @@ use harness_wire::{
     Usage, WireError, WireId,
 };
 use serde_json::{Value, json};
-use uilab_agent::{ProposeError, Proposer, ProposerConfig, Step};
+use uilab_agent::{
+    Answer, ProposeError, Proposer, ProposerConfig, Step, Workspace, check_retarget,
+};
 use uilab_doc::{Document, NodePath, Patch};
 
 fn library() -> Document {
@@ -242,6 +244,203 @@ fn a_decline_proposes_nothing_and_says_why() {
         Err(uilab_agent::ProposeError::Declined(reason)) => assert!(reason.contains("thanks")),
         other => panic!("expected a decline, got {other:?}"),
     }
+}
+
+fn loans_list() -> NodePath {
+    "page:loans/section:list".parse().unwrap()
+}
+
+fn retarget(path: &str, navigate_only: bool) -> Value {
+    json!({
+        "op": "retarget",
+        "target": "page:loans/section:list",
+        "path": path,
+        "reason": format!("the instruction is about {path}"),
+        "navigate_only": navigate_only,
+    })
+}
+
+const NEW_PAGE: &str = "create a new page in the sidebar for overdue loans";
+
+/// Found by the operator on 2026-09-30: with the loans list selected, "create a new page in the
+/// sidebar" was carried out inside the list, because the list was all a patch there could change.
+#[test]
+fn an_instruction_that_names_another_place_answers_a_move_there() {
+    let doc = library();
+    let (mut proposer, seen) = proposer(vec![retarget("/", false)]);
+    let answer = proposer
+        .answer_in(&doc, &loans_list(), NEW_PAGE, &[], Workspace::App)
+        .unwrap();
+    let Answer::Retarget(moved) = answer else {
+        panic!("a move: {answer:?}");
+    };
+    assert_eq!(moved.path, NodePath::root());
+    assert_eq!(moved.reason, "the instruction is about /");
+    assert!(!moved.navigate_only);
+    assert_eq!(moved.attempts, 1);
+
+    let seen = seen.lock().unwrap();
+    let schema = schema_of(&seen[0]);
+    let ops = schema["properties"]["op"]["enum"].as_array().unwrap();
+    assert!(ops.contains(&json!("retarget")), "{ops:?}");
+    assert_eq!(schema["properties"]["path"]["type"], "string");
+    assert_eq!(schema["properties"]["navigate_only"]["type"], "boolean");
+    let user = texts(&seen[0]);
+    assert!(
+        user.contains("page:members") && user.contains("nav"),
+        "the places a move can go are listed: {user}"
+    );
+}
+
+#[test]
+fn a_patch_answer_where_a_move_is_allowed_is_a_patch() {
+    let doc = library();
+    let (mut proposer, _) = proposer(vec![overdue_section()]);
+    let answer = proposer
+        .answer_in(
+            &doc,
+            &loans(),
+            "add a table of overdue loans",
+            &[],
+            Workspace::App,
+        )
+        .unwrap();
+    assert!(matches!(answer, Answer::Patch(_)), "{answer:?}");
+}
+
+#[test]
+fn the_prompt_states_when_a_move_is_allowed_and_only_where_one_is() {
+    let doc = library();
+    let (mut moving, seen) = proposer(vec![retarget("page:members", true)]);
+    moving
+        .answer_in(
+            &doc,
+            &loans_list(),
+            "go to the members page",
+            &[],
+            Workspace::App,
+        )
+        .unwrap();
+    let instructions = seen.lock().unwrap()[0].instructions.clone();
+    for said in [
+        "`op: retarget`",
+        "once",
+        "`/`",
+        "`nav`",
+        "`navigate_only: true`",
+        "names no other place",
+        "Components",
+    ] {
+        assert!(instructions.contains(said), "{said}: {instructions}");
+    }
+
+    let (mut proposer, seen) = proposer(vec![overdue_section()]);
+    proposer
+        .propose(&doc, &loans(), "add a table of overdue loans")
+        .unwrap();
+    let seen = seen.lock().unwrap();
+    assert!(!seen[0].instructions.contains("retarget"));
+    let ops = schema_of(&seen[0])["properties"]["op"]["enum"].clone();
+    assert!(
+        !ops.as_array().unwrap().contains(&json!("retarget")),
+        "a plain proposal cannot move: {ops}"
+    );
+}
+
+#[test]
+fn a_navigation_only_move_comes_back_as_one() {
+    let doc = library();
+    let (mut proposer, _) = proposer(vec![retarget("page:members", true)]);
+    let answer = proposer
+        .answer_in(
+            &doc,
+            &loans_list(),
+            "go to the members page",
+            &[],
+            Workspace::App,
+        )
+        .unwrap();
+    let Answer::Retarget(moved) = answer else {
+        panic!("a move: {answer:?}");
+    };
+    assert_eq!(moved.path.to_string(), "page:members");
+    assert!(moved.navigate_only);
+}
+
+#[test]
+fn a_move_to_a_path_that_does_not_resolve_is_refused_and_retried() {
+    let doc = library();
+    let (mut proposer, seen) =
+        proposer(vec![retarget("page:overdue", false), retarget("/", false)]);
+    let answer = proposer
+        .answer_in(&doc, &loans_list(), NEW_PAGE, &[], Workspace::App)
+        .unwrap();
+    let Answer::Retarget(moved) = answer else {
+        panic!("a move: {answer:?}");
+    };
+    assert_eq!(moved.path, NodePath::root());
+    assert_eq!(moved.attempts, 2);
+    let second = texts(&seen.lock().unwrap()[1]);
+    assert!(second.contains("path_resolves: "), "{second}");
+    assert!(second.contains("page:overdue"), "{second}");
+}
+
+#[test]
+fn a_move_is_checked_against_the_document_the_target_and_the_workspace() {
+    let doc = library();
+    let root = NodePath::root();
+    let members = members();
+    check_retarget(&doc, &loans_list(), &root, NEW_PAGE, false, Workspace::App)
+        .expect("a new page moves to the root");
+    check_retarget(
+        &doc,
+        &loans_list(),
+        &"nav".parse().unwrap(),
+        "add a menu entry",
+        false,
+        Workspace::App,
+    )
+    .expect("a menu entry moves to the navigation");
+    let refused = check_retarget(
+        &doc,
+        &loans_list(),
+        &"page:overdue".parse().unwrap(),
+        NEW_PAGE,
+        false,
+        Workspace::App,
+    )
+    .unwrap_err();
+    assert_eq!(refused.check, "path_resolves");
+    let refused = check_retarget(
+        &doc,
+        &loans_list(),
+        &loans_list(),
+        "add a column",
+        false,
+        Workspace::App,
+    )
+    .unwrap_err();
+    assert_eq!(refused.check, "retarget_same");
+
+    let refused = check_retarget(
+        &doc,
+        &root,
+        &members,
+        "make the card bigger",
+        false,
+        Workspace::Components,
+    )
+    .unwrap_err();
+    assert_eq!(refused.check, "retarget_workspace");
+    check_retarget(
+        &doc,
+        &root,
+        &members,
+        "put the loan card on the members page",
+        false,
+        Workspace::Components,
+    )
+    .expect("the Components tab leaves the widgets when a page is named");
 }
 
 const MEMBER_AREA: &str =

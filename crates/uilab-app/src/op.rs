@@ -631,6 +631,18 @@ fn print(message: &Server, json: bool) {
             t.text, t.audio_ms, t.took_ms
         ),
         Server::Thinking(t) => println!("thinking at {}", t.target.0),
+        Server::Moved(m) => println!(
+            "moved {} -> {} by {}{}: {}",
+            m.from.0,
+            m.to.0,
+            m.selected_by,
+            if m.navigate_only {
+                " (navigate only)"
+            } else {
+                ""
+            },
+            m.reason
+        ),
         Server::Proposal(p) => {
             let op: Value = serde_json::to_value(&p.op).unwrap_or_default();
             println!(

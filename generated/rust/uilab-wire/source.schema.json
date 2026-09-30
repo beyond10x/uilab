@@ -537,6 +537,44 @@
       "x-ess-kind": "enum",
       "x-ess-name": "uilab.wire.MicState"
     },
+    "uilab.wire.Moved": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "navigate_only": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "selected_by": {
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "utterance": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "selected_by",
+        "from",
+        "to",
+        "reason",
+        "navigate_only",
+        "utterance"
+      ],
+      "title": "Moved",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Moved"
+    },
     "uilab.wire.Operator": {
       "additionalProperties": false,
       "properties": {
@@ -881,6 +919,24 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "const": "moved",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Moved"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "moved",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
               "const": "presence",
               "type": "string"
             },
@@ -1130,8 +1186,8 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "x-ess-provenance": {
-    "contract_digest": "slice-sha256/2:35c728bccc1e3a09e0d3a8fb1b2a0376a8d684032f6dc0cc66405120d9e460ac",
-    "source_digest": "b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a",
+    "contract_digest": "slice-sha256/2:c5a8ef96d326453baee30aa7573313201936a8325cbf956ae876c37420def685",
+    "source_digest": "823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24",
     "specification_version": "v1",
     "system": "uilab"
   }

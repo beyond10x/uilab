@@ -35,7 +35,7 @@ function open(e: FeedEntry): void {
         <span class="feed-kind">{{ e.kind }}</span>
         <code v-if="e.what" class="feed-what">{{ e.what }}</code>
         <code v-if="e.path" class="path">{{ e.path }}</code>
-        <span v-if="e.kind === 'transcript' || (!e.path && e.text)" class="feed-text muted">{{ e.text }}</span>
+        <span v-if="e.kind === 'transcript' || e.kind === 'moved' || (!e.path && e.text)" class="feed-text muted">{{ e.text }}</span>
       </li>
       <li v-if="!state.feed.length" class="muted small">nothing yet</li>
     </ol>

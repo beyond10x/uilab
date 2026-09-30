@@ -168,7 +168,28 @@ test('localOperatorId finds the one human of the local name', () => {
   assert.equal(localOperatorId([...ops, { id: 'h2', name: 'Timo', kind: 'human', last_seen_ms: 0 }], 'Timo'), null);
 });
 
+test('a move is a feed line by the operator that moved the selection, with its reason', () => {
+  const value = { by: 'h1', selected_by: 'agent', from: 'page:loans/section:list', to: '/', reason: 'a new page goes under the root', utterance: 'u' };
+  assert.deepEqual(feedEntry({ type: 'moved', value: { ...value, navigate_only: false } }, 5, 3), {
+    seq: 3,
+    at: 5,
+    kind: 'moved',
+    by: 'agent',
+    what: 'retarget',
+    path: '/',
+    text: 'a new page goes under the root',
+  });
+  assert.equal(feedEntry({ type: 'moved', value: { ...value, navigate_only: true } }, 5, 4)?.what, 'navigate');
+});
+
 // ---- in flight ---------------------------------------------------------------------------------
+
+test('a move carries the action to its new target, and a navigation-only move ends it', () => {
+  const value = { by: 'h1', selected_by: 'agent', from: 'page:loans', to: 'page:members', reason: 'r', utterance: 'u' };
+  const thinking = trackInFlight({}, { type: 'thinking', value: { by: 'h1', target: 'page:loans' } });
+  assert.deepEqual(trackInFlight(thinking, { type: 'moved', value: { ...value, navigate_only: false } }), { h1: 'page:members' });
+  assert.deepEqual(trackInFlight(thinking, { type: 'moved', value: { ...value, navigate_only: true } }), {});
+});
 
 test('thinking starts an action; that operator\'s proposal clears it', () => {
   let f: InFlight = {};

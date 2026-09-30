@@ -341,6 +341,17 @@ function onMessage(msg: ServerMessage): void {
       state.phase = 'thinking';
       state.thinkingTarget = msg.value.target;
       break;
+    case 'moved':
+      // The agent moved the selection for this operator's instruction; the document that follows
+      // carries the selection. A navigation-only move is the whole answer.
+      if (!local) break;
+      if (msg.value.navigate_only) {
+        state.phase = 'idle';
+        state.notice = null;
+      } else {
+        state.thinkingTarget = msg.value.to;
+      }
+      break;
     case 'proposal': {
       if (local) {
         state.phase = 'idle';

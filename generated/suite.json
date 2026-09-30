@@ -3,8 +3,8 @@
     "suite_version": "ess-conformance/12",
     "system": "uilab",
     "specification_version": "v1",
-    "spec_digest": "b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a",
-    "contract_digest": "382360f755c7a7fe5f6fc4cb540326082dab33d91dbb381976dae34503c8a0e5"
+    "spec_digest": "823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24",
+    "contract_digest": "1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9"
   },
   "scenarios": {
     "uilab.session.AcceptProposal/outcome/accepted": {

@@ -212,7 +212,7 @@ pub async fn act(
 /// Which message ends an action.
 #[derive(Clone)]
 enum Settle {
-    /// An instruction: a proposal, or why there is none.
+    /// An instruction: a proposal, a navigation-only move, or why there is none.
     Proposal,
     /// An accept: the change it made.
     Change,
@@ -288,7 +288,11 @@ impl Settle {
             return true;
         }
         match self {
-            Settle::Proposal => matches!(message, Server::Proposal(_)),
+            // A navigation-only move is the whole answer; a move that asks again is not.
+            Settle::Proposal => {
+                matches!(message, Server::Proposal(_))
+                    || matches!(message, Server::Moved(m) if m.navigate_only)
+            }
             Settle::Change => matches!(message, Server::Changed(_) | Server::Document(_)),
             Settle::Document => matches!(message, Server::Document(_)),
             Settle::Rows => matches!(message, Server::Rows(_)),
@@ -520,5 +524,23 @@ mod tests {
             !settle.settled_by(&earlier),
             "settled on the previous goal before the new one was planned"
         );
+    }
+
+    #[test]
+    fn an_instruction_settles_on_a_navigation_only_move_and_not_on_a_move_that_asks_again() {
+        let say = Client::from_text(r#"{"type":"say","value":{"text":"t"}}"#).unwrap();
+        let moved = |navigate_only| {
+            wire::moved(wire::MovedParts {
+                by: "api-1",
+                selected_by: "api-1",
+                from: "page:loans/section:list",
+                to: "page:members",
+                reason: "r",
+                navigate_only,
+                utterance: "t",
+            })
+        };
+        assert!(Settle::of(&say).settled_by(&moved(true)));
+        assert!(!Settle::of(&say).settled_by(&moved(false)));
     }
 }
