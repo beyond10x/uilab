@@ -3,7 +3,7 @@ import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
 import { entityViews, fixtureRowOf, viewsRead } from '../lib/components.ts';
-import { compositeKind, drawsAsPrimitive, instanceBody, itemScopes, widgetOfInstance, type Scope } from '../lib/instance.ts';
+import { compositeKind, drawsAsPrimitive, instanceBody, itemScopes, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
 import { columnsOf, fieldsOf, isDraftView, propsOf } from '../lib/outline.ts';
 import { marks, requestRows, select, shownOutline, state, tint } from '../store.ts';
 import PrimitiveView from './PrimitiveView.vue';
@@ -210,7 +210,7 @@ function display(v: unknown): string {
     <div v-if="items.length" class="item-rows">
       <div v-for="(s, i) in scopes" :key="i" class="item-row">
         <template v-for="c in items" :key="c.path">
-          <PrimitiveView v-if="drawsAsPrimitive(c)" :node="c" />
+          <PrimitiveView v-if="drawsAsPrimitive(c)" :node="s.row ? rowNode(c, s.row) : c" />
           <CompositeView v-else :node="c" :scope="s" :within="within" />
         </template>
       </div>

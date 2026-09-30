@@ -164,3 +164,64 @@ test('the selected instance carries the selection; its body is drawn inside a bo
   const spotlight = nodeHtml(html, 'page:members/section:spotlight');
   assert.match(spotlight, /class="instance-body[^"]*"/, 'the body sits in the instance body');
 });
+
+/** `outline` on the canvas with `rows` loaded (a view left out is not loaded yet) and the
+ *  connection `conn`. */
+async function renderWith(outline: OutlineNode, mode: CanvasMode, rows: Record<string, unknown[]>, conn = 'closed'): Promise<string> {
+  canvasMode.mode.value = mode;
+  state.conn = conn;
+  state.rows = Object.fromEntries(Object.entries(rows).map(([view, r]) => [view, { view, rows: r } as Rows]));
+  state.doc = { outline, selected: '/' } as StoreApi['state']['doc'];
+  state.currentPage = 'page:members';
+  return renderToString(createSSRApp({ render: () => h(CanvasView) }));
+}
+
+/** A page with a collection over `view` whose items are a `member_card` instance and a primitive
+ *  badge writing `row.<field>`. */
+function listPage(view: string, withCard = true): OutlineNode {
+  const widgets = withCard ? [doc().children[0]] : [];
+  const items = [
+    ...(withCard ? [n('page:members/section:list/item:card', 'item', 'member_card', [], { props: { args: { member: 'row' } } })] : []),
+    n('page:members/section:list/item:tag', 'item', 'badge', [], { props: { text: 'standing row.standing' } }),
+  ];
+  return n('/', 'root', 'document', [
+    ...widgets,
+    n('page:members', 'page', 'list_page', [n('page:members/section:list', 'section', 'collection', items, { view })], { title: 'Members' }),
+  ]);
+}
+
+for (const mode of ['structure', 'preview'] as const) {
+  test(`${mode}: a primitive item is drawn once per row with row.<field> read from that row`, async () => {
+    const html = nodeHtml(await renderWith(listPage('members.All', false), mode, { 'members.All': MEMBERS }), 'page:members/section:list');
+    assert.equal([...html.matchAll(/data-path="page:members\/section:list\/item:tag"/g)].length, MEMBERS.length);
+    assert.match(text(html), /standing good .*standing late/);
+    assert.doesNotMatch(text(html), /row\./);
+  });
+
+  test(`${mode}: a collection whose rows are not loaded yet keeps its loading line and draws no item`, async () => {
+    const html = nodeHtml(await renderWith(listPage('members.All'), mode, {}, 'open'), 'page:members/section:list');
+    assert.match(text(html), /loading/);
+    assert.doesNotMatch(html, /data-widget="member_card"/);
+    assert.doesNotMatch(html, /item:tag/);
+  });
+
+  test(`${mode}: a loaded collection with no rows draws neither kind of item`, async () => {
+    const html = nodeHtml(await renderWith(listPage('members.All'), mode, { 'members.All': [] }), 'page:members/section:list');
+    assert.match(text(html), /no data yet/);
+    assert.doesNotMatch(html, /data-widget="member_card"/);
+    assert.doesNotMatch(html, /item:tag/);
+  });
+
+  test(`${mode}: args.<param> on a page instance shows the param's sample, not the written text`, async () => {
+    const outline = n('/', 'root', 'document', [
+      doc().children[0],
+      n('page:members', 'page', 'list_page', [
+        n('page:members/section:spot', 'section', 'member_card', [], { props: { args: { member: 'args.member' } } }),
+        n('page:members/section:all', 'section', 'metric', [], { props: { from: 'name' }, view: 'members.All' }),
+      ]),
+    ]);
+    const shown = text(nodeHtml(await renderWith(outline, mode, { 'members.All': MEMBERS }), 'page:members/section:spot'));
+    assert.match(shown, /Ada Lovelace good/);
+    assert.doesNotMatch(shown, /args\.member|name standing/);
+  });
+}

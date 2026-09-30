@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { fixtureRowOf } from './components.ts';
-import { bindArg, compositeKind, drawsAsPrimitive, instanceArgs, instanceBody, itemScopes, widgetOfInstance } from './instance.ts';
+import { bindArg, compositeKind, drawsAsPrimitive, instanceArgs, instanceBody, itemScopes, rowNode, widgetOfInstance } from './instance.ts';
 
 function n(path: string, layer: string, kind: string, children: OutlineNode[] = [], extra: Partial<OutlineNode> = {}): OutlineNode {
   const name = path === '/' ? '' : path.split('/').at(-1)!.split(':')[1];
@@ -170,8 +170,40 @@ test('instanceBody: a drawer instance reads rows.first from its own rows', () =>
   assert.deepEqual(body.map((b) => (b.props as Record<string, unknown>).text), ['Dune', 'open']);
 });
 
-test('itemScopes: a collection per row, a record its first row, no rows once unbound', () => {
+test('itemScopes: a collection per row, a record its first row, none while there are no rows', () => {
   assert.deepEqual(itemScopes('collection', MEMBERS), [{ row: MEMBERS[0], rows: MEMBERS }, { row: MEMBERS[1], rows: MEMBERS }]);
   assert.deepEqual(itemScopes('record', MEMBERS), [{ row: MEMBERS[0], rows: MEMBERS }]);
-  assert.deepEqual(itemScopes('collection', []), [{ rows: [] }]);
+  assert.deepEqual(itemScopes('collection', []), []);
+  assert.deepEqual(itemScopes('record', []), []);
+});
+
+test('bindArg: args and args.<param> have no holder on a page and are unbound', () => {
+  for (const written of ['args', 'args.member', 'args.member.name']) {
+    assert.deepEqual(bindArg(written, { row: MEMBERS[0], rows: MEMBERS }), { bound: false }, written);
+  }
+  assert.deepEqual(bindArg('argsy', {}), { bound: true, value: 'argsy' });
+  assert.deepEqual(bindArg('the args.member', {}), { bound: true, value: 'the args.member' });
+});
+
+test('rowNode: a primitive item reads row and row.<field> from its row, as a body reads args', () => {
+  const root = doc();
+  const tag = at(root, 'page:members/section:list/item:tag');
+  assert.deepEqual(rowNode(tag, MEMBERS[1]).props, { text: 'late' });
+  const item = n('page:members/section:list/item:t', 'item', 'text', [], {
+    title: 'row.name',
+    props: { text: 'Standing: row.standing (row.name)', label: 'row', meta: { at: 'row.joined', n: 3, list: ['row.name', 'rows.first', 'arrow.name'] } },
+  });
+  const drawn = rowNode(item, MEMBERS[0]);
+  assert.equal(drawn.title, 'Ada Lovelace');
+  assert.deepEqual(drawn.props, {
+    text: 'Standing: good (Ada Lovelace)',
+    label: MEMBERS[0],
+    meta: { at: '2024-01-02', n: 3, list: ['Ada Lovelace', 'rows.first', 'arrow.name'] },
+  });
+  assert.equal(drawn.path, item.path);
+});
+
+test('rowNode: a field the row does not carry reads as its own name, never the prototype', () => {
+  const item = n('page:members/section:list/item:t', 'item', 'badge', [], { props: { text: 'row.shelf', label: 'on row.constructor' } });
+  assert.deepEqual(rowNode(item, MEMBERS[0]).props, { text: 'shelf', label: 'on constructor' });
 });

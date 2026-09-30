@@ -1,5 +1,5 @@
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
-import { PRIMITIVE_KINDS, isPrimitive, paramsOf, previewNode, sampleValue, type Param, type RowOf } from './components.ts';
+import { PRIMITIVE_KINDS, displayValue, isPrimitive, paramsOf, previewNode, sampleValue, type Param, type RowOf } from './components.ts';
 import { childrenOf, propsOf } from './outline.ts';
 
 /** What an instance's `row` and `rows.…` args read: the item row it is drawn for, and the rows of
@@ -86,12 +86,15 @@ function dig(value: unknown, fields: string[]): { bound: boolean; value?: unknow
 /**
  * One written arg as the instance binds it in `scope`. `row` (and `row.<field>…`) reads the item
  * row; `rows` the composite's rows, `rows.first` or `rows.<n>` (from 0) one of them, and a field
- * below it. Anything else is a literal and binds as written. A reference with nothing to read (no
- * row, no rows, an index past the end, a missing field) is unbound.
+ * below it. `args` (and `args.<param>…`) is a reference to a holder's args: a widget body resolves
+ * it before its instances bind (`previewNode`), so one left here has no holder, as on a page, and
+ * is unbound. Anything else is a literal and binds as written. A reference with nothing to read
+ * (no row, no rows, an index past the end, a missing field) is unbound.
  */
 export function bindArg(written: unknown, scope: Scope): { bound: boolean; value?: unknown } {
   if (typeof written !== 'string') return { bound: true, value: written };
   const [head, ...rest] = written.split('.');
+  if (head === 'args') return { bound: false };
   if (head === 'row') return scope.row ? dig(scope.row, rest) : { bound: false };
   if (head !== 'rows') return { bound: true, value: written };
   const rows = scope.rows;
@@ -128,8 +131,47 @@ export function instanceBody(widget: InstanceWidget, node: OutlineNode, scope: S
 }
 
 /** The scopes a composite's item list is drawn in: a collection's once per row, a record's for
- *  its first row; once with no row while there are none. */
+ *  its first row; none while there are no rows, loaded or not. */
 export function itemScopes(kind: string, rows: Record<string, unknown>[]): Scope[] {
   const shown = kind === 'record' ? rows.slice(0, 1) : rows;
-  return shown.length ? shown.map((row) => ({ row, rows })) : [{ rows }];
+  return shown.map((row) => ({ row, rows }));
+}
+
+const WHOLE_ROW = /^row((?:\.[A-Za-z_]\w*)*)$/;
+const EMBEDDED_ROW = /(?<![\w.])row((?:\.[A-Za-z_]\w*)+)/g;
+
+/** What `row.<field>…` reads from `row`, as `args.<param>.<field>…` reads a body's args: a field
+ *  the row does not carry as its own reads as its name. */
+function readRow(row: Record<string, unknown>, rest: string): unknown {
+  let value: unknown = row;
+  for (const field of rest.split('.').filter(Boolean)) {
+    const map = record(value);
+    if (map && Object.prototype.hasOwnProperty.call(map, field)) value = map[field];
+    else return field;
+  }
+  return value;
+}
+
+/** `value` with every `row(.<field>)*` read from `row`, however deep, as `substitute` reads
+ *  `args`: a string that is only a reference becomes the value it reads, one inside longer text
+ *  that value as text (`displayValue`). Keys are not rewritten. */
+function substituteRow(value: unknown, row: Record<string, unknown>): unknown {
+  if (typeof value === 'string') {
+    const whole = WHOLE_ROW.exec(value);
+    if (whole) return readRow(row, whole[1]);
+    return value.replace(EMBEDDED_ROW, (_text, rest: string) => displayValue(readRow(row, rest)));
+  }
+  if (Array.isArray(value)) return value.map((v) => substituteRow(v, row));
+  const map = record(value);
+  if (map) return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, substituteRow(v, row)]));
+  return value;
+}
+
+/** A primitive item as its composite draws it for one row: `row` and `row.<field>` in its props
+ *  and title read from `row`, and its children's, the way `previewNode` reads a body's args. */
+export function rowNode(node: OutlineNode, row: Record<string, unknown>): OutlineNode {
+  const out: OutlineNode = { ...node, children: node.children.map((c) => rowNode(c, row)) };
+  if (node.props !== undefined) out.props = substituteRow(node.props, row) as OutlineNode['props'];
+  if (node.title !== undefined) out.title = displayValue(substituteRow(node.title, row));
+  return out;
 }
