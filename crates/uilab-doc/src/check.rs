@@ -11,7 +11,7 @@ use crate::model::{
     BUILTIN_PAGE_KINDS, Composite, CompositeKind, Document, FORMAT, NavPages, Node, NodeBody,
     Widget,
 };
-use crate::path::{Layer, NodePath, NodeRef};
+use crate::path::{Layer, NodePath, NodeRef, children, resolve};
 
 /// How much a finding matters. An error refuses a patch that introduces it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -37,7 +37,7 @@ pub struct Finding {
 }
 
 /// Every check id, with its severity and what it holds.
-pub const CHECKS: [(&str, Severity, &str); 17] = [
+pub const CHECKS: [(&str, Severity, &str); 18] = [
     (
         "format_marker",
         Severity::Error,
@@ -119,7 +119,107 @@ pub const CHECKS: [(&str, Severity, &str); 17] = [
         Severity::Error,
         "no two nodes of an `item` list share a name",
     ),
+    (
+        "replace_drops",
+        Severity::Warning,
+        "patch-only, reported by `admit` and never by `check`: a replace keeps every child and \
+         every `columns`, `fields`, `row_actions` and `actions` entry the node had",
+    ),
 ];
+
+/// The list props whose entries a replace is checked for dropping.
+const LIST_PROPS: [&str; 4] = ["columns", "fields", "row_actions", "actions"];
+
+/// The `replace_drops` findings of a replace at `target`: every child of the node, however deep
+/// under children that stay, and every entry of its list props that `before` has and `after`
+/// does not. One finding per node that loses something, at that node.
+pub(crate) fn replace_drops(
+    before: &Document,
+    after: &Document,
+    target: &NodePath,
+) -> Vec<Finding> {
+    let mut out = Findings(Vec::new());
+    drops_at(&mut out, before, after, target);
+    out.0
+}
+
+fn drops_at(out: &mut Findings, before: &Document, after: &Document, at: &NodePath) {
+    let (Ok(old), Ok(new)) = (resolve(before, at), resolve(after, at)) else {
+        return;
+    };
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    let mut add = |what: &str, name: String| match groups.iter_mut().find(|(w, _)| w == what) {
+        Some((_, names)) => names.push(name),
+        None => groups.push((what.to_owned(), vec![name])),
+    };
+
+    let kept_children = children(after, at).unwrap_or_default();
+    let mut stayed = Vec::new();
+    for (layer, name) in children(before, at).unwrap_or_default() {
+        if kept_children.contains(&(layer, name.clone())) {
+            stayed.push(at.child(layer, &name));
+        } else {
+            add(layer.as_str(), name);
+        }
+    }
+    if let (NodeRef::NavSection(old), NodeRef::NavSection(new)) = (old, new)
+        && let (NavPages::Fixed(old), NavPages::Fixed(new)) = (&old.pages, &new.pages)
+    {
+        for page in old.iter().filter(|p| !new.contains(p)) {
+            add("page", page.clone());
+        }
+    }
+    if let (Some(old), Some(new)) = (old.composite(), new.composite()) {
+        for key in LIST_PROPS {
+            let kept: Vec<(&str, String)> = entries(new, key).map(identity).collect();
+            for entry in entries(old, key) {
+                let id = identity(entry);
+                if !kept.contains(&id) {
+                    add(key, id.1);
+                }
+            }
+        }
+    }
+
+    if !groups.is_empty() {
+        let what = groups
+            .iter()
+            .map(|(what, names)| format!("{what} {}", names.join(", ")))
+            .collect::<Vec<_>>()
+            .join("; ");
+        out.push("replace_drops", at, format!("replace at {at} drops {what}"));
+    }
+    for child in stayed {
+        drops_at(out, before, after, &child);
+    }
+}
+
+/// The entries of a composite's list prop; nothing when it is absent or not a list.
+fn entries<'a>(composite: &'a Composite, key: &str) -> impl Iterator<Item = &'a Value> {
+    composite
+        .props
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+}
+
+/// What an entry of a list prop is known by, with the key it is known by: its `field`, else its
+/// `name`, else its `label`, else the whole value (a string as written, anything else as JSON).
+fn identity(entry: &Value) -> (&'static str, String) {
+    ["field", "name", "label"]
+        .into_iter()
+        .find_map(|k| {
+            entry
+                .get(k)
+                .and_then(Value::as_str)
+                .map(|v| (k, v.to_owned()))
+        })
+        .unwrap_or_else(|| match entry {
+            Value::String(s) => ("", s.clone()),
+            other => ("", other.to_string()),
+        })
+}
 
 fn severity_of(id: &str) -> Severity {
     CHECKS

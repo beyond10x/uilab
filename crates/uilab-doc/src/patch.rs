@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::check::{Finding, Severity, check};
+use crate::check::{Finding, Severity, check, replace_drops};
 use crate::model::{
     Composite, Document, NavPages, NavSection, Node, NodeBody, Overlay, Page, Region, Shell, Widget,
 };
@@ -134,7 +134,8 @@ pub fn apply(doc: &mut Document, patch: &Patch) -> Result<(), Refusal> {
 ///
 /// Refused when the patch does not apply, or when the result has an error finding the document
 /// did not have before; a document that already fails a check can still be edited elsewhere.
-/// Returns the patched document and all of its findings.
+/// Returns the patched document and all of its findings, followed by a `replace_drops` warning
+/// for what each replace, alone or in a batch, removes.
 pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), Refusal> {
     let before = check(doc);
     let mut next = doc.clone();
@@ -158,7 +159,32 @@ pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), 
             format!("{}: {}", new.path, new.message),
         ));
     }
-    Ok((next, after))
+    let mut findings = after;
+    findings.extend(drops(doc, &next, patch));
+    Ok((next, findings))
+}
+
+/// What the replaces of an applied patch remove, each measured against the document as it was
+/// just before that replace ran.
+fn drops(doc: &Document, next: &Document, patch: &Patch) -> Vec<Finding> {
+    match patch {
+        Patch::Replace { target, .. } => replace_drops(doc, next, target),
+        Patch::Batch { patches, .. } => {
+            let mut state = doc.clone();
+            let mut out = Vec::new();
+            for patch in patches {
+                let prior = matches!(patch, Patch::Replace { .. }).then(|| state.clone());
+                if apply_unchecked(&mut state, patch).is_err() {
+                    break;
+                }
+                if let Some(prior) = prior {
+                    out.extend(replace_drops(&prior, &state, patch.target()));
+                }
+            }
+            out
+        }
+        Patch::Insert { .. } | Patch::Remove { .. } => Vec::new(),
+    }
 }
 
 fn parse<T: serde::de::DeserializeOwned>(layer: Layer, node: &Value) -> Result<T, Refusal> {

@@ -371,7 +371,16 @@ fn every_check_fails_on_its_own_fixture() {
             }),
         ),
     ];
-    assert_eq!(broken.len(), CHECKS.len());
+    // Patch-only checks: `admit` reports them for a patch, `check` never sees them.
+    let patched: Vec<(&str, Patch)> = vec![(
+        "replace_drops",
+        Patch::Replace {
+            target: path("page:members/section:list"),
+            node: json!({"component": "collection", "reads": {"view": "members.All"},
+                "columns": [{"field": "name"}]}),
+        },
+    )];
+    assert_eq!(broken.len() + patched.len(), CHECKS.len());
     for (id, breaks) in &broken {
         assert!(
             CHECKS.iter().any(|(c, _, _)| c == id),
@@ -380,6 +389,19 @@ fn every_check_fails_on_its_own_fixture() {
         let mut doc = base.clone();
         breaks(&mut doc);
         assert!(ids(&doc).contains(id), "{id} did not fire: {:?}", ids(&doc));
+    }
+    for (id, patch) in &patched {
+        assert!(
+            CHECKS.iter().any(|(c, _, _)| c == id),
+            "{id} is not a declared check"
+        );
+        let (next, findings) = admit(&base, patch).unwrap();
+        let fired: Vec<&str> = findings.iter().map(|f| f.check).collect();
+        assert!(fired.contains(id), "{id} did not fire: {fired:?}");
+        assert!(
+            !ids(&next).contains(id),
+            "{id} is patch-only and never a finding of the stored document"
+        );
     }
 }
 
@@ -1827,5 +1849,288 @@ fn checks_over_props_hold_primitive_nodes_too() {
     assert_eq!(
         admit(&with_item(ITEM_LIST), &insert).unwrap_err().check,
         "widget_resolves"
+    );
+}
+
+/// The `replace_drops` findings `admit` returns for `patch` as `(path, message)`; each is a
+/// warning, and the patch is admitted.
+fn drops(doc: &Document, patch: &Patch) -> Vec<(String, String)> {
+    let (_, findings) = admit(doc, patch).unwrap_or_else(|r| panic!("refused: {r}"));
+    findings
+        .into_iter()
+        .filter(|f| f.check == "replace_drops")
+        .map(|f| {
+            assert_eq!(f.severity, Severity::Warning, "{}", f.message);
+            (f.path, f.message)
+        })
+        .collect()
+}
+
+fn replace(target: &str, node: serde_json::Value) -> Patch {
+    Patch::Replace {
+        target: path(target),
+        node,
+    }
+}
+
+#[test]
+fn replacing_a_page_that_drops_a_section_warns_naming_it() {
+    let doc = library();
+    let renamed = replace(
+        "page:members",
+        json!({"kind": "list_page", "title": "Members", "sections": {"cards": {
+            "component": "collection", "reads": {"view": "members.All"},
+            "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"},
+                {"field": "standing", "as": "tag"}]}}}),
+    );
+    assert_eq!(
+        drops(&doc, &renamed),
+        [(
+            "page:members".to_owned(),
+            "replace at page:members drops section list".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn replacing_a_collection_that_drops_a_column_warns_naming_it() {
+    let doc = library();
+    let fewer = replace(
+        "page:members/section:list",
+        json!({"component": "collection", "reads": {"view": "members.All"},
+            "columns": [{"field": "loans"}, {"field": "standing", "as": "tag"}]}),
+    );
+    assert_eq!(
+        drops(&doc, &fewer),
+        [(
+            "page:members/section:list".to_owned(),
+            "replace at page:members/section:list drops columns name, joined".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_replace_that_only_adds_or_changes_warns_nothing() {
+    let doc = library();
+    let section = replace(
+        "page:members/section:list",
+        json!({"component": "collection", "reads": {"view": "members.All"}, "title": "Members",
+            "columns": [{"field": "name", "label": "Name"}, {"field": "joined"}, {"field": "loans"},
+                {"field": "standing", "as": "badge"}, {"field": "email"}],
+            "item": [{"name": "tag", "primitive": "badge", "text": "row.standing"}]}),
+    );
+    assert_eq!(drops(&doc, &section), []);
+    let page = replace(
+        "page:members",
+        json!({"kind": "list_page", "title": "People", "sections": {
+            "filters": {"component": "filter_bar"},
+            "list": {"component": "collection", "reads": {"view": "members.All"},
+                "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"},
+                    {"field": "standing", "as": "tag"}]}}}),
+    );
+    assert_eq!(drops(&doc, &page), []);
+}
+
+#[test]
+fn a_batch_whose_replace_drops_something_warns() {
+    let doc = library();
+    let batch = Patch::Batch {
+        target: path("page:members/section:list"),
+        patches: vec![
+            Patch::Insert {
+                target: path("page:members"),
+                child: Child {
+                    layer: Layer::Overlay,
+                    name: "edit_member".into(),
+                    node: json!({"kind": "drawer", "component": "form", "fields": ["name"]}),
+                    nav_section: None,
+                },
+            },
+            replace(
+                "page:members/section:list",
+                json!({"component": "collection", "reads": {"view": "members.All"},
+                    "columns": [{"field": "name"}],
+                    "row_actions": [{"opens": "edit_member", "label": "Edit"}]}),
+            ),
+        ],
+    };
+    assert_eq!(
+        drops(&doc, &batch),
+        [(
+            "page:members/section:list".to_owned(),
+            "replace at page:members/section:list drops columns joined, loans, standing".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_page_replace_that_keeps_a_section_but_drops_its_columns_warns_at_the_section() {
+    let doc = library();
+    let kept = replace(
+        "page:members",
+        json!({"kind": "list_page", "title": "Members", "sections": {"list": {
+            "component": "collection", "reads": {"view": "members.All"},
+            "columns": [{"field": "name"}]}}}),
+    );
+    assert_eq!(
+        drops(&doc, &kept),
+        [(
+            "page:members/section:list".to_owned(),
+            "replace at page:members/section:list drops columns joined, loans, standing".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn every_kind_of_child_and_list_entry_a_replace_drops_is_named() {
+    let lib = library();
+    let widgets = with_widgets();
+    let items = with_item(ITEM_LIST);
+    let cases: Vec<(&Document, Patch, &str, &str)> = vec![
+        (
+            &widgets,
+            replace(
+                "page:overview",
+                json!({"kind": "dashboard_page", "title": "Overview", "sections": {
+                    "board": {"component": "board", "reads": {"view": "loans.Summary"},
+                        "widgets": {"featured": {"component": "loan_card", "args": {"loan": "row", "compact": true}}}},
+                    "list": {"component": "collection", "reads": {"view": "loans.All"},
+                        "columns": [{"field": "title"}],
+                        "item": {"card": {"component": "loan_card", "args": {"loan": "row"}}}}}}),
+            ),
+            "page:overview",
+            "replace at page:overview drops section latest; overlay detail",
+        ),
+        (
+            &widgets,
+            replace(
+                "page:overview/section:board",
+                json!({"component": "board", "reads": {"view": "loans.Summary"}}),
+            ),
+            "page:overview/section:board",
+            "replace at page:overview/section:board drops widget featured",
+        ),
+        (
+            &items,
+            replace(
+                "page:overview/section:list",
+                json!({"component": "collection", "reads": {"view": "loans.All"},
+                    "columns": [{"field": "title"}],
+                    "item": [{"name": "card", "component": "loan_card", "args": {"loan": "row"}}]}),
+            ),
+            "page:overview/section:list",
+            "replace at page:overview/section:list drops item cover, inner, tag",
+        ),
+        (
+            &widgets,
+            replace(
+                "component:loan_card",
+                json!({"summary": "A loan as a card.",
+                    "params": {"loan": {"type": "Loan", "required": true},
+                        "compact": {"type": "boolean", "default": false}},
+                    "body": [{"name": "title", "primitive": "text", "text": "args.loan.title"}]}),
+            ),
+            "component:loan_card",
+            "replace at component:loan_card drops node cover, state, extend",
+        ),
+        (
+            &lib,
+            replace(
+                "shell:app",
+                json!({"regions": {"main": {"kind": "page_outlet"}, "nav": {"kind": "navigation"}}}),
+            ),
+            "shell:app",
+            "replace at shell:app drops region account, overlay, notify",
+        ),
+        (
+            &widgets,
+            replace(
+                "shell:app",
+                json!({"regions": {"main": {"kind": "page_outlet"}}}),
+            ),
+            "shell:app",
+            "replace at shell:app drops overlay loan",
+        ),
+        (
+            &lib,
+            Patch::Batch {
+                target: path("nav"),
+                patches: vec![
+                    replace(
+                        "nav/nav_section:people",
+                        json!({"label": "People", "pages": ["members", "loans"]}),
+                    ),
+                    replace(
+                        "nav/nav_section:circulation",
+                        json!({"label": "Circulation", "icon": "books", "pages": ["overview"]}),
+                    ),
+                ],
+            },
+            "nav/nav_section:circulation",
+            "replace at nav/nav_section:circulation drops page loans",
+        ),
+        (
+            &lib,
+            replace(
+                "page:loans/overlay:edit",
+                json!({"kind": "drawer", "component": "form", "title": "Extend loan",
+                    "does": "loans.ExtendLoan", "fields": []}),
+            ),
+            "page:loans/overlay:edit",
+            "replace at page:loans/overlay:edit drops fields due",
+        ),
+        (
+            &lib,
+            replace(
+                "page:loans/section:list",
+                json!({"component": "collection", "reads": {"view": "loans.All"},
+                    "columns": [{"field": "title"}, {"field": "member"}, {"field": "due"}, {"field": "state"}],
+                    "row_actions": [{"opens": "edit", "label": "Renew"}]}),
+            ),
+            "page:loans/section:list",
+            "replace at page:loans/section:list drops row_actions Extend",
+        ),
+        (
+            &lib,
+            replace(
+                "page:overview/section:recent",
+                json!({"component": "collection", "reads": {"view": "loans.All"},
+                    "columns": [{"field": "title"}],
+                    "actions": [{"name": "export", "label": "Export"}]}),
+            ),
+            "page:overview/section:recent",
+            "replace at page:overview/section:recent drops columns member, due",
+        ),
+    ];
+    for (doc, patch, at, message) in cases {
+        assert_eq!(
+            drops(doc, &patch),
+            [(at.to_owned(), message.to_owned())],
+            "{at}"
+        );
+    }
+
+    let mut acting = library();
+    acting.pages["overview"].sections["recent"]
+        .as_mut()
+        .unwrap()
+        .props
+        .insert(
+            "actions".into(),
+            json!([{"name": "export", "label": "Export"}, {"label": "Print"}, "refresh"]),
+        );
+    let fewer = replace(
+        "page:overview/section:recent",
+        json!({"component": "collection", "reads": {"view": "loans.All", "params": {"size": 5}},
+            "columns": [{"field": "title"}, {"field": "member"}, {"field": "due"}],
+            "actions": [{"name": "export", "label": "Download"}]}),
+    );
+    assert_eq!(
+        drops(&acting, &fewer),
+        [(
+            "page:overview/section:recent".to_owned(),
+            "replace at page:overview/section:recent drops actions Print, refresh".to_owned()
+        )],
+        "entries match by name before label, and by the whole value last"
     );
 }
