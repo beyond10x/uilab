@@ -99,6 +99,24 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "const": "goal",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.StartGoal"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "goal",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
               "const": "hello",
               "type": "string"
             },
@@ -243,6 +261,24 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "const": "stop_goal",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.StopGoal"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "stop_goal",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
               "const": "undo",
               "type": "string"
             },
@@ -370,6 +406,89 @@
       "type": "object",
       "x-ess-kind": "struct",
       "x-ess-name": "uilab.wire.Finding"
+    },
+    "uilab.wire.Goal": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "type": "string"
+        },
+        "current": {
+          "type": "integer"
+        },
+        "goal_id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/uilab.wire.GoalState"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/uilab.wire.GoalStep"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal_id",
+        "by",
+        "text",
+        "state",
+        "steps"
+      ],
+      "title": "Goal",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Goal"
+    },
+    "uilab.wire.GoalState": {
+      "enum": [
+        "planning",
+        "running",
+        "done",
+        "stopped",
+        "failed"
+      ],
+      "title": "GoalState",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "uilab.wire.GoalState"
+    },
+    "uilab.wire.GoalStep": {
+      "additionalProperties": false,
+      "properties": {
+        "instruction": {
+          "type": "string"
+        },
+        "proposal_id": {
+          "$ref": "#/$defs/uilab.session.ProposalId"
+        },
+        "status": {
+          "$ref": "#/$defs/uilab.wire.StepStatus"
+        },
+        "target": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "instruction",
+        "target",
+        "why",
+        "status"
+      ],
+      "title": "GoalStep",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.GoalStep"
     },
     "uilab.wire.Hello": {
       "additionalProperties": false,
@@ -738,6 +857,24 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "const": "goal",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Goal"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "goal",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
               "const": "presence",
               "type": "string"
             },
@@ -873,6 +1010,60 @@
       "x-ess-kind": "enum",
       "x-ess-name": "uilab.wire.Severity"
     },
+    "uilab.wire.StartGoal": {
+      "additionalProperties": false,
+      "properties": {
+        "max_steps": {
+          "type": "integer"
+        },
+        "review": {
+          "type": "boolean"
+        },
+        "target": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "StartGoal",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.StartGoal"
+    },
+    "uilab.wire.StepStatus": {
+      "enum": [
+        "pending",
+        "thinking",
+        "proposed",
+        "accepted",
+        "rejected",
+        "refused",
+        "declined"
+      ],
+      "title": "StepStatus",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "uilab.wire.StepStatus"
+    },
+    "uilab.wire.StopGoal": {
+      "additionalProperties": false,
+      "properties": {
+        "goal_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "goal_id"
+      ],
+      "title": "StopGoal",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.StopGoal"
+    },
     "uilab.wire.Thinking": {
       "additionalProperties": false,
       "properties": {
@@ -920,8 +1111,8 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "x-ess-provenance": {
-    "contract_digest": "slice-sha256/2:b4361a5e6fb4e3978c44af3558a5400f48139805ddcd387562ecde0445119ad1",
-    "source_digest": "3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e",
+    "contract_digest": "slice-sha256/2:f0375981206ba50f4e8ee6f82dfeef64131d42d34be5bd3b49ebff80d452635e",
+    "source_digest": "c1c9563af89cf1f1f8ef7782b80ff93b32b7086e6e86f27333557738d9508f0c",
     "specification_version": "v1",
     "system": "uilab"
   }

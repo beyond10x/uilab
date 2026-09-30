@@ -1141,3 +1141,124 @@ input[type='text'] {
 .shortcuts td {
   padding: 2px 10px 2px 0;
 }
+
+/* Instruction or goal: what Enter sends */
+.say {
+  display: grid;
+  gap: 4px;
+}
+
+.say-mode {
+  display: flex;
+  gap: 0;
+}
+
+.say-mode button {
+  flex: 1;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 0;
+}
+
+.say-mode button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.say-mode button:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.say-mode button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Goal panel */
+.goal {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.goal.goal-done {
+  border-left-color: var(--insert);
+}
+
+.goal.goal-failed,
+.goal.goal-stopped {
+  border-left-color: var(--muted);
+}
+
+.goal-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.goal-head .spacer {
+  flex: 1;
+}
+
+.goal-badge {
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.goal-text {
+  margin: 0;
+  font-style: italic;
+}
+
+.goal-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.goal-step {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.goal-step.current {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  font-weight: 600;
+}
+
+.goal-step .step-text {
+  flex: 1;
+}
+
+.step-icon {
+  width: 1.2em;
+  text-align: center;
+}
+
+.step-accepted .step-icon {
+  color: var(--insert);
+}
+
+.step-rejected .step-icon,
+.step-refused .step-icon {
+  color: var(--remove);
+}
+
+.step-proposed .step-icon,
+.step-thinking .step-icon {
+  color: var(--accent);
+}
+
+.op-goal {
+  font-weight: 600;
+}
