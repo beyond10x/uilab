@@ -51,7 +51,7 @@ tasks:
     cmds:
       - cargo test --workspace --locked
       - cargo clippy --workspace --all-targets --locked -- -D warnings
-      - cargo fmt --all --check
+      - cargo fmt --check -p uilab-doc -p uilab-behaviour -p uilab-stt -p uilab-agent -p uilab-app
 
   check:
     desc: The gate.

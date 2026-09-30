@@ -1,0 +1,35 @@
+[package]
+name = "uilab-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "uilab"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+uilab-doc = { workspace = true }
+uilab-types = { workspace = true }
+uilab-session = { workspace = true }
+uilab-wire = { workspace = true }
+uilab-behaviour = { workspace = true }
+uilab-stt = { workspace = true }
+uilab-agent = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
+tower-http = { version = "0.6", features = ["fs"] }
+clap = { version = "4", features = ["derive"] }
+futures-util = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+default = ["vulkan"]
+vulkan = ["uilab-stt/vulkan"]
+cuda = ["uilab-stt/cuda"]

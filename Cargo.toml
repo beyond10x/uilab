@@ -1,0 +1,34 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/uilab-doc",
+    "crates/uilab-behaviour",
+    "crates/uilab-stt",
+    "crates/uilab-agent",
+    "crates/uilab-app",
+]
+exclude = ["generated"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.dependencies]
+uilab-types = { path = "generated/rust/uilab/crates/uilab-types" }
+uilab-session = { path = "generated/rust/uilab/crates/uilab-session" }
+uilab-wire = { path = "generated/rust/uilab-wire" }
+uilab-doc = { path = "crates/uilab-doc" }
+uilab-behaviour = { path = "crates/uilab-behaviour" }
+uilab-stt = { path = "crates/uilab-stt", default-features = false }
+uilab-agent = { path = "crates/uilab-agent" }
+
+indexmap = { version = "2", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
+thiserror = "2"
