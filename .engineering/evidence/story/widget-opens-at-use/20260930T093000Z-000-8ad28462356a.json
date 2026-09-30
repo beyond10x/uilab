@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-30T09:30:00Z",
+  "actor": "human:timo",
+  "artifact": "story:widget-opens-at-use",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave 2026-09-30 w4 integration gate at 2bc918f: ess validate; task drift; pnpm check 96/96 + build; cargo test --workspace --release 241 passed 0 failed; clippy -D warnings; cargo fmt --check (Taskfile packages); EXIT=0"
+  }
+}
