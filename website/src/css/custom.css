@@ -77,7 +77,6 @@
   --ifm-table-head-background: rgba(157, 140, 255, 0.06);
   --ifm-code-background: rgba(157, 140, 255, 0.1);
   --ifm-navbar-background-color: rgba(10, 13, 23, 0.72);
-  --ifm-footer-background-color: #070913;
   --ifm-menu-color: #a7afca;
   --ifm-menu-color-background-active: rgba(157, 140, 255, 0.1);
   --ifm-menu-color-background-hover: rgba(255, 255, 255, 0.04);
@@ -105,6 +104,7 @@
   --ul-muted: #8a93b2;
   --ul-violet-text: #b3a6ff;
   --ul-cyan-text: #4fe3ff;
+  --ul-eyebrow-bg: rgba(17, 21, 39, 0.7);
   --ul-green-text: #3ddc97;
   --ul-add-bg: rgba(61, 220, 151, 0.1);
   --ul-glow: 0 0 0 1px rgba(157, 140, 255, 0.18), 0 24px 60px -20px rgba(79, 227, 255, 0.25);
@@ -135,7 +135,6 @@
   --ifm-table-head-background: rgba(91, 69, 224, 0.05);
   --ifm-code-background: rgba(91, 69, 224, 0.07);
   --ifm-navbar-background-color: rgba(251, 251, 254, 0.8);
-  --ifm-footer-background-color: #0a0d17;
   --ifm-menu-color-background-active: rgba(91, 69, 224, 0.08);
   --docusaurus-highlighted-code-line-bg: rgba(91, 69, 224, 0.1);
 
@@ -147,7 +146,8 @@
   --ul-text: #23273a;
   --ul-muted: #5a6180;
   --ul-violet-text: #5b45e0;
-  --ul-cyan-text: #0a7390;
+  --ul-cyan-text: #07627a;
+  --ul-eyebrow-bg: rgba(255, 255, 255, 0.85);
   --ul-green-text: #11794f;
   --ul-add-bg: rgba(17, 121, 79, 0.08);
   --ul-glow: 0 0 0 1px rgba(91, 69, 224, 0.12), 0 24px 60px -24px rgba(91, 69, 224, 0.3);
@@ -201,6 +201,7 @@
 }
 
 .footer--dark {
+  --ifm-footer-background-color: #070913;
   --ifm-footer-link-color: #a7afca;
   --ifm-footer-title-color: #f1f3fb;
 }
@@ -232,6 +233,10 @@
 
 .theme-doc-markdown h1 {
   letter-spacing: -0.025em;
+}
+
+.theme-doc-markdown :is(h1, h2, h3, h4) {
+  text-wrap: balance;
 }
 
 .theme-doc-markdown h2 {
@@ -298,9 +303,157 @@
   border: 0;
 }
 
+.theme-doc-markdown td:first-child code {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.theme-doc-markdown td code {
+  overflow-wrap: normal;
+}
+
+.ul-shot {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  cursor: zoom-in;
+}
+
+.ul-shot__open {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--ul-line-strong);
+  border-radius: 999px;
+  background: var(--ul-panel);
+  color: var(--ifm-font-color-base);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ul-shot:hover {
+  text-decoration: none;
+}
+
+.ul-shot:hover .ul-shot__open,
+.ul-shot:focus-visible .ul-shot__open {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+
 div[class*='codeBlockContainer'] {
   border: 1px solid var(--ul-line);
   box-shadow: none;
+}
+
+/*
+ * The copy and wrap buttons sit in the block's label bar, not over the first line of code. The
+ * content box stops being their containing block, so they position against the whole block.
+ */
+.theme-code-block {
+  --ul-code-bar: 2.6rem;
+  --ul-code-button: 2.2rem;
+}
+
+.theme-code-block.language-console {
+  --b10x-code-label: 'Terminal';
+  --b10x-code-accent: var(--b10x-color-lime);
+}
+
+.theme-code-block > [class*='codeBlockContent'] {
+  position: static;
+}
+
+.theme-code-block.theme-code-block[class*='language-']::before,
+.theme-code-block > [class*='codeBlockTitle'] {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: var(--ul-code-bar);
+  padding-block: 0;
+  padding-inline-end: calc(2 * var(--ul-code-button) + 1.5rem);
+}
+
+.theme-code-block [class*='buttonGroup'] {
+  top: calc((var(--ul-code-bar) - var(--ul-code-button)) / 2);
+  right: 0.5rem;
+}
+
+.theme-code-block.theme-code-block button.clean-btn {
+  min-inline-size: var(--ul-code-button);
+  min-block-size: var(--ul-code-button);
+  max-block-size: var(--ul-code-button);
+  padding: 0 0.4rem;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .theme-code-block {
+    --ul-code-bar: 3.2rem;
+    --ul-code-button: 2.75rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .theme-doc-markdown table,
+  .theme-doc-markdown thead,
+  .theme-doc-markdown tbody,
+  .theme-doc-markdown tr,
+  .theme-doc-markdown th,
+  .theme-doc-markdown td {
+    display: block;
+  }
+
+  .theme-doc-markdown thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .theme-doc-markdown table tr {
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--ul-line);
+    background: transparent;
+  }
+
+  .theme-doc-markdown table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .theme-doc-markdown table td {
+    padding: 0.1rem 0;
+    border: 0;
+  }
+
+  .theme-doc-markdown table td:empty {
+    display: none;
+  }
+
+  .theme-doc-markdown table td:first-child {
+    font-weight: 600;
+    color: var(--ifm-heading-color);
+  }
+
+  .theme-doc-markdown table td:not(:first-child)[data-label]:not([data-label=''])::before {
+    content: attr(data-label);
+    display: block;
+    margin-top: 0.35rem;
+    font-family: var(--ifm-font-family-monospace);
+    font-size: 0.7rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ul-muted);
+  }
+
+  .theme-doc-markdown td code {
+    white-space: nowrap;
+  }
 }
 
 .alert {

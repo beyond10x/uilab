@@ -64,7 +64,8 @@ coding agents take part:
 ```console
 uilab op --as Assistant join
 uilab op --as Assistant select page:overview
-uilab op --as Assistant say --review "add a table of overdue loans with title, member and due date"
+uilab op --as Assistant say --review \
+  "add a table of overdue loans with title, member and due date"
 uilab op --as Assistant accept
 uilab op --as Assistant state
 ```

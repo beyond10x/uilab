@@ -216,6 +216,18 @@ function Loop() {
   );
 }
 
+function Shot({src, alt}: {src: string; alt: string}) {
+  const url = useBaseUrl(src);
+  return (
+    <a className={styles.shotLink} href={url} target="_blank" rel="noopener" title="Open the full-size image">
+      <img src={url} alt={alt} loading="lazy" />
+      <span className={styles.shotOpen} aria-hidden="true">
+        Open full size
+      </span>
+    </a>
+  );
+}
+
 function RealScreens() {
   const shots = [
     {src: 'img/screens/components-proposal.png', label: 'Components: a widget proposed and previewed'},
@@ -234,16 +246,15 @@ function RealScreens() {
           proposal below came from one typed instruction at <code>page:overview</code>.
         </p>
         <figure className={styles.shotMain}>
-          <img
-            src={useBaseUrl('img/screens/proposal.png')}
+          <Shot
+            src="img/screens/proposal.png"
             alt="uilab with a proposal waiting for review: the INSERT card and diff in the sidebar, the new Overdue loans section highlighted in green on the canvas"
-            loading="lazy"
           />
         </figure>
         <div className={styles.shotRow}>
           {shots.map((shot) => (
             <figure key={shot.src} className={styles.shotSmall}>
-              <img src={useBaseUrl(shot.src)} alt={shot.label} loading="lazy" />
+              <Shot src={shot.src} alt={shot.label} />
               <figcaption>{shot.label}</figcaption>
             </figure>
           ))}
@@ -271,7 +282,7 @@ const FEATURES = [
   },
   {
     title: 'Goals, one step at a time',
-    text: 'Type a larger request; the agent plans up to eight steps and proposes each one for your decision. Stop at any point.',
+    text: 'Type a larger request; the agent plans it in steps (eight at most by default) and proposes each one for your decision. Stop at any point.',
     to: '/docs/concepts/goals',
   },
   {

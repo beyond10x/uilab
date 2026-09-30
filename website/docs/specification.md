@@ -7,8 +7,8 @@ description: ui-spec/1 read line by line from the lending-library example, and h
 # The specification
 
 This page reads `examples/library/library.ui.yaml` — the lending-library app uilab ships as its
-example — from top to bottom. It is short enough to read whole, and it uses most of what a list-and-
-detail back-office screen needs.
+example — from top to bottom. It is short enough to read whole, and it uses most of what a
+list-and-detail back-office screen needs.
 
 ## Header
 
@@ -146,7 +146,7 @@ on this page or its shell.
         columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: tag}]
 ```
 
-That is the whole document: 79 lines, three pages, six composites.
+That is the whole document: 79 lines, three pages, five composites.
 
 ## What one instruction adds
 

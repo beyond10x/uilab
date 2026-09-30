@@ -27,8 +27,16 @@ views:
   loans.All:
     total: 4
     rows:
-      - {id: l-1, title: The Left Hand of Darkness, member: Robin Example, due: 2026-10-14, state: on_loan}
-      - {id: l-2, title: A Pattern Language, member: Kim Sample, due: 2026-10-02, state: overdue}
+      - id: l-1
+        title: The Left Hand of Darkness
+        member: Robin Example
+        due: 2026-10-14
+        state: on_loan
+      - id: l-2
+        title: A Pattern Language
+        member: Kim Sample
+        due: 2026-10-02
+        state: overdue
   loans.Summary:
     rows:
       - {on_loan: 4, overdue: 1}
@@ -37,7 +45,7 @@ views:
 A file holds one view (`view:` and `rows:`) or several (`views:`). The field names in these rows
 are also what the agent is told each view offers, so a column it proposes names a real field.
 
-:::note Fixtures are not queries
+:::note[Fixtures are not queries]
 The canvas shows a fixture's rows as they are. A `params` filter such as `{state: overdue}` is part
 of the specification, but the canvas does not apply it to sample rows.
 :::

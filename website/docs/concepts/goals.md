@@ -19,10 +19,11 @@ A goal is always typed. A spoken instruction is always a single instruction.
 
 ## What happens
 
-1. **Plan.** The agent breaks the goal into ordered steps — at most 8. Each step is an
-   instruction another run can carry out on its own, at a target node that exists or that an
-   earlier step creates. The plan is checked before it runs; a plan that breaks a rule is sent back
-   once, like a refused proposal.
+1. **Plan.** The agent breaks the goal into ordered steps, no more than the goal's step cap: 8
+   from the browser, or what `--max-steps` sets from a shell. Each step is an instruction another
+   run can carry out on its own, at a target node that exists or that an earlier step creates. The
+   plan is checked before it runs; a plan that breaks a rule, or has more steps than the cap, is
+   sent back once, like a refused proposal.
 2. **Propose, one step at a time.** Each step becomes an ordinary proposal at the node it names.
    It waits for your accept or reject like any other proposal. Then the next step follows, on the
    document the earlier steps left.
@@ -47,4 +48,6 @@ uilab op --as Assistant goal --target page:members --max-steps 4 \
 ```
 
 `uilab op goal` waits until the goal is done, stopped or failed (up to 15 minutes) and prints each
-step with its status. `--auto` applies each step's proposal at once instead of waiting.
+step with its status. `--max-steps` sets the step cap to any whole number from 1 (the `max_steps`
+field of the `goal` message; 8 when absent). `--auto` applies each step's proposal at once instead
+of waiting.

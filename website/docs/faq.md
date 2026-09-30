@@ -48,7 +48,7 @@ try, and a second refusal is reported to you. Odd proposals are usually a select
 agent works at the selected node, so select the table you mean before you say "add a column". The
 session journal (`events.jsonl`) records each instruction, the proposal or refusal, and timings.
 
-## My file got reformatted and lost its comments. Why?
+## Why did my file lose its comments and layout?
 
 uilab writes the whole document back in one canonical YAML layout on every accepted change, and
 comments do not survive. Commit that normalisation once, on its own, so later diffs are small.

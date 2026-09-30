@@ -27,7 +27,8 @@ component.
 ```console
 git clone https://github.com/beyond10x/uilab
 cd uilab
-task widget                                  # build the browser app into widget/dist
+# build the browser app (widget/dist)
+task widget
 cargo run --release -p uilab-app -- serve \
   --doc examples/library/library.ui.yaml --no-stt
 ```
@@ -35,12 +36,15 @@ cargo run --release -p uilab-app -- serve \
 Open `http://127.0.0.1:8740`. With speech:
 
 ```console
-task model                                   # downloads the whisper model, about 1.6 GB
-task run                                     # builds the browser app and serves examples/library
-task run -- path/to/your.ui.yaml             # or your own document
+# download the whisper model, 1.6 GB
+task model
+# build the app and serve examples/library
+task run
+# or serve your own document
+task run -- path/to/your.ui.yaml
 ```
 
-:::tip Work on a copy
+:::tip[Work on a copy]
 Accepted changes are written back to the file you pass with `--doc`. Point it at a copy, or at a
 file under version control, while you try things.
 :::
@@ -89,7 +93,10 @@ file under version control, while you try things.
 | `?` | open the help |
 | `1` `2` `3` `4` | UI, YAML, Docs, Components |
 
-Keys other than `Esc` do nothing while a text field has focus.
+While a text field has focus, none of these keys acts on the workbench, `Esc` included: they go to
+the field, and `Enter` in the instruction field sends the instruction. Click the canvas or the tree
+to leave the field first. Two exceptions: open help closes on `Esc` or `?` wherever the focus is,
+and while you edit your name at the top right, `Enter` keeps it and `Esc` cancels the edit.
 
 ## Server options
 

@@ -1,7 +1,36 @@
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
-import {themes as prismThemes} from 'prism-react-renderer';
-import docsSystemPlugin, {ecosystemFooterGroup, ecosystemNavbarItems} from '@beyond10x/docs-system/docusaurus';
+import {themes as prismThemes, type PrismTheme} from 'prism-react-renderer';
+import docsSystemPlugin, {ecosystemFooterGroup} from '@beyond10x/docs-system/docusaurus';
+import admonitionSyntax from './src/plugins/admonitionSyntax';
+import rehypeTableLabels from './src/plugins/rehypeTableLabels';
+
+const lightCode: PrismTheme = {
+  plain: {color: '#393a34', backgroundColor: '#f6f8fa'},
+  styles: [
+    {types: ['comment', 'prolog', 'doctype', 'cdata'], style: {color: '#66665a', fontStyle: 'italic'}},
+    {types: ['namespace'], style: {opacity: 0.85}},
+    {types: ['string', 'attr-value'], style: {color: '#b8005a'}},
+    {types: ['punctuation', 'operator'], style: {color: '#393a34'}},
+    {
+      types: ['entity', 'url', 'symbol', 'number', 'boolean', 'variable', 'constant', 'property', 'regex', 'inserted'],
+      style: {color: '#0a6f6d'},
+    },
+    {types: ['atrule', 'keyword', 'attr-name', 'selector'], style: {color: '#0063a3'}},
+    {types: ['function', 'deleted', 'tag'], style: {color: '#b31d30'}},
+    {types: ['function-variable'], style: {color: '#6f42c1'}},
+    {types: ['tag', 'selector', 'keyword'], style: {color: '#00009f'}},
+  ],
+};
+
+const darkCode: PrismTheme = {
+  ...prismThemes.dracula,
+  styles: prismThemes.dracula.styles.map((entry) => {
+    if (entry.types.includes('comment')) return {...entry, style: {...entry.style, color: '#909dc8'}};
+    if (entry.types.includes('deleted')) return {...entry, style: {...entry.style, color: '#ff6e6e'}};
+    return entry;
+  }),
+};
 
 const config: Config = {
   title: 'uilab',
@@ -23,7 +52,7 @@ const config: Config = {
     mermaid: true,
   },
   themes: ['@docusaurus/theme-mermaid'],
-  plugins: [docsSystemPlugin],
+  plugins: [docsSystemPlugin, admonitionSyntax],
   i18n: {defaultLocale: 'en', locales: ['en']},
 
   presets: [
@@ -34,6 +63,7 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           routeBasePath: 'docs',
           editUrl: 'https://github.com/beyond10x/uilab/tree/main/website/',
+          rehypePlugins: [rehypeTableLabels],
         },
         blog: false,
         theme: {customCss: './src/css/custom.css'},
@@ -47,7 +77,6 @@ const config: Config = {
       title: 'uilab',
       logo: {alt: 'uilab', src: 'img/mark.svg', width: 26, height: 26},
       items: [
-        ...ecosystemNavbarItems(),
         {type: 'docSidebar', sidebarId: 'docsSidebar', position: 'left', label: 'Documentation'},
         {to: '/docs/getting-started', label: 'Getting started', position: 'left'},
         {to: '/docs/adopting', label: 'Adopting', position: 'left'},
@@ -58,12 +87,17 @@ const config: Config = {
           className: 'navbar-github-link',
           'aria-label': 'GitHub repository',
         },
+        {
+          href: 'https://beyond10x.github.io/',
+          label: 'beyond10x',
+          position: 'right',
+          'aria-label': 'beyond10x, the organisation site',
+        },
       ],
     },
     footer: {
       style: 'dark',
       links: [
-        ecosystemFooterGroup(),
         {
           title: 'Documentation',
           items: [
@@ -88,6 +122,7 @@ const config: Config = {
             {label: 'ESS', href: 'https://github.com/beyond10x/ess'},
           ],
         },
+        ecosystemFooterGroup(),
       ],
       logo: {alt: 'uilab', src: 'img/mark.svg', href: '/', width: 22, height: 22},
       copyright:
@@ -95,8 +130,8 @@ const config: Config = {
         'uilab · built with Docusaurus.',
     },
     prism: {
-      theme: prismThemes.github,
-      darkTheme: prismThemes.dracula,
+      theme: lightCode,
+      darkTheme: darkCode,
       additionalLanguages: ['rust', 'yaml', 'json', 'bash'],
     },
     mermaid: {theme: {light: 'neutral', dark: 'dark'}},

@@ -44,7 +44,7 @@ It does not replace your component library, your design system or your framework
 | Render | a canvas of 14 built-in composite kinds and 9 primitives, fed by fixture rows or made-up sample rows |
 | Propose | insert, replace, remove, or a batch of those, at the selected node; checked before you see it |
 | Decide | accept (Enter), reject (Esc), undo (Ctrl+Z); accepted changes are written back to the file |
-| Plan | goals: a typed request the agent splits into at most 8 steps, proposed one at a time |
+| Plan | goals: a typed request the agent splits into steps (8 at most unless the goal sets another cap), proposed one at a time |
 | Listen | optional speech input, transcribed on your own machine by whisper.cpp |
 | Explain | a generated documentation view and a help view derived from the document and the code |
 

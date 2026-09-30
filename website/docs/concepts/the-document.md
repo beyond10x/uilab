@@ -62,7 +62,7 @@ uilab reads the document when the server starts, renders it on the canvas and ke
 as the session's state. Each accepted proposal is written straight back to the file, and so is each
 undo. There is no separate project format and no database: the file on disk is the result.
 
-:::note The first write normalises the file
+:::note[The first write normalises the file]
 uilab writes the whole document back in one canonical YAML layout: block style instead of inline
 `{…}` and `[…]`, keys in its own order. Comments are not preserved. Commit that normalisation once,
 on its own, so later diffs show only the changes you accepted.
