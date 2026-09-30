@@ -17,8 +17,8 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Composite, CompositeKind, Document, NavSection, Navigation, NodeBody, Overlay, Page, Primitive,
-    Region, Shell, Widget,
+    Composite, CompositeKind, Document, NavSection, Navigation, Node, NodeBody, Overlay, Page,
+    Primitive, Region, Shell, Widget,
 };
 
 /// The layer a node belongs to.
@@ -43,7 +43,8 @@ pub enum Layer {
     Overlay,
     /// A composite of a board, per widget kind.
     Widget,
-    /// A composite nested in each row of a collection.
+    /// A named node nested in each row of a collection or record: a composite, a widget instance
+    /// or a primitive.
     Item,
     /// An app-defined widget declared under the root.
     Component,
@@ -291,7 +292,7 @@ pub enum NodeRef<'a> {
     Composite(&'a Composite),
     /// A widget declaration.
     Component(&'a Widget),
-    /// A primitive in a widget body.
+    /// A primitive in a widget body or an item list.
     Primitive(&'a Primitive),
 }
 
@@ -342,11 +343,7 @@ pub fn resolve<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeRef<'a>, Pa
             (NodeRef::Root(d), Layer::Component) => {
                 NodeRef::Component(d.widgets.get(name).ok_or_else(not_found)?)
             }
-            (NodeRef::Component(w), Layer::Node) => match &w.node(name).ok_or_else(not_found)?.body
-            {
-                NodeBody::Composite(c) => NodeRef::Composite(c),
-                NodeBody::Primitive(p) => NodeRef::Primitive(p),
-            },
+            (NodeRef::Component(w), Layer::Node) => node_ref(w.node(name).ok_or_else(not_found)?),
             (NodeRef::Shell(s), Layer::Region) => {
                 NodeRef::Region(s.regions.get(name).ok_or_else(not_found)?)
             }
@@ -377,10 +374,10 @@ pub fn resolve<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeRef<'a>, Pa
                     .and_then(|c| c.widgets.get(name))
                     .ok_or_else(not_found)?,
             ),
-            (parent, Layer::Item) => NodeRef::Composite(
+            (parent, Layer::Item) => node_ref(
                 parent
                     .composite()
-                    .and_then(|c| c.item.get(name))
+                    .and_then(|c| c.item_node(name))
                     .ok_or_else(not_found)?,
             ),
             _ => return Err(not_found()),
@@ -389,10 +386,18 @@ pub fn resolve<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeRef<'a>, Pa
     Ok(node)
 }
 
+fn node_ref(node: &Node) -> NodeRef<'_> {
+    match &node.body {
+        NodeBody::Composite(c) => NodeRef::Composite(c),
+        NodeBody::Primitive(p) => NodeRef::Primitive(p),
+    }
+}
+
 /// The layers a node at `path` can take a new child in, given what the node is.
 ///
-/// Composites follow their kind: only a `board` holds widgets and only a `collection` holds items;
-/// a widget instance and a primitive hold nothing. A widget takes nodes in its body.
+/// Composites follow their kind: only a `board` holds widgets and only a `collection` or a
+/// `record` holds items; a widget instance and a primitive hold nothing. A widget takes nodes in
+/// its body.
 pub fn allowed_children(doc: &Document, path: &NodePath) -> Result<Vec<Layer>, PathError> {
     let node = resolve(doc, path)?;
     Ok(match node {
@@ -405,7 +410,7 @@ pub fn allowed_children(doc: &Document, path: &NodePath) -> Result<Vec<Layer>, P
         NodeRef::Overlay(_) | NodeRef::Composite(_) => {
             match node.composite().and_then(|c| c.component.kind()) {
                 Some(CompositeKind::Board) => vec![Layer::Widget],
-                Some(CompositeKind::Collection) => vec![Layer::Item],
+                Some(CompositeKind::Collection | CompositeKind::Record) => vec![Layer::Item],
                 _ => vec![],
             }
         }
@@ -461,7 +466,7 @@ pub fn children(doc: &Document, path: &NodePath) -> Result<Vec<(Layer, String)>,
                 .composite()
                 .expect("overlays and composites carry a composite");
             names(Layer::Widget, c.widgets.keys().collect())
-                .chain(names(Layer::Item, c.item.keys().collect()))
+                .chain(c.item.iter().map(|n| (Layer::Item, n.name.clone())))
                 .collect()
         }
     })

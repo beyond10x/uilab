@@ -212,9 +212,16 @@ pub struct Composite {
     /// A board's composite per widget kind.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub widgets: IndexMap<String, Composite>,
-    /// A collection's nested composites per row.
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub item: IndexMap<String, Composite>,
+    /// A collection's or record's named nodes per row, in order: composites, widget instances and
+    /// primitives. Written as the list `ui-spec/1` declares; the map of name to composite that
+    /// older documents carry is read too. A name written twice is kept for the `names_unique`
+    /// check to report.
+    #[serde(
+        default,
+        deserialize_with = "item_nodes",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub item: Vec<Node>,
     /// Every other prop, in document order.
     #[serde(flatten)]
     pub props: IndexMap<String, Value>,
@@ -416,6 +423,39 @@ impl Composite {
     pub fn args(&self) -> Option<&Value> {
         self.props.get("args")
     }
+
+    /// The item node named `name`: the first, if the name is written twice.
+    pub fn item_node(&self, name: &str) -> Option<&Node> {
+        self.item.iter().find(|n| n.name == name)
+    }
+
+    /// The composites among the item nodes, in order.
+    pub fn item_composites(&self) -> impl Iterator<Item = &Composite> {
+        self.item.iter().filter_map(Node::composite)
+    }
+}
+
+/// An `item` as `ui-spec/1` writes it, a list of named nodes, or as older documents wrote it, a
+/// map of name to node, in the order written.
+fn item_nodes<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<Node>, D::Error> {
+    use serde::de::Error;
+    match Value::deserialize(deserializer)? {
+        Value::Null => Ok(Vec::new()),
+        Value::Array(nodes) => nodes
+            .into_iter()
+            .map(|node| match node {
+                Value::Object(map) => Node::try_from(map).map_err(D::Error::custom),
+                _ => Err(D::Error::custom("an `item` node is a map")),
+            })
+            .collect(),
+        Value::Object(map) => map
+            .iter()
+            .map(|(name, fields)| Node::named(name, fields).map_err(D::Error::custom))
+            .collect(),
+        _ => Err(D::Error::custom(
+            "`item` is a list of named nodes, or a map of name to node",
+        )),
+    }
 }
 
 /// An app-defined composite with typed parameters, usable wherever a composite kind is.
@@ -517,7 +557,8 @@ pub enum Arrange {
     Grid,
 }
 
-/// One named node of a widget body: a composite, a widget instance or a primitive.
+/// One named node of a widget body or of an `item` list: a composite, a widget instance or a
+/// primitive.
 ///
 /// Exactly one of `component` and `primitive` is written; a node in a list carries `name`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -526,7 +567,7 @@ pub enum Arrange {
     into = "serde_json::Map<String, Value>"
 )]
 pub struct Node {
-    /// Its name, unique in the body.
+    /// Its name, unique among its siblings.
     pub name: String,
     /// What it is.
     pub body: NodeBody,

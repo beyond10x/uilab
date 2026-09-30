@@ -358,6 +358,18 @@ fn every_check_fails_on_its_own_fixture() {
                 );
             }),
         ),
+        (
+            "names_unique",
+            Box::new(|d| {
+                d.pages["overview"].sections.insert(
+                    "tags".into(),
+                    Some(composite(json!({"component": "collection", "item": [
+                        {"name": "tag", "primitive": "badge", "text": "row.state"},
+                        {"name": "tag", "primitive": "text", "text": "row.title"},
+                    ]}))),
+                );
+            }),
+        ),
     ];
     assert_eq!(broken.len(), CHECKS.len());
     for (id, breaks) in &broken {
@@ -1429,4 +1441,391 @@ fn widget_instances_in_page_headers_and_page_kinds_are_checked_and_documented() 
     ] {
         assert!(docs.contains(site), "missing use site {site}:\n{docs}");
     }
+}
+
+/// The `item` of the collection in [`WIDGETS`], written as the old map.
+const ITEM_MAP: &str = "        item:\n          card: {component: loan_card, args: {loan: row}}\n";
+
+/// The ess form: a list of named nodes, primitives and widget instances among them, one of them a
+/// collection with its own `item` list.
+const ITEM_LIST: &str = "        item:
+          - {name: cover, primitive: image, src: row.cover_url, alt: Book cover}
+          - {name: card, component: loan_card, args: {loan: row}}
+          - name: inner
+            component: collection
+            reads: {view: loans.All}
+            item: [{name: due, primitive: text, text: row.due}]
+          - {name: tag, primitive: badge, text: row.state}
+";
+
+/// [`WIDGETS`] with the collection's `item` written as `item`.
+fn with_item(item: &str) -> Document {
+    assert!(
+        WIDGETS.contains(ITEM_MAP),
+        "the fixture still carries the map"
+    );
+    Document::from_yaml(&WIDGETS.replace(ITEM_MAP, item)).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// The names of the `item` the document writes at `page:overview/section:<section>`, or at its
+/// item `nested` (by position in the written list), in the order written; panics when it is not
+/// written as a list.
+fn written_items(doc: &Document, section: &str, nested: Option<usize>) -> Vec<String> {
+    let yaml: serde_yaml::Value = serde_yaml::from_str(&doc.to_yaml().unwrap()).unwrap();
+    let mut value = &yaml["pages"]["overview"]["sections"][section];
+    if let Some(i) = nested {
+        value = &value["item"][i];
+    }
+    let items = value["item"].as_sequence().unwrap_or_else(|| {
+        panic!("`item` of {section} {nested:?} is written as a list: {value:?}")
+    });
+    items
+        .iter()
+        .map(|n| n["name"].as_str().expect("a named node").to_owned())
+        .collect()
+}
+
+fn item_names(doc: &Document, at: &str) -> Vec<String> {
+    uilab_doc::path::children(doc, &path(at))
+        .unwrap()
+        .into_iter()
+        .map(|(layer, name)| {
+            assert_eq!(layer, Layer::Item, "{at}/{name}");
+            name
+        })
+        .collect()
+}
+
+#[test]
+fn an_ess_item_list_parses_and_round_trips_as_a_list() {
+    let doc = with_item(ITEM_LIST);
+    assert_eq!(errors(&doc), [], "{:#?}", check(&doc));
+    let list = "page:overview/section:list";
+    assert_eq!(item_names(&doc, list), ["cover", "card", "inner", "tag"]);
+    assert_eq!(item_names(&doc, &format!("{list}/item:inner")), ["due"]);
+
+    match resolve(&doc, &path(&format!("{list}/item:cover"))).unwrap() {
+        NodeRef::Primitive(p) => assert_eq!(p.primitive, PrimitiveKind::Image),
+        other => panic!("item:cover is a primitive, not {other:?}"),
+    }
+    let card = resolve(&doc, &path(&format!("{list}/item:card"))).unwrap();
+    assert_eq!(
+        card.composite().unwrap().component,
+        Component::Widget("loan_card".into())
+    );
+    match resolve(&doc, &path(&format!("{list}/item:inner/item:due"))).unwrap() {
+        NodeRef::Primitive(p) => assert_eq!(p.primitive, PrimitiveKind::Text),
+        other => panic!("item:inner/item:due is a primitive, not {other:?}"),
+    }
+
+    assert_eq!(
+        written_items(&doc, "list", None),
+        ["cover", "card", "inner", "tag"]
+    );
+    assert_eq!(written_items(&doc, "list", Some(2)), ["due"]);
+    assert_eq!(Document::from_yaml(&doc.to_yaml().unwrap()).unwrap(), doc);
+
+    let tree = uilab_doc::outline_at(&doc, &path(list)).unwrap();
+    assert_eq!(
+        tree.children
+            .iter()
+            .map(|c| (c.path.as_str(), c.kind.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("page:overview/section:list/item:cover", "image"),
+            ("page:overview/section:list/item:card", "loan_card"),
+            ("page:overview/section:list/item:inner", "collection"),
+            ("page:overview/section:list/item:tag", "badge"),
+        ]
+    );
+    let docs = uilab_doc::docs_markdown(&doc, &Fixtures::default(), &check(&doc));
+    assert!(
+        docs.contains("`page:overview/section:list/item:card`"),
+        "{docs}"
+    );
+}
+
+#[test]
+fn an_old_item_map_is_read_and_written_as_a_list_in_order() {
+    let doc = with_item(
+        "        item:
+          zeta: {component: loan_card, args: {loan: row}}
+          alpha:
+            component: collection
+            reads: {view: loans.All}
+            item: {due: {component: metric, from: due}}
+",
+    );
+    assert_eq!(errors(&doc), [], "{:#?}", check(&doc));
+    let list = "page:overview/section:list";
+    assert_eq!(item_names(&doc, list), ["zeta", "alpha"]);
+    let zeta = resolve(&doc, &path(&format!("{list}/item:zeta"))).unwrap();
+    assert_eq!(
+        zeta.composite().unwrap().component,
+        Component::Widget("loan_card".into())
+    );
+    let due = resolve(&doc, &path(&format!("{list}/item:alpha/item:due"))).unwrap();
+    assert_eq!(due.composite().unwrap().component, CompositeKind::Metric);
+
+    assert_eq!(written_items(&doc, "list", None), ["zeta", "alpha"]);
+    assert_eq!(written_items(&doc, "list", Some(1)), ["due"]);
+    assert_eq!(Document::from_yaml(&doc.to_yaml().unwrap()).unwrap(), doc);
+
+    assert_eq!(
+        with_widgets(),
+        with_item("        item: [{name: card, component: loan_card, args: {loan: row}}]\n"),
+        "the map and the list read to the same document"
+    );
+}
+
+#[test]
+fn a_duplicate_item_name_is_refused_with_its_own_check_id() {
+    let duplicate = "        item:
+          - {name: card, component: loan_card, args: {loan: row}}
+          - {name: card, primitive: text, text: row.title}
+";
+    let doc = with_item(duplicate);
+    assert_eq!(
+        errors(&doc),
+        [(
+            "names_unique",
+            "page:overview/section:list/item:card".to_owned()
+        )]
+    );
+    assert_eq!(
+        CHECKS
+            .iter()
+            .find(|(c, _, _)| *c == "names_unique")
+            .map(|(_, s, _)| *s),
+        Some(Severity::Error)
+    );
+
+    let clean = with_widgets();
+    let list =
+        serde_json::to_value(with_item(duplicate).pages["overview"].sections["list"].clone())
+            .unwrap();
+    let refused = admit(
+        &clean,
+        &Patch::Replace {
+            target: path("page:overview/section:list"),
+            node: list,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(refused.check, "names_unique", "{refused}");
+}
+
+#[test]
+fn item_nodes_are_patched_by_path() {
+    let doc = with_item(ITEM_LIST);
+    let list = path("page:overview/section:list");
+    let insert = |target: &NodePath, name: &str, node: serde_json::Value| Patch::Insert {
+        target: target.clone(),
+        child: Child {
+            layer: Layer::Item,
+            name: name.into(),
+            node,
+            nav_section: None,
+        },
+    };
+
+    let (next, _) = admit(
+        &doc,
+        &insert(&list, "rule", json!({"primitive": "divider"})),
+    )
+    .unwrap();
+    assert_eq!(
+        item_names(&next, "page:overview/section:list"),
+        ["cover", "card", "inner", "tag", "rule"],
+        "an item is appended"
+    );
+    assert_eq!(
+        written_items(&next, "list", None),
+        ["cover", "card", "inner", "tag", "rule"]
+    );
+    assert!(matches!(
+        resolve(&next, &path("page:overview/section:list/item:rule")).unwrap(),
+        NodeRef::Primitive(_)
+    ));
+
+    let inner = path("page:overview/section:list/item:inner");
+    let (next, _) = admit(
+        &doc,
+        &insert(
+            &inner,
+            "state",
+            json!({"component": "state_badge", "args": {"state": "row.state"}}),
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        item_names(&next, "page:overview/section:list/item:inner"),
+        ["due", "state"]
+    );
+
+    let replace = Patch::Replace {
+        target: path("page:overview/section:list/item:card"),
+        node: json!({"primitive": "text", "text": "row.title"}),
+    };
+    let (next, _) = admit(&doc, &replace).unwrap();
+    assert_eq!(
+        item_names(&next, "page:overview/section:list"),
+        ["cover", "card", "inner", "tag"],
+        "a replaced item keeps its place"
+    );
+    assert!(matches!(
+        resolve(&next, &path("page:overview/section:list/item:card")).unwrap(),
+        NodeRef::Primitive(_)
+    ));
+
+    let remove = Patch::Remove {
+        target: path("page:overview/section:list/item:cover"),
+    };
+    let (next, _) = admit(&doc, &remove).unwrap();
+    assert_eq!(
+        item_names(&next, "page:overview/section:list"),
+        ["card", "inner", "tag"]
+    );
+
+    let taken = admit(&doc, &insert(&list, "tag", json!({"primitive": "divider"}))).unwrap_err();
+    assert_eq!(taken.check, "name_unique");
+    let unknown = admit(&doc, &insert(&list, "x", json!({"component": "nowhere"}))).unwrap_err();
+    assert_eq!(unknown.check, "node_shape");
+    let unchecked = Patch::Replace {
+        target: path("page:overview/section:list/item:card"),
+        node: json!({"component": "loan_card", "args": {}}),
+    };
+    assert_eq!(admit(&doc, &unchecked).unwrap_err().check, "widget_args");
+
+    let record = Patch::Insert {
+        target: path("page:overview"),
+        child: Child {
+            layer: Layer::Section,
+            name: "detail".into(),
+            node: json!({"component": "record", "reads": {"view": "loans.All"}}),
+            nav_section: None,
+        },
+    };
+    let (with_record, _) = admit(&doc, &record).unwrap();
+    let detail = path("page:overview/section:detail");
+    assert_eq!(
+        allowed_children(&with_record, &detail).unwrap(),
+        [Layer::Item]
+    );
+    let (next, _) = admit(
+        &with_record,
+        &insert(
+            &detail,
+            "card",
+            json!({"component": "loan_card", "args": {"loan": "row"}}),
+        ),
+    )
+    .unwrap();
+    assert_eq!(item_names(&next, "page:overview/section:detail"), ["card"]);
+
+    let schema = patch_schema(&doc, &list).unwrap();
+    assert_eq!(
+        schema["properties"]["child"]["oneOf"][0]["properties"]["node"]["$ref"],
+        json!("#/$defs/node"),
+        "an item may be a primitive"
+    );
+    let at_card = patch_schema(&doc, &path("page:overview/section:list/item:card")).unwrap();
+    assert_eq!(at_card["properties"]["node"]["$ref"], json!("#/$defs/node"));
+    assert_eq!(
+        schema["$defs"]["composite"]["properties"]["item"]["type"],
+        json!("array")
+    );
+}
+
+/// Every check that reads a node's props reads a primitive node's props too: `opens_resolves` at
+/// a primitive item at any depth, and the widget checks at a primitive item and at a primitive of
+/// a widget body, whose props may hold a Node (an action's `choice`).
+#[test]
+fn checks_over_props_hold_primitive_nodes_too() {
+    let button = |opens: &str| {
+        format!("{{name: go, primitive: button, label: Go, action: {{name: go, opens: {opens}}}}}")
+    };
+    let nested = |node: &str| {
+        with_item(&ITEM_LIST.replace(
+            "[{name: due, primitive: text, text: row.due}]",
+            &format!("[{{name: due, primitive: text, text: row.due}}, {node}]"),
+        ))
+    };
+    let inner_go = "page:overview/section:list/item:inner/item:go".to_owned();
+
+    assert_eq!(errors(&nested(&button("detail"))), [], "a page overlay");
+    assert_eq!(errors(&nested(&button("loan"))), [], "a shell overlay");
+    assert_eq!(
+        errors(&nested(&button("nowhere"))),
+        [("opens_resolves", inner_go.clone())]
+    );
+
+    let choosing = |component: &str| {
+        format!(
+            "{{name: go, primitive: button, label: Go, action: {{name: go, does: loans.Pick, \
+             choice: {{component: {component}, args: {{state: row.state}}}}}}}}"
+        )
+    };
+    assert_eq!(errors(&nested(&choosing("state_badge"))), []);
+    assert_eq!(
+        errors(&nested(&choosing("nowhere"))),
+        [("widget_resolves", inner_go.clone())]
+    );
+    let finding = check(&nested(&choosing("nowhere")))
+        .into_iter()
+        .find(|f| f.check == "widget_resolves")
+        .unwrap();
+    assert!(
+        finding.message.starts_with("`action/choice`: "),
+        "{}",
+        finding.message
+    );
+    let docs =
+        uilab_doc::docs_markdown(&nested(&choosing("state_badge")), &Fixtures::default(), &[]);
+    assert!(
+        docs.contains(&format!("`{inner_go}` (`action/choice`)")),
+        "{docs}"
+    );
+
+    let body_choice = WIDGETS.replace(
+        "      - {name: extend, primitive: button, label: Extend, action: {name: extend, does: loans.ExtendLoan}}",
+        "      - {name: extend, primitive: button, label: Extend, action: {name: extend, does: loans.ExtendLoan, choice: {component: nowhere}}}",
+    );
+    assert_ne!(body_choice, WIDGETS, "the fixture changed");
+    assert_eq!(
+        errors(&Document::from_yaml(&body_choice).unwrap()),
+        [(
+            "widget_resolves",
+            "component:loan_card/node:extend".to_owned()
+        )]
+    );
+
+    let recursive = WIDGETS.replace(
+        "      - {name: badge, primitive: badge, text: args.state,",
+        "      - {name: rows, component: collection, reads: {view: loans.All}, item: [{name: go, primitive: button, label: Go, action: {name: go, does: loans.Pick, choice: {component: state_badge, args: {state: row.state}}}}]}\n      - {name: badge, primitive: badge, text: args.state,",
+    );
+    assert_ne!(recursive, WIDGETS, "the fixture changed");
+    assert!(
+        errors(&Document::from_yaml(&recursive).unwrap()).contains(&(
+            "widget_recursion",
+            "component:state_badge/node:rows/item:go".to_owned()
+        )),
+        "{:?}",
+        errors(&Document::from_yaml(&recursive).unwrap())
+    );
+
+    let insert = Patch::Insert {
+        target: path("page:overview/section:list/item:inner"),
+        child: Child {
+            layer: Layer::Item,
+            name: "go".into(),
+            node: json!({"primitive": "button", "label": "Go",
+                "action": {"name": "go", "does": "loans.Pick", "choice": {"component": "nowhere"}}}),
+            nav_section: None,
+        },
+    };
+    assert_eq!(
+        admit(&with_item(ITEM_LIST), &insert).unwrap_err().check,
+        "widget_resolves"
+    );
 }

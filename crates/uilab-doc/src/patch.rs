@@ -174,6 +174,14 @@ fn parse_node(doc: &Document, name: &str, fields: &Value, own: &str) -> Result<N
     Ok(node)
 }
 
+/// An item node as a patch carries it: the name is the child's name or the target's.
+fn parse_item(doc: &Document, name: &str, fields: &Value) -> Result<Node, Refusal> {
+    let node = Node::named(name, fields)
+        .map_err(|e| Refusal::new("node_shape", format!("not a valid item: {e}")))?;
+    components_resolve(doc, None, node.composite())?;
+    Ok(node)
+}
+
 /// Refuses a composite, or one nested in it, whose `component` is neither a composite kind nor a
 /// widget of the document. `own` is the widget being written, which its own body may name: the
 /// `widget_recursion` check refuses that, with its own id.
@@ -194,7 +202,7 @@ fn components_resolve<'a>(
             ));
         }
         stack.extend(composite.widgets.values());
-        stack.extend(composite.item.values());
+        stack.extend(composite.item_composites());
     }
     Ok(())
 }
@@ -382,9 +390,8 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
             composite_mut(doc, target)?.widgets.insert(name, widget);
         }
         Layer::Item => {
-            let item: Composite = parse(child.layer, &child.node)?;
-            components_resolve(doc, None, [&item])?;
-            composite_mut(doc, target)?.item.insert(name, item);
+            let node = parse_item(doc, &name, &child.node)?;
+            composite_mut(doc, target)?.item.push(node);
         }
         Layer::Root | Layer::Nav => unreachable!("never an allowed child"),
     }
@@ -477,17 +484,24 @@ fn replace(doc: &mut Document, target: &NodePath, node: &Value) -> Result<(), Re
                 .get_mut(&name)
                 .expect("resolved") = Some(section);
         }
-        Layer::Widget | Layer::Item => {
+        Layer::Widget => {
             let parent = target.parent().expect("a nested composite has a parent");
             let composite: Composite = parse(layer, node)?;
             components_resolve(doc, None, [&composite])?;
-            let holder = composite_mut(doc, &parent)?;
-            let map = if layer == Layer::Widget {
-                &mut holder.widgets
-            } else {
-                &mut holder.item
-            };
-            *map.get_mut(&name).expect("resolved") = composite;
+            *composite_mut(doc, &parent)?
+                .widgets
+                .get_mut(&name)
+                .expect("resolved") = composite;
+        }
+        Layer::Item => {
+            let parent = target.parent().expect("an item has a parent");
+            let replacement = parse_item(doc, &name, node)?;
+            let slot = composite_mut(doc, &parent)?
+                .item
+                .iter_mut()
+                .find(|n| n.name == name)
+                .expect("resolved");
+            *slot = replacement;
         }
     }
     Ok(())
@@ -542,15 +556,15 @@ fn remove(doc: &mut Document, target: &NodePath) -> Result<(), Refusal> {
             let parent = target.parent().expect("a section has a page");
             page_mut(doc, &parent)?.sections.shift_remove(&name);
         }
-        Layer::Widget | Layer::Item => {
+        Layer::Widget => {
             let parent = target.parent().expect("a nested composite has a parent");
-            let holder = composite_mut(doc, &parent)?;
-            let map = if layer == Layer::Widget {
-                &mut holder.widgets
-            } else {
-                &mut holder.item
-            };
-            map.shift_remove(&name);
+            composite_mut(doc, &parent)?.widgets.shift_remove(&name);
+        }
+        Layer::Item => {
+            let parent = target.parent().expect("an item has a parent");
+            let items = &mut composite_mut(doc, &parent)?.item;
+            let at = items.iter().position(|n| n.name == name).expect("resolved");
+            items.remove(at);
         }
     }
     Ok(())
@@ -614,12 +628,19 @@ fn composite_mut<'a>(doc: &'a mut Document, path: &NodePath) -> Result<&'a mut C
         _ => return Err(missing(path)),
     };
     for segment in segments {
-        let map = match segment.layer {
-            Layer::Widget => &mut current.widgets,
-            Layer::Item => &mut current.item,
-            _ => return Err(missing(path)),
-        };
-        current = map.get_mut(&segment.name).ok_or_else(|| missing(path))?;
+        current = match segment.layer {
+            Layer::Widget => current.widgets.get_mut(&segment.name),
+            Layer::Item => current
+                .item
+                .iter_mut()
+                .find(|n| n.name == segment.name)
+                .and_then(|n| match &mut n.body {
+                    NodeBody::Composite(c) => Some(c.as_mut()),
+                    NodeBody::Primitive(_) => None,
+                }),
+            _ => None,
+        }
+        .ok_or_else(|| missing(path))?;
     }
     Ok(current)
 }
