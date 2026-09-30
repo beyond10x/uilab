@@ -3,7 +3,7 @@ import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
 import { entityViews, fixtureRowOf, viewsRead } from '../lib/components.ts';
-import { compositeKind, drawsAsPrimitive, instanceBody, itemScopes, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
+import { compositeKind, drawsAsPrimitive, instanceBody, itemScopes, missingReference, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
 import { columnsOf, fieldsOf, isDraftView, propsOf } from '../lib/outline.ts';
 import { marks, requestRows, select, shownOutline, state, tint } from '../store.ts';
 import PrimitiveView from './PrimitiveView.vue';
@@ -42,6 +42,10 @@ const body = computed(() => {
   return instanceBody(instance.value, props.node, scope, fixtureRowOf(views.value, state.rows));
 });
 const bodyWithin = computed(() => (instance.value ? [...within.value, instance.value.name] : within.value));
+/** An instance whose `row`/`rows` args have nothing to read here: shown as the empty line, not as
+ *  a body of sample args that would read as real data. */
+const unbound = computed(() => !!instance.value && missingReference(props.node, { row: props.scope?.row, rows: scopeRows.value }));
+const unboundLine = computed(() => (view.value && !rows.value ? (preview.value ? 'loading…' : `loading ${view.value}…`) : 'no data yet'));
 
 const sampled = computed(() => draft.value && rowObjects.value.length > 0);
 
@@ -194,7 +198,8 @@ function display(v: unknown): string {
     </template>
 
     <template v-else-if="instance">
-      <div class="instance-body" :class="`arrange-${instance.arrange}`" :data-widget="instance.name">
+      <p v-if="unbound" class="empty">{{ unboundLine }}</p>
+      <div v-else class="instance-body" :class="`arrange-${instance.arrange}`" :data-widget="instance.name">
         <template v-for="b in body" :key="b.path">
           <PrimitiveView v-if="drawsAsPrimitive(b)" :node="b" />
           <CompositeView v-else :node="b" :scope="{ row: scope?.row, rows: scopeRows }" :within="bodyWithin" />
@@ -210,8 +215,8 @@ function display(v: unknown): string {
     <div v-if="items.length" class="item-rows">
       <div v-for="(s, i) in scopes" :key="i" class="item-row">
         <template v-for="c in items" :key="c.path">
-          <PrimitiveView v-if="drawsAsPrimitive(c)" :node="s.row ? rowNode(c, s.row) : c" />
-          <CompositeView v-else :node="c" :scope="s" :within="within" />
+          <PrimitiveView v-if="drawsAsPrimitive(c)" :node="s.row ? rowNode(c, s.row, s.rows) : c" />
+          <CompositeView v-else :node="s.row ? rowNode(c, s.row, s.rows) : c" :scope="s" :within="within" />
         </template>
       </div>
     </div>

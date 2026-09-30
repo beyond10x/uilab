@@ -152,26 +152,54 @@ function readRow(row: Record<string, unknown>, rest: string): unknown {
   return value;
 }
 
-/** `value` with every `row(.<field>)*` read from `row`, however deep, as `substitute` reads
- *  `args`: a string that is only a reference becomes the value it reads, one inside longer text
- *  that value as text (`displayValue`). Keys are not rewritten. */
-function substituteRow(value: unknown, row: Record<string, unknown>): unknown {
+const WHOLE_ROWS = /^rows\.(first|\d+)((?:\.[A-Za-z_]\w*)*)$/;
+const EMBEDDED_ROWS = /(?<![\w.])rows\.(first|\d+)((?:\.[A-Za-z_]\w*)*)/g;
+
+/** What `rows.<pick>(.<field>)*` reads from `rows`, as `row.…` reads one row: a row past the end
+ *  reads as an empty row. */
+function readRows(rows: Record<string, unknown>[], pick: string, rest: string): unknown {
+  const row = rows[pick === 'first' ? 0 : Number(pick)] ?? {};
+  return readRow(row, rest);
+}
+
+/** `value` with every `row(.<field>)*` read from `row` and every `rows.first|<n>(.<field>)*` from
+ *  `rows` (when given), however deep, as `substitute` reads `args`: a string that is only a
+ *  reference becomes the value it reads, one inside longer text that value as text
+ *  (`displayValue`). Keys are not rewritten. */
+function substituteRow(value: unknown, row: Record<string, unknown>, rows?: Record<string, unknown>[]): unknown {
   if (typeof value === 'string') {
+    const wholeRows = rows ? WHOLE_ROWS.exec(value) : null;
+    if (wholeRows && rows) return readRows(rows, wholeRows[1], wholeRows[2]);
     const whole = WHOLE_ROW.exec(value);
     if (whole) return readRow(row, whole[1]);
-    return value.replace(EMBEDDED_ROW, (_text, rest: string) => displayValue(readRow(row, rest)));
+    const withRows = rows
+      ? value.replace(EMBEDDED_ROWS, (_text, pick: string, rest: string) => displayValue(readRows(rows, pick, rest)))
+      : value;
+    return withRows.replace(EMBEDDED_ROW, (_text, rest: string) => displayValue(readRow(row, rest)));
   }
-  if (Array.isArray(value)) return value.map((v) => substituteRow(v, row));
+  if (Array.isArray(value)) return value.map((v) => substituteRow(v, row, rows));
   const map = record(value);
-  if (map) return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, substituteRow(v, row)]));
+  if (map) return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, substituteRow(v, row, rows)]));
   return value;
 }
 
-/** A primitive item as its composite draws it for one row: `row` and `row.<field>` in its props
- *  and title read from `row`, and its children's, the way `previewNode` reads a body's args. */
-export function rowNode(node: OutlineNode, row: Record<string, unknown>): OutlineNode {
-  const out: OutlineNode = { ...node, children: node.children.map((c) => rowNode(c, row)) };
-  if (node.props !== undefined) out.props = substituteRow(node.props, row) as OutlineNode['props'];
-  if (node.title !== undefined) out.title = displayValue(substituteRow(node.title, row));
+/** An item as its composite draws it for one row: `row` and `row.<field>`, and with `rows` given
+ *  `rows.first|<n>.<field>`, in its props and title read from them, and its children's, the way
+ *  `previewNode` reads a body's args. */
+export function rowNode(node: OutlineNode, row: Record<string, unknown>, rows?: Record<string, unknown>[]): OutlineNode {
+  const out: OutlineNode = { ...node, children: node.children.map((c) => rowNode(c, row, rows)) };
+  if (node.props !== undefined) out.props = substituteRow(node.props, row, rows) as OutlineNode['props'];
+  if (node.title !== undefined) out.title = displayValue(substituteRow(node.title, row, rows));
   return out;
+}
+
+/** Whether an instance writes a `rows` reference its `scope` has nothing for (no rows loaded, or
+ *  an index past the end): its body would be drawn from sample args and read as real data, so the
+ *  canvas shows the empty line. A `row` with no item row around it is a placeholder at design
+ *  time and keeps the sample. */
+export function missingReference(node: OutlineNode, scope: Scope): boolean {
+  const written = record(propsOf(node).args) ?? {};
+  return Object.values(written).some(
+    (v) => typeof v === 'string' && /^rows(\.|$)/.test(v) && !bindArg(v, scope).bound,
+  );
 }
