@@ -1,5 +1,5 @@
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
-import { childrenOf, propsOf } from './outline.ts';
+import { childrenOf, isDraftView, overlayOf, pageOf, propsOf } from './outline.ts';
 
 /** One declared param of a widget, as the outline carries it in the widget's `props.params`. */
 export interface Param {
@@ -94,40 +94,124 @@ const CHOICE_CTORS = ['enum', 'one_of'];
 const WRAP_CTORS = ['optional', 'maybe', 'nullable'];
 
 /**
- * A value to preview a param with. A declared `default` is used as written; otherwise the value is
- * shaped by the type and named after the param: text types give the param name, number types 3,
- * boolean types `true`, a list one sample element, an enum its first member, and a record or
- * entity (a named type such as `Loan`, or any other constructor) an object `{name: <param>}`.
+ * A value to preview a param with. A declared `default` is used as written. An entity (a named
+ * type such as `Member`) takes the row `rowOf` gives for it, the first fixture row of its view,
+ * when there is one. Otherwise the value is shaped by the type and named after the param: text
+ * types give the param name, number types 3, boolean types `true`, a list one sample element, an
+ * enum its first member, and a record or entity (a named type, or any other constructor) an object
+ * `{name: <param>}`.
  */
-export function sampleValue(param: { name: string; type: unknown; hasDefault?: boolean; default?: unknown }): unknown {
+export function sampleValue(param: { name: string; type: unknown; hasDefault?: boolean; default?: unknown }, rowOf?: RowOf): unknown {
   if (param.hasDefault) return param.default;
-  return shaped(param.name, param.type);
+  return shaped(param.name, param.type, rowOf);
 }
 
-function shaped(name: string, type: unknown): unknown {
+function shaped(name: string, type: unknown, rowOf?: RowOf): unknown {
   if (typeof type === 'string') {
     const t = type.toLowerCase();
     if (TEXT_TYPES.includes(t)) return name;
     if (NUMBER_TYPES.includes(t)) return 3;
     if (BOOLEAN_TYPES.includes(t)) return true;
-    return /^[A-Z]|\./.test(type) ? { name } : name;
+    if (!/^[A-Z]|\./.test(type)) return name;
   }
+  const entity = entityOf(type);
+  const row = entity && rowOf ? rowOf(entity) : undefined;
   const map = record(type);
   const entry = map && Object.entries(map).length === 1 ? Object.entries(map)[0] : null;
   if (entry) {
     const [ctor, inner] = entry;
-    if (LIST_CTORS.includes(ctor)) return [shaped(name, inner)];
+    if (LIST_CTORS.includes(ctor)) return [shaped(name, inner, rowOf)];
     if (CHOICE_CTORS.includes(ctor) && Array.isArray(inner)) return inner[0] ?? name;
-    if (WRAP_CTORS.includes(ctor)) return shaped(name, inner);
+    if (WRAP_CTORS.includes(ctor)) return shaped(name, inner, rowOf);
   }
+  if (row) return row;
   return type === undefined || type === null ? name : { name };
 }
 
-/** Sample args for a widget: one per param, by [`sampleValue`]. */
-export function sampleArgs(params: Param[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const p of params) out[p.name] = sampleValue(p);
+/** A row to preview an entity with, by entity name (`Member`), or none. */
+export type RowOf = (entity: string) => Record<string, unknown> | undefined;
+
+/**
+ * The entity a param type refers to: a named type (`Member`, `library.Member` → `Member`), also
+ * through a list, a wrapper or any other one-constructor map naming one (`{list: Loan}`,
+ * `{record: Member}`); `null` for primitives, choices and anything else.
+ */
+export function entityOf(type: unknown): string | null {
+  if (typeof type === 'string') {
+    const t = type.toLowerCase();
+    if (TEXT_TYPES.includes(t) || NUMBER_TYPES.includes(t) || BOOLEAN_TYPES.includes(t)) return null;
+    if (!/^[A-Z]|\./.test(type)) return null;
+    return type.split('.').at(-1) || null;
+  }
+  const map = record(type);
+  const entries = map ? Object.entries(map) : [];
+  if (entries.length !== 1) return null;
+  const [ctor, inner] = entries[0];
+  return CHOICE_CTORS.includes(ctor) ? null : entityOf(inner);
+}
+
+/** The view prefixes an entity's rows go by: `Member` → `members`, `member`; `Category` →
+ *  `categories`; `Box` → `boxes`. */
+function viewStems(entity: string): string[] {
+  const base = entity.toLowerCase();
+  const plural = /[^aeiou]y$/.test(base) ? `${base.slice(0, -1)}ies` : /(s|x|z|ch|sh)$/.test(base) ? `${base}es` : `${base}s`;
+  return [plural, base];
+}
+
+/**
+ * The view whose rows carry `entity`, among `views`: one whose first segment is the entity's name
+ * in the plural or singular, case-insensitively (`Member` → `members.*`), `<prefix>.All` first,
+ * else the first such view listed; `null` when none is.
+ */
+export function viewForEntity(entity: string, views: string[]): string | null {
+  const stems = viewStems(entity);
+  const matching = views.filter((v) => stems.includes(v.split('.')[0].toLowerCase()));
+  return matching.find((v) => v.split('.').slice(1).join('.') === 'All') ?? matching[0] ?? null;
+}
+
+/** Every view the outline's nodes read, once each, in document order; draft views (no rows) left out. */
+export function viewsRead(root: OutlineNode): string[] {
+  const out: string[] = [];
+  const walk = (node: OutlineNode) => {
+    if (node.view && !isDraftView(node.view) && !out.includes(node.view)) out.push(node.view);
+    node.children.forEach(walk);
+  };
+  walk(root);
   return out;
+}
+
+/** The views, once each, whose rows the samples of `params` would read. */
+export function entityViews(params: Param[], views: string[]): string[] {
+  const out: string[] = [];
+  for (const p of params) {
+    const entity = entityOf(p.type);
+    const view = entity ? viewForEntity(entity, views) : null;
+    if (view && !out.includes(view)) out.push(view);
+  }
+  return out;
+}
+
+/** An entity's first fixture row: the first object row loaded for its view among `views`. */
+export function fixtureRowOf(views: string[], rows: Record<string, { rows: unknown[] } | undefined>): RowOf {
+  return (entity) => {
+    const view = viewForEntity(entity, views);
+    const loaded = view ? rows[view]?.rows : undefined;
+    return (loaded ?? []).map(record).find((r) => r !== null) ?? undefined;
+  };
+}
+
+/** Sample args for a widget: one per param, by [`sampleValue`]. */
+export function sampleArgs(params: Param[], rowOf?: RowOf): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of params) out[p.name] = sampleValue(p, rowOf);
+  return out;
+}
+
+/** Where a use site shows: the node to select, the page it sits on and the overlay it sits in.
+ *  A site that is not on a page (inside a widget, a page kind) has no page to show. */
+export function useSiteTarget(site: UseSite): { select: string; page: string | null; overlay: string | null } {
+  const page = pageOf(site.path);
+  return { select: site.path, page, overlay: page ? overlayOf(site.path) : null };
 }
 
 const WHOLE_REF = /^args\.([A-Za-z_]\w*)((?:\.[A-Za-z_]\w*)*)$/;
@@ -146,12 +230,14 @@ function resolve(args: Record<string, unknown>, param: string, rest: string): { 
   return { found: true, value };
 }
 
-/** A value as one line of preview text: an object with a `name` shows its name. */
+/** A value as one line of preview text: an object shows its `name`, else its `title`, else its
+ *  `label`. */
 export function displayValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value !== 'object') return String(value);
   const map = record(value);
-  if (map && typeof map.name === 'string') return map.name;
+  const shown = map ? [map.name, map.title, map.label].find((v) => typeof v === 'string') : undefined;
+  if (typeof shown === 'string') return shown;
   return JSON.stringify(value);
 }
 
