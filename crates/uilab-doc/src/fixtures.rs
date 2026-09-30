@@ -194,6 +194,7 @@ fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, FixtureEr
 pub fn sample_rows(doc: &Document, view: &str) -> Vec<Value> {
     let mut fields: Vec<String> = Vec::new();
     let mut quantities: Vec<String> = Vec::new();
+    let mut categories: Vec<String> = Vec::new();
     let add = |list: &mut Vec<String>, f: &str| {
         if !f.is_empty() && !list.iter().any(|x| x == f) {
             list.push(f.to_owned());
@@ -234,11 +235,15 @@ pub fn sample_rows(doc: &Document, view: &str) -> Vec<Value> {
             if key == "from" && kind == Some(CompositeKind::Metric) {
                 add(&mut quantities, field);
             }
+            if key == "x" && kind == Some(CompositeKind::Chart) {
+                add(&mut categories, field);
+            }
         }
     }
     if fields.is_empty() {
         fields = fields_from_view_name(view);
     }
+    let mut seen: Vec<Vec<Value>> = Vec::new();
     (1..=5)
         .map(|n| {
             Value::Object(
@@ -254,6 +259,17 @@ pub fn sample_rows(doc: &Document, view: &str) -> Vec<Value> {
                     })
                     .collect(),
             )
+        })
+        // A chart draws one bar per category: a row whose `x` values repeat an earlier row's is
+        // left out (a state field cycles through three values over five rows).
+        .filter(|row| {
+            let key: Vec<Value> = categories.iter().map(|c| row[c.as_str()].clone()).collect();
+            if categories.is_empty() || !seen.contains(&key) {
+                seen.push(key);
+                true
+            } else {
+                false
+            }
         })
         .collect()
 }
@@ -273,19 +289,25 @@ fn sample_value(field: &str, n: i64) -> Value {
     let first = parts.first().copied().unwrap_or("");
     let last = parts.last().copied().unwrap_or("");
     let has = |words: &[&str]| words.iter().any(|w| parts.contains(w));
+    let counted = has(&[
+        "count", "total", "number", "amount", "value", "sum", "loans", "overdue", "qty", "score",
+    ]);
     if ["is", "has", "can", "allow", "show", "notify"].contains(&first)
-        || ["enabled", "active", "allowed", "visible", "verified"].contains(&last)
+        || [
+            "enabled", "active", "allowed", "visible", "verified", "notify",
+        ]
+        .contains(&last)
     {
         Value::Bool(n % 2 == 1)
     } else if last == "month" {
         Value::String(format!("2026-{:02}", n + 4))
-    } else if last == "week" {
+    } else if last == "week" || (first == "week" && !counted) {
         Value::String(format!("2026-W{}", 30 + n))
-    } else if ["date", "due", "joined", "at", "day", "time", "on"].contains(&last) {
+    } else if ["date", "due", "joined", "at", "day", "time", "on"].contains(&last)
+        || first == "date"
+    {
         Value::String(format!("2026-10-{:02}", n * 3))
-    } else if has(&[
-        "count", "total", "number", "amount", "value", "sum", "loans", "overdue", "qty", "score",
-    ]) {
+    } else if counted {
         sample_number(n)
     } else if ["state", "status", "standing", "stage"].contains(&last) {
         Value::String(["open", "overdue", "closed"][(n % 3) as usize].to_owned())

@@ -111,11 +111,17 @@ let feedSeq = 0;
 let flashSeq = 0;
 
 let transport: Transport | null = null;
-/** View → document revision its rows were last asked for at. */
-const rowsAsked = new Map<string, number | null>();
-/** View → document revision the browser was at when its rows last arrived. The server builds
- *  them at the revision it last sent, so this is the revision the rows are for. */
-const rowsAnswered = new Map<string, number | null>();
+/** View → the stamp (`rowsStamp`) its rows were last asked for at. */
+const rowsAsked = new Map<string, string>();
+/** View → the stamp the browser was at when its rows last arrived. The server builds them from
+ *  the document at the revision it last sent, with the proposal it holds applied, so this is what
+ *  the rows are for. */
+const rowsAnswered = new Map<string, string>();
+
+/** What sample rows are built from: the document revision and the proposal shown, if any. */
+function rowsStamp(): string {
+  return `${state.revision}|${state.proposal?.proposal_id ?? ''}`;
+}
 /** Views the canvas wants rows for; asked again on reconnect while the shown outline reads them. */
 const pendingViews = new Set<string>();
 let micHeld = false;
@@ -360,7 +366,7 @@ function onMessage(msg: ServerMessage): void {
       break;
     case 'rows':
       state.rows = { ...state.rows, [msg.value.view]: msg.value };
-      rowsAnswered.set(msg.value.view, state.revision);
+      rowsAnswered.set(msg.value.view, rowsStamp());
       break;
     case 'goal': {
       // Only the moment a goal ends: a stopped goal's thinking step never answers, so its
@@ -431,9 +437,9 @@ export function showPage(path: string): void {
 export function requestRows(view: string | undefined): void {
   if (!view) return;
   pendingViews.add(view);
-  const revision = state.revision;
-  if (!rowsDue(view, !!state.rows[view], rowsAsked.get(view), revision)) return;
-  if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsAsked.set(view, revision);
+  const stamp = rowsStamp();
+  if (!rowsDue(view, !!state.rows[view], rowsAsked.get(view), stamp)) return;
+  if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsAsked.set(view, stamp);
 }
 
 /** Where an instruction goes, in the view on screen (`targetIn`); selects the page it names. */

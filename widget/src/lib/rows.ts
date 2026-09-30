@@ -1,12 +1,17 @@
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { isDraftView, propsOf } from './outline.ts';
 
+/** What a request for rows was made at: a document revision, or a revision plus the proposal shown. */
+export type Stamp = number | string | null;
+
 /**
  * Whether the canvas asks the server for `view`'s rows now. `have`: rows for it are shown;
- * `askedAt`: the document revision the last request went out at, `undefined` when none did.
+ * `askedAt`: the stamp the last request went out at, `undefined` when none did; `stamp`: what
+ * rows would be built from now (the store's is the document revision plus the proposal shown).
  *
  * A `draft.` view has no fixture: the server makes sample rows for it, shaped by the composites
- * that read it, so they are asked for again once the document is at another revision. Every other
+ * that read it in the document with the waiting proposal applied, so they are asked for again
+ * once the stamp moves: another revision, or another proposal shown, or none. Every other
  * view is taken to be fixture-backed and asked for once. That is not always so: the server answers
  * a view without the prefix that has no fixture with sample rows too, and those are neither
  * reshaped at a new revision nor tagged as sample data.
@@ -14,10 +19,10 @@ import { isDraftView, propsOf } from './outline.ts';
 export function rowsDue(
   view: string,
   have: boolean,
-  askedAt: number | null | undefined,
-  revision: number | null,
+  askedAt: Stamp | undefined,
+  stamp: Stamp,
 ): boolean {
-  if (isDraftView(view)) return askedAt !== revision;
+  if (isDraftView(view)) return askedAt !== stamp;
   return !have && askedAt === undefined;
 }
 
@@ -45,8 +50,8 @@ export function viewsOf(root: OutlineNode | null): Set<string> {
  * arrived). On a connection that dropped, those answers never come.
  */
 export function unanswered(
-  asked: ReadonlyMap<string, number | null>,
-  answered: ReadonlyMap<string, number | null>,
+  asked: ReadonlyMap<string, Stamp>,
+  answered: ReadonlyMap<string, Stamp>,
 ): string[] {
   return [...asked].filter(([view, at]) => !answered.has(view) || answered.get(view) !== at).map(([view]) => view);
 }
