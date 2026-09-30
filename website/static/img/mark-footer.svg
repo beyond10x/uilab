@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="uilab">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9d8cff"/>
+      <stop offset="1" stop-color="#4fe3ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="58" height="58" rx="14" fill="#151a30"/>
+  <rect x="4" y="4" width="56" height="56" rx="13" fill="none" stroke="url(#g)" stroke-width="3"/>
+  <rect x="13" y="15" width="16" height="34" rx="3" fill="none" stroke="#c3c9e0" stroke-width="2.5"/>
+  <rect x="34" y="15" width="17" height="14" rx="3" fill="url(#g)"/>
+  <rect x="34" y="35" width="17" height="14" rx="3" fill="none" stroke="url(#g)" stroke-width="2.5" stroke-dasharray="4 3"/>
+  <path d="M18 23h6M18 29h6M18 35h4" stroke="#c3c9e0" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

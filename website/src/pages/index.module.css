@@ -553,8 +553,8 @@
 
 .shotRow {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.2rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.8rem 1.6rem;
 }
 
 .shotSmall {
@@ -575,10 +575,21 @@
   cursor: zoom-in;
 }
 
+.shotCaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-top: 0.6rem;
+}
+
+.shotMain .shotCaption {
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
 .shotOpen {
-  position: absolute;
-  right: 0.6rem;
-  bottom: 0.6rem;
+  flex: none;
   padding: 0.2rem 0.55rem;
   border: 1px solid var(--ul-line-strong);
   border-radius: 999px;
@@ -589,14 +600,15 @@
   line-height: 1.4;
 }
 
-.shotLink:hover .shotOpen,
-.shotLink:focus-visible .shotOpen {
+.shotOpen:hover,
+.shotOpen:focus-visible,
+.shotLink:hover + .shotCaption .shotOpen {
   border-color: var(--ifm-color-primary);
   color: var(--ifm-color-primary);
+  text-decoration: none;
 }
 
-.shotSmall figcaption {
-  margin-top: 0.6rem;
+.shotSmall .shotCaption span {
   font-size: 0.85rem;
   color: var(--ul-muted);
 }
@@ -705,6 +717,11 @@
   align-items: center;
 }
 
+.termWrap {
+  position: relative;
+  min-width: 0;
+}
+
 .terminal {
   margin: 0;
   padding: 1.3rem 1.4rem;
@@ -803,6 +820,38 @@
   }
 
   .terminal {
+    padding-right: 3rem;
     font-size: 0.8rem;
+  }
+
+  .terminal:focus-visible {
+    outline: 2px solid var(--ifm-color-primary);
+    outline-offset: 2px;
+  }
+
+  .termWrap::after {
+    content: '';
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    bottom: 1px;
+    width: 2.5rem;
+    border-radius: 0 13px 13px 0;
+    background: linear-gradient(90deg, rgba(7, 9, 19, 0), #070913 85%);
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 500px) {
+  .eyebrowWide {
+    display: none;
+  }
+
+  .buttons {
+    flex-direction: column;
+  }
+
+  .buttons > a {
+    width: 100%;
   }
 }

@@ -11,7 +11,7 @@ Speech input is optional; everything works with typed instructions.
 
 ## What you need
 
-| | Needed for | Notes |
+| Requirement | Needed for | Notes |
 |---|---|---|
 | Rust (stable) and [`task`](https://taskfile.dev) | building and running the server | |
 | Node 22 with pnpm | building the browser app | the server serves the built files |

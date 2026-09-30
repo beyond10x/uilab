@@ -32,6 +32,20 @@ const darkCode: PrismTheme = {
   }),
 };
 
+/**
+ * The shared organisation column, with its first link named after the site it opens: "Start here"
+ * is also this site's first sidebar category, and the footer link leaves the site.
+ */
+function organisationFooterGroup() {
+  const group = ecosystemFooterGroup();
+  return {
+    ...group,
+    items: group.items.map((item) =>
+      item.href === 'https://beyond10x.github.io/' ? {...item, label: 'beyond10x'} : item,
+    ),
+  };
+}
+
 const config: Config = {
   title: 'uilab',
   tagline:
@@ -122,9 +136,9 @@ const config: Config = {
             {label: 'ESS', href: 'https://github.com/beyond10x/ess'},
           ],
         },
-        ecosystemFooterGroup(),
+        organisationFooterGroup(),
       ],
-      logo: {alt: 'uilab', src: 'img/mark.svg', href: '/', width: 22, height: 22},
+      logo: {alt: 'uilab', src: 'img/mark-footer.svg', href: '/', width: 36, height: 36},
       copyright:
         '<span class="footer__claim">You decide. The agent proposes. The file is the record.</span>' +
         'uilab · built with Docusaurus.',

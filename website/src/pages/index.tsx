@@ -30,14 +30,24 @@ const SPEC: Line[] = [
   {text: '        - field: due', add: true},
 ];
 
+/**
+ * The rows of `examples/library/fixtures/loans.yaml`, all of them: the canvas feeds a new
+ * collection every fixture row of its view and does not apply `params`, so the real preview of
+ * this proposal shows the same four.
+ */
 const ROWS = [
+  ['The Left Hand of Darkness', 'Robin Example', '2026-10-14'],
   ['A Pattern Language', 'Kim Sample', '2026-10-02'],
+  ['Middlemarch', 'Sam Placeholder', '2026-10-21'],
   ['Gödel, Escher, Bach', 'Alex Demo', '2026-10-09'],
 ];
 
 function Workbench() {
   return (
-    <div className={styles.bench} aria-label="A uilab session: the canvas and the proposed change side by side">
+    <div
+      className={styles.bench}
+      role="img"
+      aria-label="A uilab session: the canvas previews a new Overdue loans table in green while the sidebar shows the spoken instruction and the proposed YAML diff, waiting for Accept or Reject">
       <div className={styles.benchBar}>
         <span className={styles.dots} aria-hidden="true">
           <i />
@@ -129,7 +139,9 @@ function Hero() {
       <div className={styles.heroGrid} aria-hidden="true" />
       <div className={styles.heroInner}>
         <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>ui-spec/1 · browser workbench · reviewed by you</span>
+          <span className={styles.eyebrow}>
+            ui-spec/1 · <span className={styles.eyebrowWide}>browser workbench · </span>reviewed by you
+          </span>
           <Heading as="h1" className={styles.heroTitle}>
             Point at the screen.
             <br />
@@ -216,20 +228,35 @@ function Loop() {
   );
 }
 
-function Shot({src, alt}: {src: string; alt: string}) {
+/**
+ * A screenshot that opens at full size. The "Open full size" link sits under the image, beside
+ * the caption, so it never covers part of the screen it shows.
+ */
+function Shot({src, alt, caption, className}: {src: string; alt: string; caption?: string; className: string}) {
   const url = useBaseUrl(src);
   return (
-    <a className={styles.shotLink} href={url} target="_blank" rel="noopener" title="Open the full-size image">
-      <img src={url} alt={alt} loading="lazy" />
-      <span className={styles.shotOpen} aria-hidden="true">
-        Open full size
-      </span>
-    </a>
+    <figure className={className}>
+      <a className={styles.shotLink} href={url} target="_blank" rel="noopener" title="Open the full-size image">
+        <img src={url} alt={alt} loading="lazy" />
+      </a>
+      <figcaption className={styles.shotCaption}>
+        {caption && <span>{caption}</span>}
+        <a
+          className={styles.shotOpen}
+          href={url}
+          target="_blank"
+          rel="noopener"
+          aria-label={`Open full size: ${caption ?? alt}`}>
+          Open full size
+        </a>
+      </figcaption>
+    </figure>
   );
 }
 
 function RealScreens() {
   const shots = [
+    {src: 'img/screens/canvas.png', label: 'Canvas: the Loans page rendered from the document'},
     {src: 'img/screens/components-proposal.png', label: 'Components: a widget proposed and previewed'},
     {src: 'img/screens/yaml.png', label: 'YAML: the file, with the selection highlighted'},
     {src: 'img/screens/docs.png', label: 'Docs: generated from the document'},
@@ -245,18 +272,14 @@ function RealScreens() {
           Taken from uilab running over the lending-library example that ships in the repository. The
           proposal below came from one typed instruction at <code>page:overview</code>.
         </p>
-        <figure className={styles.shotMain}>
-          <Shot
-            src="img/screens/proposal.png"
-            alt="uilab with a proposal waiting for review: the INSERT card and diff in the sidebar, the new Overdue loans section highlighted in green on the canvas"
-          />
-        </figure>
+        <Shot
+          className={styles.shotMain}
+          src="img/screens/proposal.png"
+          alt="uilab with a proposal waiting for review: the INSERT card and diff in the sidebar, the new Overdue loans section highlighted in green on the canvas"
+        />
         <div className={styles.shotRow}>
           {shots.map((shot) => (
-            <figure key={shot.src} className={styles.shotSmall}>
-              <Shot src={shot.src} alt={shot.label} />
-              <figcaption>{shot.label}</figcaption>
-            </figure>
+            <Shot key={shot.src} className={styles.shotSmall} src={shot.src} alt={shot.label} caption={shot.label} />
           ))}
         </div>
       </div>
@@ -381,12 +404,14 @@ function Start() {
             Getting started
           </Link>
         </div>
-        <pre className={styles.terminal}>
-          <span className={styles.prompt}>$</span> task widget{'\n'}
-          <span className={styles.prompt}>$</span> cargo run --release -p uilab-app -- serve \{'\n'}
-          {'    '}--doc examples/library/library.ui.yaml --no-stt{'\n'}
-          <span className={styles.out}>uilab: http://127.0.0.1:8740 editing examples/library/library.ui.yaml</span>
-        </pre>
+        <div className={styles.termWrap}>
+          <pre className={styles.terminal} tabIndex={0} role="region" aria-label="Commands that run the example">
+            <span className={styles.prompt}>$</span> task widget{'\n'}
+            <span className={styles.prompt}>$</span> cargo run --release -p uilab-app -- serve \{'\n'}
+            {'    '}--doc examples/library/library.ui.yaml --no-stt{'\n'}
+            <span className={styles.out}>uilab: http://127.0.0.1:8740 editing examples/library/library.ui.yaml</span>
+          </pre>
+        </div>
       </div>
     </section>
   );

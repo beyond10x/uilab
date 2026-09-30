@@ -38,7 +38,7 @@ It does not replace your component library, your design system or your framework
 
 ## What it does today
 
-| | |
+| Verb | What uilab does |
 |---|---|
 | Edit | one `ui-spec/1` document per server: shells, regions, menu, pages, sections, overlays, widgets |
 | Render | a canvas of 14 built-in composite kinds and 9 primitives, fed by fixture rows or made-up sample rows |
