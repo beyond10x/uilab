@@ -19,8 +19,14 @@ uilab edits a `ui-spec/1` UI document by voice in the browser. What it is and ho
 - No company or customer names in this repository. Examples use the lending-library app in
   `examples/library/`.
 - Models (whisper ggml files) live in `~/.cache/uilab/models/`, never in the tree.
-- Build with `CARGO_TARGET_DIR=$HOME/.cache/b10x-target/uilab` (the Taskfile sets it). The CUDA
-  build of whisper.cpp is large; check `df -h /` first.
+- Build with `CARGO_TARGET_DIR=$HOME/.cache/b10x-target/uilab` (the Taskfile sets it). The
+  whisper.cpp build is large; check `df -h /` first.
+- Every worktree's work lands on `main` or on an integration branch (`wave/<date>-<n>`) that is
+  merged into `main`; no branch is left unmerged at the end of a wave. When a wave or unit closes,
+  archive and remove its worktrees (`worktree archive`, `finish`, `gc --apply --id`), delete their
+  branches, and remove their build directories (`~/.cache/b10x-target/uilab-<unit>`), their
+  `node_modules`/`dist`, and their scratch under `~/.cache/`. Check `worktree list` and
+  `du -sh ~/.cache/b10x-target/uilab*` at each wave boundary (operator, 2026-09-30).
 
 ## Layout
 
