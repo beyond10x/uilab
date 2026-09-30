@@ -46,6 +46,22 @@ pub enum OpCommand {
         review: bool,
         text: String,
     },
+    /// Give the agent a goal: it plans steps and proposes them one at a time. Waits until the
+    /// goal is done, stopped or failed (up to 15 minutes) and prints each step with its status.
+    Goal {
+        /// The node the goal is planned at; the shared selection when absent.
+        #[arg(long)]
+        target: Option<String>,
+        /// The most steps the plan may have; 8 when absent.
+        #[arg(long)]
+        max_steps: Option<u64>,
+        /// Apply each step's proposal at once instead of waiting for accept or reject.
+        #[arg(long)]
+        auto: bool,
+        text: String,
+    },
+    /// Stop the running goal; the one the server runs when no id is given.
+    StopGoal { id: Option<String> },
     /// Select a node for everybody.
     Select { path: String },
     /// Accept a proposal; the last one this operator got when no id is given.
@@ -204,6 +220,26 @@ pub async fn run(op: Op) -> Result<(), String> {
             "type": "say",
             "value": match (target, review) { (Some(t), true) => serde_json::json!({"text": text, "target": t, "review": true}), (Some(t), false) => serde_json::json!({"text": text, "target": t}), (None, true) => serde_json::json!({"text": text, "review": true}), (None, false) => serde_json::json!({"text": text}) },
         }))?,
+        OpCommand::Goal {
+            target,
+            max_steps,
+            auto,
+            text,
+        } => client(goal_message(text, target, max_steps, auto))?,
+        OpCommand::StopGoal { id } => {
+            let id = match id {
+                Some(id) => id,
+                None => {
+                    let goal: Option<Server> =
+                        get(&http, &format!("{}/api/goal", cached.server)).await?;
+                    match goal {
+                        Some(Server::Goal(g)) if !crate::wire::goal_ended(&g) => g.goal_id,
+                        _ => return Err("no goal is running".to_owned()),
+                    }
+                }
+            };
+            client(serde_json::json!({"type": "stop_goal", "value": {"goal_id": id}}))?
+        }
         OpCommand::Select { path } => {
             client(serde_json::json!({"type": "select", "value": {"path": path}}))?
         }
@@ -233,11 +269,28 @@ pub async fn run(op: Op) -> Result<(), String> {
         }
         other => other?,
     };
+    let goal_run = matches!(message, Client::Goal(_));
+    let mut last_goal: Option<&uilab_wire::UilabWireGoal> = None;
     for message in &acted.messages {
         if let Server::Proposal(p) = message {
             cached.last_proposal = Some(p.proposal_id.0.clone());
         }
-        print(message, op.json);
+        if goal_run && !op.json {
+            // A goal run sends a snapshot per step; the steps say what changed.
+            match message {
+                Server::Document(_) => {}
+                Server::Goal(g) => {
+                    goal_progress(last_goal, g);
+                    last_goal = Some(g);
+                }
+                other => print(other, false),
+            }
+        } else {
+            print(message, op.json);
+        }
+    }
+    if let (Some(g), false) = (last_goal, op.json) {
+        goal_summary(g);
     }
     if !acted.settled {
         println!("(not settled before the wait ran out)");
@@ -247,6 +300,79 @@ pub async fn run(op: Op) -> Result<(), String> {
 
 fn client(value: Value) -> Result<Client, String> {
     serde_json::from_value(value).map_err(|e| e.to_string())
+}
+
+fn goal_message(text: String, target: Option<String>, max_steps: Option<u64>, auto: bool) -> Value {
+    let mut value = serde_json::json!({"text": text});
+    if let Some(target) = target {
+        value["target"] = target.into();
+    }
+    if let Some(max_steps) = max_steps {
+        value["max_steps"] = max_steps.into();
+    }
+    if auto {
+        value["review"] = false.into();
+    }
+    serde_json::json!({"type": "goal", "value": value})
+}
+
+/// The spec name of a generated enum value.
+fn name<T: Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// What changed since the previous goal message: its state, and each step whose status moved.
+fn goal_progress(before: Option<&uilab_wire::UilabWireGoal>, goal: &uilab_wire::UilabWireGoal) {
+    let state = name(&goal.state);
+    if before.is_none_or(|b| name(&b.state) != state) {
+        match &goal.message {
+            uilab_wire::EssPresence::Present(m) => println!("goal {} {state}: {m}", goal.goal_id),
+            uilab_wire::EssPresence::Absent => println!("goal {} {state}", goal.goal_id),
+        }
+    }
+    let n = goal.steps.len();
+    for (i, step) in goal.steps.iter().enumerate() {
+        let status = name(&step.status);
+        let was = before.and_then(|b| b.steps.get(i)).map(|s| name(&s.status));
+        if was.as_deref() != Some(status.as_str()) && status != "pending" {
+            println!(
+                "  step {}/{n} {status:<9} {}: {}",
+                i + 1,
+                step.target.0,
+                step.instruction
+            );
+        }
+    }
+}
+
+/// Every step of a goal with its status.
+fn goal_summary(goal: &uilab_wire::UilabWireGoal) {
+    println!(
+        "goal {} {}: \"{}\"",
+        goal.goal_id,
+        name(&goal.state),
+        goal.text
+    );
+    if let uilab_wire::EssPresence::Present(m) = &goal.message {
+        println!("  {m}");
+    }
+    let n = goal.steps.len();
+    for (i, step) in goal.steps.iter().enumerate() {
+        let proposal = match &step.proposal_id {
+            uilab_wire::EssPresence::Present(id) => format!(" ({})", id.0),
+            uilab_wire::EssPresence::Absent => String::new(),
+        };
+        println!(
+            "  {}/{n} {:<9} {} {}{proposal}",
+            i + 1,
+            name(&step.status),
+            step.target.0,
+            step.instruction
+        );
+    }
 }
 
 fn decide(kind: &str, id: Option<String>) -> Result<Client, String> {
@@ -367,6 +493,7 @@ fn print(message: &Server, json: bool) {
         Server::Failed(f) => println!("failed: {}", f.message),
         Server::Rows(r) => println!("rows {}: {}", r.view, r.rows.len()),
         Server::Presence(p) => println!("presence: {} operators", p.operators.len()),
+        Server::Goal(g) => goal_summary(g),
     }
 }
 

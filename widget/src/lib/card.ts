@@ -14,7 +14,8 @@ export const NO_CARD: Card = { pending: null, deciding: false };
  * The card after one server message. A proposal opens it; a decided card closes on the next
  * `document` or `changed`. An undecided card also closes when the server applied the proposal by
  * itself (`--auto-apply`): a `document` whose undoable is that proposal, or a `changed` from the
- * same operator at the same path.
+ * same operator at the same path. A `goal` whose step holds the proposal as accepted or rejected
+ * closes it too.
  */
 export function settleCard(card: Card, msg: ServerMessage): Card {
   const p = card.pending;
@@ -27,6 +28,11 @@ export function settleCard(card: Card, msg: ServerMessage): Card {
       const c = msg.value;
       const applied = !!p && !!p.by && p.by === c.by && normalize(p.changed) === normalize(c.changed);
       return p && (card.deciding || applied) ? NO_CARD : card;
+    }
+    case 'goal': {
+      // A goal step decided elsewhere, or its proposal rejected by a stop.
+      const step = p ? msg.value.steps.find((s) => s.proposal_id === p.proposal_id) : undefined;
+      return step && (step.status === 'accepted' || step.status === 'rejected') ? NO_CARD : card;
     }
     default:
       return card;

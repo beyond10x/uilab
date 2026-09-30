@@ -22,6 +22,7 @@ use uilab_session::UilabSession;
 use uilab_types::primitives::Uuid;
 use uilab_types::session as s;
 
+use crate::goal::{self, Goal, Next};
 use crate::journal::Journal;
 use crate::wire::{self, ChangedParts, Client, DocumentParts, OperatorParts, Server};
 
@@ -49,9 +50,21 @@ pub enum Cmd {
         by: String,
         target: NodePath,
         utterance: String,
-        result: Result<uilab_agent::Proposal, (String, String)>,
+        result: Box<Result<uilab_agent::Proposal, (String, String)>>,
         ms: u64,
         review: bool,
+        /// The goal and step index the proposal carries out, when a goal asked for it.
+        step: Option<(String, usize)>,
+    },
+    /// The agent came back with a goal's plan.
+    Planned {
+        goal_id: String,
+        result: Result<uilab_agent::Plan, String>,
+        ms: u64,
+    },
+    /// The latest goal message, if any goal was given.
+    CurrentGoal {
+        reply: oneshot::Sender<Option<Server>>,
     },
     /// The operator API registers an operator.
     Register {
@@ -110,6 +123,9 @@ pub struct App {
     pending: Option<String>,
     audio: Option<(String, Vec<f32>)>,
     busy: bool,
+    /// The latest goal; kept after it ends so a browser that connects later still sees it.
+    goal: Option<Goal>,
+    next_goal: u64,
     out: broadcast::Sender<Server>,
     back: mpsc::Sender<Cmd>,
 }
@@ -193,6 +209,8 @@ impl App {
             pending: None,
             audio: None,
             busy: false,
+            goal: None,
+            next_goal: 0,
             out,
             back,
         })
@@ -302,6 +320,9 @@ impl App {
                 );
                 self.send_document();
                 self.send_presence();
+                if let Some(goal) = &self.goal {
+                    self.send(wire::goal(goal));
+                }
             }
             Cmd::Disconnected { operator } => {
                 if let Some((owner, _)) = &self.audio
@@ -346,10 +367,22 @@ impl App {
                 };
                 let _ = reply.send((doc.app.clone(), text));
             }
+            Cmd::CurrentGoal { reply } => {
+                let _ = reply.send(self.goal.as_ref().map(wire::goal));
+            }
             Cmd::Tick => {
                 let before = self.operators.len();
-                self.operators
-                    .retain(|_, o| !o.api || o.last_seen.elapsed() < API_OPERATOR_TTL);
+                // An API operator waiting on its goal makes no calls while the goal runs.
+                let running = self
+                    .goal
+                    .as_ref()
+                    .filter(|g| g.is_active())
+                    .map(|g| g.by.clone());
+                self.operators.retain(|id, o| {
+                    !o.api
+                        || o.last_seen.elapsed() < API_OPERATOR_TTL
+                        || running.as_deref() == Some(id.as_str())
+                });
                 if self.operators.len() != before {
                     self.send_presence();
                 }
@@ -399,9 +432,24 @@ impl App {
                 result,
                 ms,
                 review,
+                step,
             } => {
                 self.busy = false;
-                match result {
+                let goal_id = step.as_ref().map(|(id, _)| id.clone());
+                let index = step.as_ref().map(|(_, i)| *i);
+                if let Some((id, index)) = &step
+                    && !self
+                        .goal
+                        .as_ref()
+                        .is_some_and(|g| &g.id == id && g.awaits(*index))
+                {
+                    self.journal.write(
+                        "discarded",
+                        json!({"by": by, "goal_id": id, "step": index, "ms": ms}),
+                    );
+                    return;
+                }
+                match *result {
                     Ok(proposal) => {
                         self.journal.write(
                             "proposed",
@@ -413,9 +461,28 @@ impl App {
                                 "attempts": proposal.attempts,
                                 "turns": proposal.turns,
                                 "patch": proposal.patch,
+                                "goal_id": goal_id,
+                                "step": index,
                             }),
                         );
-                        self.record(&by, utterance, proposal.patch, review)
+                        let recorded = self.record(&by, utterance, proposal.patch);
+                        match (recorded, index) {
+                            (Ok(id), Some(index)) => {
+                                self.goal_next(|g| g.proposed(index, id.clone()));
+                                if !review {
+                                    self.accept(&by, &id, true);
+                                }
+                            }
+                            (Ok(id), None) => {
+                                if !review {
+                                    self.accept(&by, &id, true);
+                                }
+                            }
+                            (Err(_), Some(index)) => {
+                                self.goal_next(|g| g.not_proposed(index, false));
+                            }
+                            (Err(_), None) => {}
+                        }
                     }
                     Err((check, message)) => {
                         self.journal.write(
@@ -427,12 +494,210 @@ impl App {
                                 "ms": ms,
                                 "check": check,
                                 "message": message,
+                                "goal_id": goal_id,
+                                "step": index,
                             }),
                         );
-                        self.send(Server::refused(check, message, Some(&by)))
+                        let declined = check == "declined";
+                        self.send(Server::refused(check, message, Some(&by)));
+                        if let Some(index) = index {
+                            self.goal_next(|g| g.not_proposed(index, declined));
+                        }
                     }
                 }
             }
+            Cmd::Planned {
+                goal_id,
+                result,
+                ms,
+            } => {
+                match &result {
+                    Ok(plan) => self.journal.write(
+                        "planned",
+                        json!({"goal_id": goal_id, "ms": ms, "turns": plan.turns, "cost_micro_usd": plan.cost_micro_usd, "steps": plan.steps}),
+                    ),
+                    Err(e) => self.journal.write(
+                        "not_planned",
+                        json!({"goal_id": goal_id, "ms": ms, "message": e}),
+                    ),
+                }
+                if !self.goal.as_ref().is_some_and(|g| g.id == goal_id) {
+                    return;
+                }
+                match result {
+                    Ok(plan) => self.goal_next(|g| g.planned(plan.steps)),
+                    Err(message) => self.goal_next(|g| g.plan_failed(message)),
+                }
+            }
+        }
+    }
+
+    /// Applies one transition to the goal and does what follows: broadcast the goal and journal
+    /// it, then propose the next step, if there is one.
+    fn goal_next(&mut self, transition: impl FnOnce(&mut Goal) -> Next) {
+        let Some(goal) = self.goal.as_mut() else {
+            return;
+        };
+        let next = transition(goal);
+        if next == Next::Ignored {
+            return;
+        }
+        self.send_goal();
+        if let Next::Propose {
+            index,
+            instruction,
+            target,
+        } = next
+        {
+            self.run_step(index, instruction, target);
+        }
+    }
+
+    /// Broadcasts the goal whole and journals it: every transition goes through here.
+    fn send_goal(&self) {
+        let Some(goal) = &self.goal else { return };
+        let message = wire::goal(goal);
+        self.journal.write(
+            "goal",
+            serde_json::to_value(&message)
+                .map(|v| v["value"].clone())
+                .unwrap_or_default(),
+        );
+        self.send(message);
+    }
+
+    /// Proposes one step of the running goal, as the goal's operator, at the step's target. A
+    /// target that does not resolve on the document the earlier steps left (an earlier step that
+    /// would have created it was refused or rejected) is refused here, without a model call.
+    fn run_step(&mut self, index: usize, instruction: String, target: NodePath) {
+        let Some(goal) = &self.goal else { return };
+        let (id, by, review) = (goal.id.clone(), goal.by.clone(), goal.review);
+        if uilab_doc::resolve(&self.doc(), &target).is_err() {
+            self.send(Server::refused(
+                "path_resolves",
+                format!("step {}: no node at `{target}`", index + 1),
+                Some(&by),
+            ));
+            self.goal_next(|g| g.not_proposed(index, false));
+            return;
+        }
+        if !self.start_propose(&by, instruction, Some(target), review, Some((id, index))) {
+            self.goal_next(|g| g.not_proposed(index, false));
+        }
+    }
+
+    fn start_goal(&mut self, by: &str, start: uilab_wire::UilabWireStartGoal) {
+        if self.goal.as_ref().is_some_and(Goal::is_active) {
+            self.send(Server::refused(
+                "goal_running",
+                "a goal is running: stop it or wait for it to end",
+                Some(by),
+            ));
+            return;
+        }
+        if self.busy {
+            self.send(Server::failed(
+                "still working on the last instruction",
+                Some(by),
+            ));
+            return;
+        }
+        let target = match &start.target {
+            uilab_wire::EssPresence::Present(path) => match path.0.parse::<NodePath>() {
+                Ok(path) => path,
+                Err(e) => {
+                    self.send(Server::refused("path_resolves", e.to_string(), Some(by)));
+                    return;
+                }
+            },
+            uilab_wire::EssPresence::Absent => self.selected(),
+        };
+        let max_steps = match &start.max_steps {
+            uilab_wire::EssPresence::Present(n) => {
+                match n.as_u64().and_then(|n| usize::try_from(n).ok()) {
+                    Some(n) if n > 0 => n,
+                    _ => {
+                        self.send(Server::refused(
+                            "max_steps",
+                            format!("max_steps is {n}; give a whole number of at least 1"),
+                            Some(by),
+                        ));
+                        return;
+                    }
+                }
+            }
+            uilab_wire::EssPresence::Absent => goal::DEFAULT_MAX_STEPS,
+        };
+        let review = match start.review {
+            uilab_wire::EssPresence::Present(review) => review,
+            uilab_wire::EssPresence::Absent => self.review,
+        };
+        if let Some(pending) = self.pending.take() {
+            let _ = self.port.reject_proposal(s::RejectProposal {
+                proposal_id: proposal(&pending),
+            });
+        }
+        self.next_goal += 1;
+        let goal_id = format!("goal-{}", self.next_goal);
+        self.goal = Some(Goal::new(
+            goal_id.clone(),
+            by,
+            start.text.clone(),
+            target.clone(),
+            max_steps,
+            review,
+        ));
+        self.send_goal();
+
+        let doc = self.doc();
+        let proposer = self.proposer.clone();
+        let fields = self.fields.clone();
+        let back = self.back.clone();
+        let text = start.text;
+        tokio::task::spawn_blocking(move || {
+            let started = Instant::now();
+            let result = proposer
+                .lock()
+                .expect("the proposer lock")
+                .plan_goal_with(&doc, &target, &text, max_steps, &fields)
+                .map_err(|e| e.to_string());
+            let ms = started.elapsed().as_millis() as u64;
+            let _ = back.blocking_send(Cmd::Planned {
+                goal_id,
+                result,
+                ms,
+            });
+        });
+    }
+
+    fn stop_goal(&mut self, by: &str, goal_id: &str) {
+        let Some(goal) = self
+            .goal
+            .as_mut()
+            .filter(|g| g.id == goal_id && g.is_active())
+        else {
+            self.send(Server::refused(
+                "wrong_state",
+                format!("no goal `{goal_id}` is running"),
+                Some(by),
+            ));
+            return;
+        };
+        let (next, waiting) = goal.stop();
+        self.journal
+            .write("goal_stopped", json!({"by": by, "goal_id": goal_id}));
+        if next == Next::Ignored {
+            return;
+        }
+        self.send_goal();
+        if let Some(waiting) = waiting {
+            let _ = self.port.reject_proposal(s::RejectProposal {
+                proposal_id: proposal(&waiting),
+            });
+            if self.pending.as_deref() == Some(waiting.as_str()) {
+                self.pending = None;
+            }
+            self.send_document();
         }
     }
 
@@ -471,7 +736,13 @@ impl App {
                 }
             }
             Client::Mic(mic) if wire::mic_open(&mic) => {
-                if self.stt.is_none() {
+                if self.goal.as_ref().is_some_and(Goal::is_active) {
+                    // Failed rather than refused: the browser lets go of the microphone on it.
+                    self.send(Server::failed(
+                        "a goal is running: stop it or wait for it to end",
+                        Some(by),
+                    ));
+                } else if self.stt.is_none() {
                     self.send(Server::failed(
                         "speech is off: start uilab with a speech model, or type the instruction",
                         Some(by),
@@ -519,6 +790,7 @@ impl App {
                 });
                 self.pending = None;
                 self.send_document();
+                self.goal_next(|g| g.decided(&d.proposal_id.0, false));
             }
             Client::Undo(d) => {
                 match self.port.undo_proposal(s::UndoProposal {
@@ -556,6 +828,8 @@ impl App {
                 };
                 self.send(wire::rows(&read.view, rows.total, rows.rows));
             }
+            Client::Goal(start) => self.start_goal(by, start),
+            Client::StopGoal(stop) => self.stop_goal(by, &stop.goal_id),
         }
     }
 
@@ -625,6 +899,7 @@ impl App {
             proposal_id: id.clone(),
         });
         self.pending = None;
+        let applied = matches!(outcome, Ok(s::AcceptProposalOutcome::Accepted { .. }));
         match outcome {
             Ok(s::AcceptProposalOutcome::Accepted { .. }) => {
                 self.revision += 1;
@@ -646,8 +921,11 @@ impl App {
             )),
             Err(e) => self.send(Server::failed(e.to_string(), Some(by))),
         }
+        // A step whose proposal could not be applied counts as rejected; the run goes on.
+        self.goal_next(|g| g.decided(proposal_id, applied));
     }
 
+    /// An instruction from an operator: refused while a goal runs.
     fn propose(
         &mut self,
         by: &str,
@@ -655,13 +933,34 @@ impl App {
         target: Option<NodePath>,
         review: Option<bool>,
     ) {
+        if self.goal.as_ref().is_some_and(Goal::is_active) {
+            self.send(Server::refused(
+                "goal_running",
+                "a goal is running: stop it or wait for it to end",
+                Some(by),
+            ));
+            return;
+        }
         let review = review.unwrap_or(self.review);
+        self.start_propose(by, utterance, target, review, None);
+    }
+
+    /// Asks the agent for one patch off the runtime; the answer comes back as [`Cmd::Proposed`].
+    /// `false` when the last instruction is still being worked on, and nothing was started.
+    fn start_propose(
+        &mut self,
+        by: &str,
+        utterance: String,
+        target: Option<NodePath>,
+        review: bool,
+        step: Option<(String, usize)>,
+    ) -> bool {
         if self.busy {
             self.send(Server::failed(
                 "still working on the last instruction",
                 Some(by),
             ));
-            return;
+            return false;
         }
         if let Some(pending) = self.pending.take() {
             let _ = self.port.reject_proposal(s::RejectProposal {
@@ -692,15 +991,18 @@ impl App {
                 by,
                 target,
                 utterance,
-                result,
+                result: Box::new(result),
                 ms,
                 review,
+                step,
             });
         });
+        true
     }
 
-    /// Records the agent's patch as a proposal and shows it.
-    fn record(&mut self, by: &str, utterance: String, patch: Patch, review: bool) {
+    /// Records the agent's patch as a proposal and shows it. The proposal id, or the check that
+    /// kept it from being recorded (already sent to the operator).
+    fn record(&mut self, by: &str, utterance: String, patch: Patch) -> Result<String, String> {
         let body = match &patch {
             Patch::Insert { child, .. } => Some(body_from_json(
                 &serde_json::to_value(child).expect("a child serializes"),
@@ -727,16 +1029,17 @@ impl App {
         let proposal_id = match outcome {
             Ok(s::ProposePatchOutcome::Proposed { patch_proposed }) => patch_proposed.proposal_id,
             Ok(s::ProposePatchOutcome::Refused { error }) => {
+                let check = error.check.clone();
                 self.send(Server::refused(
                     error.check,
                     "the proposed patch fails a document check",
                     Some(by),
                 ));
-                return;
+                return Err(check);
             }
             Err(e) => {
                 self.send(Server::failed(e.to_string(), Some(by)));
-                return;
+                return Err("failed".to_owned());
             }
         };
         let before = self.doc();
@@ -745,7 +1048,7 @@ impl App {
                 "the admitted patch no longer applies",
                 Some(by),
             ));
-            return;
+            return Err("failed".to_owned());
         };
         let findings = self.findings(&after);
         let changed = patch.changed_path();
@@ -767,9 +1070,7 @@ impl App {
             target: wire::node_path(&patch.target().to_string()),
             utterance,
         }));
-        if !review {
-            self.accept(by, &proposal_id.0.0, true);
-        }
+        Ok(proposal_id.0.0)
     }
 }
 

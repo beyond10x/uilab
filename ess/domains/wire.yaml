@@ -115,6 +115,24 @@ types:
       - name: view
         type: String
 
+  - name: uilab.wire.StartGoal
+    kind: struct
+    fields:
+      - name: text
+        type: String
+      - name: target
+        type: Optional<uilab.session.NodePath>
+      - name: max_steps
+        type: Optional<Integer>
+      - name: review
+        type: Optional<Boolean>
+
+  - name: uilab.wire.StopGoal
+    kind: struct
+    fields:
+      - name: goal_id
+        type: String
+
   - name: uilab.wire.ClientMessage
     kind: union
     tag: type
@@ -129,6 +147,8 @@ types:
       hello: uilab.wire.Hello
       resync: uilab.wire.Resync
       settings: uilab.wire.Settings
+      goal: uilab.wire.StartGoal
+      stop_goal: uilab.wire.StopGoal
 
   # Server to client.
   - name: uilab.wire.Operator
@@ -253,6 +273,46 @@ types:
       - name: message
         type: String
 
+  - name: uilab.wire.GoalState
+    kind: enum
+    variants: [planning, running, done, stopped, failed]
+
+  - name: uilab.wire.StepStatus
+    kind: enum
+    variants: [pending, thinking, proposed, accepted, rejected, refused, declined]
+
+  - name: uilab.wire.GoalStep
+    kind: struct
+    fields:
+      - name: instruction
+        type: String
+      - name: target
+        type: uilab.session.NodePath
+      - name: why
+        type: String
+      - name: status
+        type: uilab.wire.StepStatus
+      - name: proposal_id
+        type: Optional<uilab.session.ProposalId>
+
+  - name: uilab.wire.Goal
+    kind: struct
+    fields:
+      - name: goal_id
+        type: String
+      - name: by
+        type: String
+      - name: text
+        type: String
+      - name: state
+        type: uilab.wire.GoalState
+      - name: steps
+        type: List<uilab.wire.GoalStep>
+      - name: current
+        type: Optional<Integer>
+      - name: message
+        type: Optional<String>
+
   - name: uilab.wire.ServerMessage
     kind: union
     tag: type
@@ -266,3 +326,4 @@ types:
       rows: uilab.wire.Rows
       presence: uilab.wire.Presence
       changed: uilab.wire.Changed
+      goal: uilab.wire.Goal

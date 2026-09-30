@@ -2,6 +2,7 @@ import { computed, reactive, shallowReactive } from 'vue';
 import type {
   UilabWireChanged as Changed,
   UilabWireDocumentState as DocumentState,
+  UilabWireGoal as Goal,
   UilabWireOperator as Operator,
   UilabWireOperatorKind as OperatorKind,
   UilabWireOutlineNode as OutlineNode,
@@ -26,6 +27,7 @@ import {
   type InFlight,
 } from './lib/collab.ts';
 import { settleCard } from './lib/card.ts';
+import { bannerLabel, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
 import { findNode, homePage, isDraftView, isWithin, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf, segments } from './lib/outline.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
@@ -95,6 +97,10 @@ export const state = shallowReactive({
   /** What the canvas pane shows. */
   view: 'ui' as ViewMode,
   helpOpen: false,
+  /** The latest goal run, whoever gave it; it stays after it ends until the next one. */
+  goal: null as Goal | null,
+  /** Typed text goes out as a goal rather than one instruction. */
+  goalMode: false,
 });
 
 let feedSeq = 0;
@@ -271,6 +277,8 @@ function onChanged(c: Changed): void {
 }
 
 function onMessage(msg: ServerMessage): void {
+  const goal = settleGoal(state.goal, msg);
+  if (goal !== state.goal) state.goal = goal;
   const card = settleCard({ pending: state.proposal, deciding: state.deciding }, msg);
   if (card.pending !== state.proposal) state.proposal = card.pending;
   if (card.deciding !== state.deciding) state.deciding = card.deciding;
@@ -406,6 +414,25 @@ export function say(text: string): void {
     state.thinkingTarget = state.doc?.selected ?? null;
   }
 }
+
+/** Sends the typed text as a goal at the instruction target; the agent plans and proposes steps. */
+export function sayGoal(text: string): void {
+  const message = goalMessage(text, instructionTarget());
+  if (!message) return;
+  state.notice = null;
+  if (send(message)) {
+    state.typed = text.trim();
+    state.transcript = null;
+  }
+}
+
+export function stopGoal(): void {
+  const message = stopMessage(state.goal);
+  if (message) send(message);
+}
+
+/** `goal i/n` while a goal runs, for the agent banner. */
+export const goalBanner = computed(() => bannerLabel(state.goal));
 
 export function accept(): void {
   const p = state.proposal;
