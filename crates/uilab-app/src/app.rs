@@ -1727,6 +1727,31 @@ pages:
         );
     }
 
+    /// The Components tab lists a widget's use sites from the outline, so the outline carries
+    /// every one the docs list, a page header's included.
+    #[test]
+    fn the_outline_a_browser_gets_carries_each_widget_s_use_sites() {
+        let mut rig = rig_over(false, |text| {
+            let text = with_loan_card(text);
+            assert!(text.contains("    title: Overview\n    sections:\n"));
+            text.replacen(
+                "    title: Overview\n    sections:\n",
+                "    title: Overview\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}]}\n    sections:\n",
+                1,
+            )
+        });
+        rig.connect("ws-9");
+        let root = last_outline(&rig.drain_direct());
+        let card = child(&root, "component:loan_card");
+        assert_eq!(
+            card["props"]["uses"],
+            serde_json::json!([
+                {"path": "page:overview/section:latest"},
+                {"path": "page:overview", "trail": "header/metrics/due"},
+            ])
+        );
+    }
+
     #[test]
     fn selecting_a_widget_or_one_of_its_body_nodes_lands_there() {
         let mut rig = rig_over(false, with_loan_card);

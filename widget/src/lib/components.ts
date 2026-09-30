@@ -192,41 +192,22 @@ export function isPrimitive(node: OutlineNode): boolean {
 }
 
 /**
- * Every place the outline instantiates the widget `name`, in document order: a node whose kind is
- * the widget (an overlay's kind reads `<presentation> <widget>`), then any object of the node's
- * untyped props whose `component` is the widget, with the trail of keys to it (list entries by
- * their `name`, else their index). `args` are data and are not searched. The widget's own
- * declaration is not a use.
+ * Every place the document instantiates the widget `name`, as the server lists them on the
+ * widget's outline node (`props.uses`, each `{path, trail?}`, in document order): the same walk
+ * behind the widget checks, the in-use refusal of a removal and `/api/docs.md`, page headers and
+ * page kinds included. The outline is not walked here: a primitive has its primitive's name as
+ * kind, so a walk by kind cannot tell a primitive `badge` from an instance of a widget `badge`.
  */
 export function useSites(root: OutlineNode, name: string): UseSite[] {
+  const widget = childrenOf(root, 'component').find((c) => c.name === name);
+  const uses = widget ? propsOf(widget).uses : undefined;
+  if (!Array.isArray(uses)) return [];
   const out: UseSite[] = [];
-  const visit = (node: OutlineNode): void => {
-    if (node.layer !== 'root' && node.layer !== 'component') {
-      const kind = node.layer === 'overlay' ? node.kind.split(' ').at(-1)! : node.kind;
-      const typed = node.layer === 'overlay' ? kind === name.toLowerCase() : kind === name;
-      if (typed) out.push({ path: node.path });
-      for (const [key, value] of Object.entries(propsOf(node))) {
-        if (key !== 'args') walk(value, key, node.path);
-      }
-    }
-    node.children.forEach(visit);
-  };
-  const walk = (value: unknown, trail: string, path: string): void => {
-    if (Array.isArray(value)) {
-      value.forEach((item, i) => {
-        const itemName = record(item)?.name;
-        walk(item, `${trail}/${typeof itemName === 'string' ? itemName : i}`, path);
-      });
-      return;
-    }
-    const map = record(value);
-    if (!map) return;
-    if (map.component === name) out.push({ path, trail });
-    for (const [key, v] of Object.entries(map)) {
-      if (key !== 'args') walk(v, `${trail}/${key}`, path);
-    }
-  };
-  visit(root);
+  for (const raw of uses) {
+    const site = record(raw);
+    if (!site || typeof site.path !== 'string') continue;
+    out.push(typeof site.trail === 'string' ? { path: site.path, trail: site.trail } : { path: site.path });
+  }
   return out;
 }
 

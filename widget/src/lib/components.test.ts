@@ -19,7 +19,8 @@ function n(path: string, layer: string, kind: string, children: OutlineNode[] = 
   return { path, layer, name, kind, children, ...extra };
 }
 
-/** The library outline as the server sends it, with two widgets, one used three times. */
+/** The library outline as the server sends it, with two widgets, one used three times. Each
+ *  widget node carries its use sites in `props.uses`, as `widget_uses` finds them. */
 function doc(): OutlineNode {
   return n('/', 'root', 'document', [
     n('shell:app', 'shell', 'shell'),
@@ -42,6 +43,11 @@ function doc(): OutlineNode {
             copies: { type: 'integer' },
           },
           arrange: 'column',
+          uses: [
+            { path: 'page:overview/section:latest' },
+            { path: 'page:overview/section:list/item:card' },
+            { path: 'page:overview/overlay:peek' },
+          ],
         },
       },
     ),
@@ -50,9 +56,16 @@ function doc(): OutlineNode {
       'component',
       'widget',
       [n('component:state_badge/node:badge', 'node', 'badge', [], { props: { text: 'args.state' } })],
-      { title: 'A loan state as a toned badge.', props: { params: { state: { type: 'string', required: true } }, arrange: 'row' } },
+      {
+        title: 'A loan state as a toned badge.',
+        props: {
+          params: { state: { type: 'string', required: true } },
+          arrange: 'row',
+          uses: [{ path: 'component:loan_card/node:state' }, { path: 'page:overview/section:list/item:tag', trail: 'choice' }],
+        },
+      },
     ),
-    n('component:unused', 'component', 'widget', [], { title: 'Nothing uses it.', props: { arrange: 'grid' } }),
+    n('component:unused', 'component', 'widget', [], { title: 'Nothing uses it.', props: { arrange: 'grid', uses: [] } }),
     n('page:overview', 'page', 'dashboard_page', [
       n('page:overview/section:latest', 'section', 'loan_card', [], { props: { args: { loan: 'rows.first' } } }),
       n('page:overview/section:list', 'section', 'collection', [
@@ -184,24 +197,37 @@ test('use sites are every node instantiating the widget, typed or in untyped pro
   );
 });
 
-test('use sites in untyped props follow lists by name and skip args', () => {
+test('use sites are the server’s, in its order with their trails, page headers and page kinds included', () => {
+  const uses = [
+    { path: 'page:p/section:s', trail: 'toolbar/first' },
+    { path: 'page:p', trail: 'header/metrics/due' },
+    { path: '/', trail: 'page_kinds/board_page/sections/s' },
+  ];
   const root = n('/', 'root', 'document', [
-    n('component:chip', 'component', 'widget'),
+    n('component:chip', 'component', 'widget', [], { props: { uses: [...uses, { trail: 'no path' }, 'junk', null] } }),
+    n('component:bare', 'component', 'widget'),
+    n('page:p', 'page', 'list_page', [n('page:p/section:other', 'section', 'chip')]),
+  ]);
+  assert.deepEqual(useSites(root, 'chip'), uses, 'entries without a path are skipped; the outline is not walked');
+  assert.deepEqual(useSites(root, 'bare'), []);
+  assert.deepEqual(useSites(root, 'ghost'), []);
+  assert.equal(componentsOf(root)[0].uses.length, 3);
+});
+
+test('a widget named like a primitive counts only its instances, not primitives of that kind', () => {
+  const root = n('/', 'root', 'document', [
+    n('component:button', 'component', 'widget', [n('component:button/node:b', 'node', 'button', [], { props: { label: 'args.label' } })], {
+      props: { params: { label: { type: 'string' } }, uses: [{ path: 'page:p', trail: 'header/actions/go' }] },
+    }),
+    n('component:card', 'component', 'widget', [n('component:card/node:ok', 'node', 'button', [], { props: { label: 'OK' } })], {
+      props: { uses: [] },
+    }),
     n('page:p', 'page', 'list_page', [
-      n('page:p/section:s', 'section', 'filter_bar', [], {
-        props: {
-          toolbar: [{ name: 'first', component: 'chip' }, { component: 'chip' }],
-          args: { x: { component: 'chip' } },
-          parts: { deep: { inner: { component: 'chip' } } },
-        },
-      }),
+      n('page:p/section:list', 'section', 'collection', [n('page:p/section:list/item:go', 'item', 'button')]),
     ]),
   ]);
-  assert.deepEqual(useSites(root, 'chip'), [
-    { path: 'page:p/section:s', trail: 'toolbar/first' },
-    { path: 'page:p/section:s', trail: 'toolbar/1' },
-    { path: 'page:p/section:s', trail: 'parts/deep/inner' },
-  ]);
+  const button = componentsOf(root).find((c) => c.name === 'button')!;
+  assert.deepEqual(button.uses, [{ path: 'page:p', trail: 'header/actions/go' }]);
 });
 
 test('search filters by name, summary and param names, case-insensitively', () => {
