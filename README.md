@@ -8,8 +8,10 @@ before you accept it with Enter. Accepted changes are written back to the file.
 
 ## Run
 
-Requires Rust, `task`, Node 22 with pnpm, an NVIDIA GPU with the CUDA toolkit for speech, and a
-Claude login (the agent uses the credentials in `~/.claude/.credentials.json`).
+Requires Rust, `task`, Node 22 with pnpm, CMake, a C++ compiler and the Vulkan development files
+(the default build compiles whisper.cpp for Vulkan), a GPU with a Vulkan driver for speech at full
+speed, and a Claude login (the agent uses the credentials in `~/.claude/.credentials.json`). For
+CUDA instead, build with `--no-default-features --features cuda`.
 
 ```console
 task model                                   # downloads the speech model, about 1.6 GB
@@ -33,3 +35,4 @@ instructions instead.
   JSON Schema of what the selected node can hold.
 
 Agent-facing detail is in [AGENTS.md](AGENTS.md).
+The documentation site is in [website/](website/), built for `https://beyond10x.github.io/uilab/`.

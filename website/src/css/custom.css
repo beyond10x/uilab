@@ -1,0 +1,525 @@
+/**
+ * The uilab theme.
+ *
+ * Dark is the home: a deep ink field, violet for the operator's intent, cyan for the agent's
+ * motion, green for what was accepted. Light is the same palette with the accents darkened until
+ * they read as text on white. Type is system-only; no webfont is downloaded.
+ */
+
+:root {
+  --ifm-font-family-base: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  --ifm-font-family-monospace: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'DejaVu Sans Mono', 'Liberation Mono', monospace;
+  --ifm-heading-font-family: var(--ifm-font-family-base);
+
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.7;
+  --ifm-heading-font-weight: 700;
+  --ifm-heading-line-height: 1.25;
+  --ifm-h1-font-size: 2.3rem;
+  --ifm-h2-font-size: 1.55rem;
+  --ifm-h3-font-size: 1.18rem;
+  --ifm-code-font-size: 88%;
+  --ifm-code-border-radius: 5px;
+  --ifm-code-padding-horizontal: 0.36rem;
+  --ifm-code-padding-vertical: 0.12rem;
+  --ifm-pre-padding: 1rem;
+  --ifm-pre-line-height: 1.6;
+  --ifm-global-radius: 10px;
+  --ifm-button-border-radius: 10px;
+  --ifm-navbar-height: 3.75rem;
+  --ifm-navbar-item-padding-horizontal: 0.8rem;
+  --ifm-footer-padding-vertical: 3rem;
+  --ifm-alert-border-radius: 10px;
+  --ifm-alert-border-left-width: 3px;
+  --ifm-alert-shadow: none;
+  --ifm-table-cell-padding: 0.6rem 0.85rem;
+  --ifm-menu-link-padding-vertical: 0.36rem;
+  --ifm-transition-fast: 140ms;
+
+  --ul-violet: #9d8cff;
+  --ul-cyan: #4fe3ff;
+  --ul-green: #3ddc97;
+  --ul-amber: #ffb454;
+  --ul-gradient: linear-gradient(100deg, #9d8cff 0%, #6fb8ff 48%, #4fe3ff 100%);
+  --ul-measure: 76ch;
+
+  --ul-github-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------------------ *
+ * Dark
+ * ------------------------------------------------------------------ */
+
+[data-theme='dark'] {
+  --ifm-color-primary: #a898ff;
+  --ifm-color-primary-dark: #9280ff;
+  --ifm-color-primary-darker: #8672ff;
+  --ifm-color-primary-darkest: #6a52ff;
+  --ifm-color-primary-light: #beb2ff;
+  --ifm-color-primary-lighter: #cac0ff;
+  --ifm-color-primary-lightest: #e3ddff;
+
+  --ifm-background-color: #0a0d17;
+  --ifm-background-surface-color: #111527;
+  --ifm-font-color-base: #d9ddec;
+  --ifm-heading-color: #f1f3fb;
+  --ifm-color-emphasis-100: #121627;
+  --ifm-color-emphasis-200: #1a1f36;
+  --ifm-color-emphasis-300: #252c4a;
+  --ifm-color-emphasis-600: #7c85a6;
+  --ifm-color-emphasis-700: #8f98b8;
+  --ifm-hr-border-color: #232a45;
+  --ifm-toc-border-color: #232a45;
+  --ifm-table-border-color: #232a45;
+  --ifm-table-stripe-background-color: rgba(255, 255, 255, 0.015);
+  --ifm-table-head-background: rgba(157, 140, 255, 0.06);
+  --ifm-code-background: rgba(157, 140, 255, 0.1);
+  --ifm-navbar-background-color: rgba(10, 13, 23, 0.96);
+  --ifm-menu-color: #a7afca;
+  --ifm-menu-color-background-active: rgba(157, 140, 255, 0.1);
+  --ifm-menu-color-background-hover: rgba(255, 255, 255, 0.04);
+  --ifm-dropdown-background-color: #111527;
+  --docusaurus-highlighted-code-line-bg: rgba(79, 227, 255, 0.1);
+
+  --ifm-color-info-contrast-background: rgba(79, 227, 255, 0.07);
+  --ifm-color-info-contrast-foreground: #d9ddec;
+  --ifm-color-info-dark: var(--ul-cyan);
+  --ifm-color-success-contrast-background: rgba(61, 220, 151, 0.07);
+  --ifm-color-success-contrast-foreground: #d9ddec;
+  --ifm-color-success-dark: var(--ul-green);
+  --ifm-color-warning-contrast-background: rgba(255, 180, 84, 0.08);
+  --ifm-color-warning-contrast-foreground: #d9ddec;
+  --ifm-color-warning-dark: var(--ul-amber);
+  --ifm-color-secondary-contrast-background: rgba(157, 140, 255, 0.07);
+  --ifm-color-secondary-contrast-foreground: #d9ddec;
+
+  --ul-field: #0a0d17;
+  --ul-panel: #111527;
+  --ul-raised: #161b31;
+  --ul-line: #232a45;
+  --ul-line-strong: #323a5c;
+  --ul-text: #d9ddec;
+  --ul-muted: #8a93b2;
+  --ul-violet-text: #b3a6ff;
+  --ul-cyan-text: #4fe3ff;
+  --ul-eyebrow-bg: rgba(17, 21, 39, 0.7);
+  --ul-green-text: #3ddc97;
+  --ul-add-bg: rgba(61, 220, 151, 0.1);
+  --ul-glow: 0 0 0 1px rgba(157, 140, 255, 0.18), 0 24px 60px -20px rgba(79, 227, 255, 0.25);
+  --ul-shadow: 0 20px 50px -24px rgba(0, 0, 0, 0.8);
+  --ul-grid-line: rgba(157, 140, 255, 0.06);
+}
+
+/* ------------------------------------------------------------------ *
+ * Light
+ * ------------------------------------------------------------------ */
+
+[data-theme='light'] {
+  --ifm-color-primary: #5b45e0;
+  --ifm-color-primary-dark: #4d36d8;
+  --ifm-color-primary-darker: #4630cc;
+  --ifm-color-primary-darkest: #3a28a8;
+  --ifm-color-primary-light: #6f5ce5;
+  --ifm-color-primary-lighter: #7a68e7;
+  --ifm-color-primary-lightest: #9b8ded;
+
+  --ifm-background-color: #fbfbfe;
+  --ifm-background-surface-color: #f3f4fa;
+  --ifm-font-color-base: #23273a;
+  --ifm-heading-color: #11142a;
+  --ifm-hr-border-color: #e1e4ef;
+  --ifm-toc-border-color: #e1e4ef;
+  --ifm-table-border-color: #e1e4ef;
+  --ifm-table-head-background: rgba(91, 69, 224, 0.05);
+  --ifm-code-background: rgba(91, 69, 224, 0.07);
+  --ifm-navbar-background-color: rgba(251, 251, 254, 0.96);
+  --ifm-menu-color-background-active: rgba(91, 69, 224, 0.08);
+  --docusaurus-highlighted-code-line-bg: rgba(91, 69, 224, 0.1);
+
+  --ul-field: #fbfbfe;
+  --ul-panel: #ffffff;
+  --ul-raised: #f3f4fa;
+  --ul-line: #e1e4ef;
+  --ul-line-strong: #cdd2e3;
+  --ul-text: #23273a;
+  --ul-muted: #5a6180;
+  --ul-violet-text: #5b45e0;
+  --ul-cyan-text: #07627a;
+  --ul-eyebrow-bg: rgba(255, 255, 255, 0.85);
+  --ul-green-text: #11794f;
+  --ul-add-bg: rgba(17, 121, 79, 0.08);
+  --ul-glow: 0 0 0 1px rgba(91, 69, 224, 0.12), 0 24px 60px -24px rgba(91, 69, 224, 0.3);
+  --ul-shadow: 0 20px 50px -28px rgba(17, 20, 42, 0.35);
+  --ul-grid-line: rgba(91, 69, 224, 0.06);
+}
+
+/* ------------------------------------------------------------------ *
+ * Chrome
+ * ------------------------------------------------------------------ */
+
+::selection {
+  background: rgba(157, 140, 255, 0.32);
+}
+
+/*
+ * The navbar and the mobile drawer lie over the page, so both are opaque enough that text under
+ * them does not read through. The blur is only a finish on top of that.
+ */
+.navbar {
+  border-bottom: 1px solid var(--ul-line);
+  box-shadow: none;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .navbar {
+    backdrop-filter: saturate(160%) blur(14px);
+  }
+
+  .navbar.navbar-sidebar--show {
+    backdrop-filter: none;
+  }
+}
+
+.navbar-sidebar {
+  background-color: var(--ifm-background-color);
+}
+
+.navbar__title {
+  font-family: var(--ifm-font-family-monospace);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.navbar__link {
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.navbar-github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.navbar-github-link::before {
+  content: '';
+  width: 1.05rem;
+  height: 1.05rem;
+  background-color: currentColor;
+  -webkit-mask: var(--ul-github-mask) center / contain no-repeat;
+  mask: var(--ul-github-mask) center / contain no-repeat;
+}
+
+.footer {
+  border-top: 1px solid #1a1f36;
+}
+
+.footer [class*='footerLogoLink'] {
+  opacity: 1;
+}
+
+.footer--dark {
+  --ifm-footer-background-color: #070913;
+  --ifm-footer-link-color: #a7afca;
+  --ifm-footer-title-color: #f1f3fb;
+}
+
+.footer__title {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.footer__claim {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+  background: var(--ul-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ------------------------------------------------------------------ *
+ * Documents
+ * ------------------------------------------------------------------ */
+
+.theme-doc-markdown {
+  --ifm-h1-font-size: 2.1rem;
+}
+
+.theme-doc-markdown h1 {
+  letter-spacing: -0.025em;
+}
+
+.theme-doc-markdown :is(h1, h2, h3, h4) {
+  text-wrap: balance;
+}
+
+.theme-doc-markdown h2 {
+  letter-spacing: -0.015em;
+  margin-top: 2.6rem;
+  padding-top: 0.2rem;
+}
+
+.theme-doc-markdown h2::before {
+  content: '';
+  display: block;
+  width: 2.4rem;
+  height: 3px;
+  margin-bottom: 0.9rem;
+  border-radius: 3px;
+  background: var(--ul-gradient);
+}
+
+.theme-doc-markdown > p,
+.theme-doc-markdown > ul,
+.theme-doc-markdown > ol {
+  max-width: var(--ul-measure);
+}
+
+.theme-doc-markdown img {
+  display: block;
+  margin: 1.4rem 0 0.4rem;
+  border: 1px solid var(--ul-line);
+  border-radius: 12px;
+  box-shadow: var(--ul-shadow);
+}
+
+.theme-doc-markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--ul-line);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 0.93rem;
+}
+
+.theme-doc-markdown table th,
+.theme-doc-markdown table td {
+  border: 0;
+  border-bottom: 1px solid var(--ul-line);
+}
+
+.theme-doc-markdown table tr:last-child td {
+  border-bottom: 0;
+}
+
+.theme-doc-markdown table th {
+  text-align: left;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ul-muted);
+}
+
+.theme-doc-markdown code {
+  border: 0;
+}
+
+.theme-doc-markdown td:first-child code {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.theme-doc-markdown td code {
+  overflow-wrap: normal;
+}
+
+.ul-shot {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  cursor: zoom-in;
+}
+
+.ul-shot__open {
+  display: table;
+  margin: 0.2rem 0 0 auto;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--ul-line-strong);
+  border-radius: 999px;
+  background: var(--ul-panel);
+  color: var(--ifm-font-color-base);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ul-shot:hover {
+  text-decoration: none;
+}
+
+.ul-shot:hover .ul-shot__open,
+.ul-shot:focus-visible .ul-shot__open {
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+
+div[class*='codeBlockContainer'] {
+  border: 1px solid var(--ul-line);
+  box-shadow: none;
+}
+
+/*
+ * The copy and wrap buttons sit in the block's label bar, not over the first line of code. The
+ * content box stops being their containing block, so they position against the whole block.
+ */
+.theme-code-block {
+  --ul-code-bar: 2.6rem;
+  --ul-code-button: 2.2rem;
+}
+
+.theme-code-block.language-console {
+  --b10x-code-label: 'Terminal';
+  --b10x-code-accent: var(--b10x-color-lime);
+}
+
+.theme-code-block > [class*='codeBlockContent'] {
+  position: static;
+}
+
+.theme-code-block.theme-code-block[class*='language-']::before,
+.theme-code-block > [class*='codeBlockTitle'] {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: var(--ul-code-bar);
+  padding-block: 0;
+  padding-inline-end: calc(2 * var(--ul-code-button) + 1.5rem);
+}
+
+.theme-code-block [class*='buttonGroup'] {
+  top: calc((var(--ul-code-bar) - var(--ul-code-button)) / 2);
+  right: 0.5rem;
+}
+
+.theme-code-block.theme-code-block button.clean-btn {
+  min-inline-size: var(--ul-code-button);
+  min-block-size: var(--ul-code-button);
+  max-block-size: var(--ul-code-button);
+  padding: 0 0.4rem;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .theme-code-block {
+    --ul-code-bar: 3.2rem;
+    --ul-code-button: 2.75rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .theme-doc-markdown table,
+  .theme-doc-markdown thead,
+  .theme-doc-markdown tbody,
+  .theme-doc-markdown tr,
+  .theme-doc-markdown th,
+  .theme-doc-markdown td {
+    display: block;
+  }
+
+  .theme-doc-markdown thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .theme-doc-markdown table tr {
+    padding: 0.7rem 0.9rem;
+    border-bottom: 1px solid var(--ul-line);
+    background: transparent;
+  }
+
+  .theme-doc-markdown table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .theme-doc-markdown table td {
+    padding: 0.1rem 0;
+    border: 0;
+  }
+
+  .theme-doc-markdown table td:empty {
+    display: none;
+  }
+
+  .theme-doc-markdown table td:first-child {
+    font-weight: 600;
+    color: var(--ifm-heading-color);
+  }
+
+  .theme-doc-markdown table td:not(:first-child)[data-label]:not([data-label=''])::before {
+    content: attr(data-label);
+    display: block;
+    margin-top: 0.35rem;
+    font-family: var(--ifm-font-family-monospace);
+    font-size: 0.7rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ul-muted);
+  }
+
+  .theme-doc-markdown td code {
+    white-space: nowrap;
+  }
+}
+
+.alert {
+  border-top: 1px solid var(--ul-line);
+  border-right: 1px solid var(--ul-line);
+  border-bottom: 1px solid var(--ul-line);
+}
+
+.menu__link {
+  font-size: 0.93rem;
+}
+
+.menu__list-item-collapsible > .menu__link--sublist,
+.theme-doc-sidebar-item-category-level-1 > .menu__list-item-collapsible > .menu__link {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ul-muted);
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--ifm-color-primary);
+  border-radius: 0 8px 8px 0;
+}
+
+.table-of-contents__link--active {
+  color: var(--ifm-color-primary);
+}
+
+.button--primary {
+  border: 0;
+  background: var(--ul-gradient);
+  color: #0a0d17;
+  font-weight: 700;
+}
+
+.button--primary:hover {
+  color: #0a0d17;
+  filter: brightness(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
