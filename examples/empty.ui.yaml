@@ -1,0 +1,23 @@
+format: ui-spec/1
+app: app
+title: New app
+model: app
+placement_profile: fat
+shells:
+  app:
+    regions:
+      nav:
+        kind: navigation
+      main:
+        kind: page_outlet
+      overlay:
+        kind: overlay_outlet
+navigation:
+  home: home
+  sections: []
+  hidden: [home]
+pages:
+  home:
+    kind: form_page
+    title: Home
+    sections: {}

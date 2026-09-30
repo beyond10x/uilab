@@ -1,0 +1,11 @@
+views:
+  loans.All:
+    total: 4
+    rows:
+      - {id: l-1, title: The Left Hand of Darkness, member: Robin Example, due: 2026-10-14, state: on_loan}
+      - {id: l-2, title: A Pattern Language, member: Kim Sample, due: 2026-10-02, state: overdue}
+      - {id: l-3, title: Middlemarch, member: Sam Placeholder, due: 2026-10-21, state: on_loan}
+      - {id: l-4, title: Gödel, Escher, Bach, member: Alex Demo, due: 2026-10-09, state: on_loan}
+  loans.Summary:
+    rows:
+      - {on_loan: 4, overdue: 1}

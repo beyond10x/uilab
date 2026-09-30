@@ -1,0 +1,6 @@
+view: members.All
+total: 3
+rows:
+  - {name: Robin Example, joined: 2024-03-01, loans: 1, standing: good}
+  - {name: Kim Sample, joined: 2025-06-12, loans: 1, standing: overdue}
+  - {name: Sam Placeholder, joined: 2026-01-20, loans: 1, standing: good}

@@ -1,0 +1,221 @@
+use std::path::{Path, PathBuf};
+
+use serde_json::json;
+use uilab_doc::{
+    CHECKS, Child, Document, Fixtures, Layer, NodePath, Patch, Severity, admit, check, node_context, outline,
+    patch_schema, resolve,
+};
+
+fn examples() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples")
+}
+
+fn library() -> Document {
+    let text = std::fs::read_to_string(examples().join("library/library.ui.yaml")).unwrap();
+    Document::from_yaml(&text).unwrap()
+}
+
+fn empty() -> Document {
+    let text = std::fs::read_to_string(examples().join("empty.ui.yaml")).unwrap();
+    Document::from_yaml(&text).unwrap()
+}
+
+fn path(text: &str) -> NodePath {
+    text.parse().unwrap()
+}
+
+fn ids(doc: &Document) -> Vec<&'static str> {
+    check(doc).iter().map(|f| f.check).collect()
+}
+
+#[test]
+fn examples_pass_every_check_and_round_trip() {
+    for doc in [library(), empty()] {
+        assert!(check(&doc).is_empty(), "{:#?}", check(&doc));
+        let again = Document::from_yaml(&doc.to_yaml().unwrap()).unwrap();
+        assert_eq!(again, doc);
+    }
+}
+
+#[test]
+fn round_trip_keeps_section_order_and_untyped_props() {
+    let doc = library();
+    let yaml = doc.to_yaml().unwrap();
+    let on_loan = yaml.find("on_loan:").unwrap();
+    let recent = yaml.find("recent:").unwrap();
+    assert!(on_loan < recent, "section order is layout order");
+    assert!(yaml.contains("row_actions"), "an untyped prop survives");
+}
+
+#[test]
+fn paths_parse_print_and_refuse_misplaced_layers() {
+    for text in ["/", "shell:app/region:nav", "nav/nav_section:sales", "page:loans/section:list/item:status"] {
+        assert_eq!(path(text).to_string(), text);
+    }
+    assert!("page:loans/page:other".parse::<NodePath>().is_err());
+    assert!("shell:app/section:x".parse::<NodePath>().is_err());
+    assert!("nav:x".parse::<NodePath>().is_err());
+    assert!("page:".parse::<NodePath>().is_err());
+}
+
+#[test]
+fn a_path_survives_a_sibling_insert() {
+    let doc = library();
+    let recent = path("page:overview/section:recent");
+    let before = format!("{:?}", resolve(&doc, &recent).unwrap());
+    let patch = Patch::Insert {
+        target: path("page:overview"),
+        child: Child { layer: Layer::Section, name: "alerts".into(), node: json!({"component": "record"}), nav_section: None },
+    };
+    let (next, _) = admit(&doc, &patch).unwrap();
+    assert_eq!(format!("{:?}", resolve(&next, &recent).unwrap()), before);
+    assert!(resolve(&next, &path("page:overview/section:alerts")).is_ok());
+}
+
+#[test]
+fn patch_schema_offers_only_what_the_node_can_take() {
+    let doc = library();
+    let layers = |schema: serde_json::Value| -> Vec<String> {
+        schema["properties"]["child"]["oneOf"]
+            .as_array()
+            .map(|v| v.iter().map(|c| c["properties"]["layer"]["const"].as_str().unwrap().to_owned()).collect())
+            .unwrap_or_default()
+    };
+    let page = patch_schema(&doc, &path("page:loans")).unwrap();
+    assert_eq!(layers(page), ["section", "overlay"]);
+
+    let collection = patch_schema(&doc, &path("page:loans/section:list")).unwrap();
+    assert_eq!(layers(collection.clone()), ["item"]);
+
+    let metric = patch_schema(&doc, &path("page:overview/section:on_loan")).unwrap();
+    assert!(metric["properties"].get("child").is_none());
+    assert_eq!(metric["properties"]["op"]["enum"], json!(["replace", "remove"]));
+
+    let root = patch_schema(&doc, &NodePath::root()).unwrap();
+    assert_eq!(root["properties"]["op"]["enum"], json!(["insert"]));
+    assert_eq!(layers(root.clone()), ["shell", "page"]);
+    let nav = &root["properties"]["child"]["oneOf"][1]["properties"]["nav_section"]["enum"];
+    assert_eq!(nav, &json!(["circulation", "people"]));
+}
+
+#[test]
+fn admit_refuses_by_check_id() {
+    let doc = library();
+    let refused = |patch: Patch| admit(&doc, &patch).unwrap_err().check;
+
+    assert_eq!(refused(Patch::Remove { target: path("page:overview") }), "nav_resolves");
+    assert_eq!(
+        refused(Patch::Insert {
+            target: path("page:loans"),
+            child: Child { layer: Layer::Section, name: "list".into(), node: json!({"component": "record"}), nav_section: None },
+        }),
+        "name_unique"
+    );
+    assert_eq!(
+        refused(Patch::Insert {
+            target: path("page:loans"),
+            child: Child {
+                layer: Layer::Section,
+                name: "extra".into(),
+                node: json!({"component": "collection", "row_actions": [{"opens": "missing"}]}),
+                nav_section: None,
+            },
+        }),
+        "opens_resolves"
+    );
+    assert_eq!(
+        refused(Patch::Insert {
+            target: path("page:loans/section:list"),
+            child: Child { layer: Layer::Widget, name: "w".into(), node: json!({"component": "chart"}), nav_section: None },
+        }),
+        "layer_allowed"
+    );
+    assert_eq!(
+        refused(Patch::Replace { target: path("page:loans/section:list"), node: json!({"component": "carousel"}) }),
+        "node_shape"
+    );
+    assert_eq!(refused(Patch::Remove { target: path("page:nowhere") }), "path_resolves");
+    assert_eq!(refused(Patch::Remove { target: NodePath::root() }), "op_allowed");
+}
+
+#[test]
+fn admit_accepts_a_page_and_lists_it() {
+    let doc = empty();
+    let patch = Patch::Insert {
+        target: NodePath::root(),
+        child: Child {
+            layer: Layer::Page,
+            name: "books".into(),
+            node: json!({"kind": "list_page", "title": "Books", "sections": {"list": {"component": "collection", "reads": {"view": "draft.Books"}}}}),
+            nav_section: None,
+        },
+    };
+    let (next, findings) = admit(&doc, &patch).unwrap();
+    assert!(next.navigation.hidden.contains(&"books".to_owned()));
+    assert_eq!(findings.iter().map(|f| (f.check, f.severity)).collect::<Vec<_>>(), [("draft_read", Severity::Warning)]);
+
+    let removed = admit(&next, &Patch::Remove { target: path("page:books") }).unwrap().0;
+    assert_eq!(removed, doc, "removing the page undoes the insert, menu included");
+}
+
+/// One broken document per check id: every check can fail.
+#[test]
+fn every_check_fails_on_its_own_fixture() {
+    let base = library();
+    let broken: Vec<(&str, Box<dyn Fn(&mut Document)>)> = vec![
+        ("format_marker", Box::new(|d| d.format = "ui-spec/0".into())),
+        ("nav_resolves", Box::new(|d| d.navigation.home = "nowhere".into())),
+        ("page_reachable", Box::new(|d| d.navigation.sections[1].pages = uilab_doc::model::NavPages::Fixed(vec![]))),
+        ("nav_unique", Box::new(|d| d.navigation.hidden.push("loans".into()))),
+        ("shell_refs", Box::new(|d| d.pages["loans"].shell = Some("print".into()))),
+        ("page_kind_known", Box::new(|d| d.pages["loans"].kind = "wizard_page".into())),
+        ("page_outlet", Box::new(|d| {
+            d.shells["app"].regions.shift_remove("main");
+        })),
+        ("opens_resolves", Box::new(|d| {
+            d.pages["loans"].overlays.shift_remove("edit");
+        })),
+        ("section_refs", Box::new(|d| {
+            let list = d.pages["loans"].sections["list"].as_mut().unwrap();
+            list.props.insert("depends_on".into(), json!("filters"));
+        })),
+        ("fixture_per_view", Box::new(|d| {
+            d.fixtures.as_mut().unwrap().views.shift_remove("members.All");
+        })),
+        ("draft_read", Box::new(|d| {
+            d.pages["members"].sections["list"].as_mut().unwrap().reads.as_mut().unwrap().view = "draft.Members".into();
+        })),
+        ("unmapped_reported", Box::new(|d| {
+            d.pages["loans"].extra.insert("note".into(), json!("UNMAPPED: nobody said"));
+        })),
+    ];
+    assert_eq!(broken.len(), CHECKS.len());
+    for (id, breaks) in &broken {
+        assert!(CHECKS.iter().any(|(c, _, _)| c == id), "{id} is not a declared check");
+        let mut doc = base.clone();
+        breaks(&mut doc);
+        assert!(ids(&doc).contains(id), "{id} did not fire: {:?}", ids(&doc));
+    }
+}
+
+#[test]
+fn fixtures_answer_rows_and_drafts_answer_none() {
+    let doc = library();
+    let fixtures = Fixtures::load(&doc, &examples().join("library")).unwrap();
+    assert_eq!(fixtures.rows("loans.All").rows.len(), 4);
+    assert_eq!(fixtures.rows("loans.All").total, Some(4));
+    assert_eq!(fixtures.rows("members.All").rows.len(), 3);
+    assert!(fixtures.rows("draft.Anything").rows.is_empty());
+}
+
+#[test]
+fn context_names_what_can_go_here() {
+    let doc = library();
+    let context = node_context(&doc, &path("page:loans")).unwrap();
+    assert_eq!(context.allowed_children, [Layer::Section, Layer::Overlay]);
+    assert_eq!(context.composite_kinds.len(), 14);
+    assert_eq!(context.children, ["section:list", "overlay:edit"]);
+    assert_eq!(context.ancestors, ["/ (document)"]);
+    let tree = outline(&doc);
+    assert_eq!(tree.children.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), ["shell:app", "nav", "page:overview", "page:loans", "page:members"]);
+}
