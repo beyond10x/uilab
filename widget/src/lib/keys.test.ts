@@ -34,3 +34,26 @@ test('Enter anywhere else accepts the waiting proposal', () => {
     assert.equal(enterAccepts(target), true, what);
   }
 });
+
+const withAttrs = (tagName: string, attrs: Record<string, string>) => ({
+  tagName,
+  isContentEditable: false,
+  getAttribute: (name: string) => attrs[name] ?? null,
+});
+
+test('a summary keeps Enter: it opens and closes its details', () => {
+  assert.equal(enterAccepts(el('SUMMARY')), false);
+});
+
+test('an element out of the tab order (tabindex -1) leaves Enter to the proposal', () => {
+  assert.equal(enterAccepts(withAttrs('BUTTON', { tabindex: '-1' })), true);
+  assert.equal(enterAccepts(withAttrs('A', { tabindex: '-1' })), true);
+  assert.equal(enterAccepts(withAttrs('BUTTON', { tabindex: '0' })), false);
+});
+
+test('an element focused by a mouse click leaves Enter to the proposal', () => {
+  assert.equal(enterAccepts(el('BUTTON'), true), true);
+  assert.equal(enterAccepts(el('A'), true), true);
+  assert.equal(enterAccepts(el('INPUT'), true), false, 'a field keeps Enter however it was focused');
+  assert.equal(enterAccepts(el('BUTTON'), false), false);
+});

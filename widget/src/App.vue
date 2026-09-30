@@ -53,7 +53,7 @@ function onKeyDown(ev: KeyboardEvent): void {
   } else if (ev.code === 'Space') {
     ev.preventDefault();
     if (!ev.repeat) void micDown();
-  } else if (ev.key === 'Enter' && state.proposal && enterAccepts(ev.target as KeyTarget | null)) {
+  } else if (ev.key === 'Enter' && state.proposal && enterAccepts(ev.target as KeyTarget | null, focusedByPointer)) {
     ev.preventDefault();
     accept();
   } else if (ev.key === 'Escape') {
@@ -69,6 +69,21 @@ function onKeyDown(ev: KeyboardEvent): void {
   }
 }
 
+/**
+ * Whether the element that has focus got it from a mouse click: a focus within a moment of a
+ * pointer press. `:focus-visible` cannot tell, since Chrome reports it true at keydown.
+ */
+let pointerAt = -Infinity;
+let focusedByPointer = false;
+
+function onPointerDown(): void {
+  pointerAt = performance.now();
+}
+
+function onFocusIn(): void {
+  focusedByPointer = performance.now() - pointerAt < 500;
+}
+
 function onKeyUp(ev: KeyboardEvent): void {
   if (ev.code === 'Space') {
     if (!typing(ev.target)) ev.preventDefault();
@@ -80,12 +95,16 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', micUp);
+  window.addEventListener('pointerdown', onPointerDown, true);
+  window.addEventListener('focusin', onFocusIn, true);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown);
   window.removeEventListener('keyup', onKeyUp);
   window.removeEventListener('blur', micUp);
+  window.removeEventListener('pointerdown', onPointerDown, true);
+  window.removeEventListener('focusin', onFocusIn, true);
 });
 </script>
 

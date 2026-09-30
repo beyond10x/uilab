@@ -39,7 +39,7 @@ function cancel(): void {
   <div class="presence-strip">
     <span
       v-for="o in chips"
-      :key="o.id || 'self'"
+      :key="o.local ? 'self' : o.id"
       class="op-chip"
       :class="[`op-${o.kind}`, { local: o.local, pending: o.pending, editing: o.local && editing }]"
       :style="{ '--op-colour': o.colour }"
