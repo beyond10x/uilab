@@ -1105,14 +1105,15 @@ impl App {
             }
         };
         let before = self.doc();
-        let Ok((after, _)) = admit(&before, &patch) else {
+        let Ok((after, admitted)) = admit(&before, &patch) else {
             self.send(Server::failed(
                 "the admitted patch no longer applies",
                 Some(by),
             ));
             return Err("failed".to_owned());
         };
-        let findings = self.findings(&after);
+        let mut findings = self.findings(&after);
+        findings.extend(admitted.into_iter().filter(|f| f.check == "replace_drops"));
         let changed = patch.changed_path();
         self.pending = Some(proposal_id.0.0.clone());
         let name = self.name_of(by);
@@ -1815,6 +1816,52 @@ pages:
             proposals(&rig.drain()),
             [id],
             "the step waits on a proposal no browser that connects is shown"
+        );
+    }
+
+    #[test]
+    fn a_replace_that_drops_columns_says_so_on_the_proposal_card() {
+        let mut rig = rig(true);
+        rig.app.handle_cmd(Cmd::Proposed {
+            by: "api-1".into(),
+            target: "page:members/section:list".parse().unwrap(),
+            utterance: "only names".into(),
+            result: Box::new(Ok(uilab_agent::Proposal {
+                patch: Patch::Replace {
+                    target: "page:members/section:list".parse().unwrap(),
+                    node: json!({
+                        "component": "collection",
+                        "reads": {"view": "members.All"},
+                        "columns": [{"field": "name"}],
+                    }),
+                },
+                turns: 1,
+                cost_micro_usd: None,
+                attempts: 1,
+            })),
+            ms: 1,
+            review: true,
+            step: None,
+        });
+        let proposal = rig
+            .drain()
+            .into_iter()
+            .find_map(|m| match m {
+                Server::Proposal(p) => Some(p),
+                _ => None,
+            })
+            .expect("a proposal is shown");
+        let findings = serde_json::to_value(&proposal.findings).unwrap();
+        let drops: Vec<&str> = findings
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["check"] == "replace_drops")
+            .filter_map(|f| f["message"].as_str())
+            .collect();
+        assert_eq!(
+            drops,
+            ["replace at page:members/section:list drops columns joined, loans, standing"]
         );
     }
 }

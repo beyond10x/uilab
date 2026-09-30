@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::check::{Finding, Severity, check};
+use crate::check::{Finding, Severity, check, replace_drops};
 use crate::model::{
     Composite, Document, NavPages, NavSection, Node, NodeBody, Overlay, Page, Region, Shell, Widget,
 };
@@ -134,7 +134,8 @@ pub fn apply(doc: &mut Document, patch: &Patch) -> Result<(), Refusal> {
 ///
 /// Refused when the patch does not apply, or when the result has an error finding the document
 /// did not have before; a document that already fails a check can still be edited elsewhere.
-/// Returns the patched document and all of its findings.
+/// Returns the patched document and all of its findings, followed by a `replace_drops` warning
+/// for what each replace, alone or in a batch, removes.
 pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), Refusal> {
     let before = check(doc);
     let mut next = doc.clone();
@@ -158,7 +159,45 @@ pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), 
             format!("{}: {}", new.path, new.message),
         ));
     }
-    Ok((next, after))
+    let mut findings = after;
+    findings.extend(drops(doc, &next, patch));
+    Ok((next, findings))
+}
+
+/// What the replaces of an admitted patch remove: at each replace target, what the stored
+/// document has and the admitted one lacks. A batch is judged by its result, so what a later
+/// patch puts back, or what an earlier insert added, is never named. A target under another
+/// replaced target is covered by that one's comparison. What a `remove` of the same batch takes is
+/// that remove's doing, so the stored side is read with those removes already applied.
+fn drops(doc: &Document, next: &Document, patch: &Patch) -> Vec<Finding> {
+    let mut base = doc.clone();
+    if let Patch::Batch { patches, .. } = patch {
+        for p in patches.iter().filter(|p| matches!(p, Patch::Remove { .. })) {
+            let _ = apply_unchecked(&mut base, p);
+        }
+    }
+    let targets: Vec<&NodePath> = match patch {
+        Patch::Replace { target, .. } => vec![target],
+        Patch::Batch { patches, .. } => patches
+            .iter()
+            .filter_map(|p| match p {
+                Patch::Replace { target, .. } => Some(target),
+                _ => None,
+            })
+            .collect(),
+        Patch::Insert { .. } | Patch::Remove { .. } => Vec::new(),
+    };
+    let mut out = Vec::new();
+    for (i, target) in targets.iter().enumerate() {
+        let covered = targets.iter().enumerate().any(|(j, other)| {
+            (other.0.len() < target.0.len() && target.0.starts_with(&other.0))
+                || (j < i && *other == *target)
+        });
+        if !covered {
+            out.extend(replace_drops(&base, next, target));
+        }
+    }
+    out
 }
 
 fn parse<T: serde::de::DeserializeOwned>(layer: Layer, node: &Value) -> Result<T, Refusal> {
