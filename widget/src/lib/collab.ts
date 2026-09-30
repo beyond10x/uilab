@@ -127,6 +127,14 @@ export function trackInFlight(inFlight: InFlight, msg: ServerMessage): InFlight 
       if (!by) return inFlight;
       return { ...inFlight, [by]: msg.value.target };
     }
+    case 'goal': {
+      // A goal that ended ends whatever its operator had in flight for it (a stopped step).
+      const by = msg.value.by;
+      if (msg.value.state === 'planning' || msg.value.state === 'running' || !(by in inFlight)) return inFlight;
+      const next = { ...inFlight };
+      delete next[by];
+      return next;
+    }
     case 'proposal':
     case 'refused':
     case 'failed':

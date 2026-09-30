@@ -30,6 +30,8 @@ export function settleCard(card: Card, msg: ServerMessage): Card {
       return p && (card.deciding || applied) ? NO_CARD : card;
     }
     case 'goal': {
+      // A new goal: the server rejected whatever proposal was waiting.
+      if (p && msg.value.state === 'planning') return NO_CARD;
       // A goal step decided elsewhere, or its proposal rejected by a stop.
       const step = p ? msg.value.steps.find((s) => s.proposal_id === p.proposal_id) : undefined;
       return step && (step.status === 'accepted' || step.status === 'rejected') ? NO_CARD : card;

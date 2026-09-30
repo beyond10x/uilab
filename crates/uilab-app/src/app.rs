@@ -114,7 +114,10 @@ pub struct App {
     fields: Vec<(String, Vec<String>)>,
     journal: Arc<Journal>,
     stt: Option<Arc<Mutex<uilab_stt::Transcriber>>>,
-    proposer: Arc<Mutex<uilab_agent::Proposer>>,
+    /// The agent; `None` in a session opened without one, which asks nothing.
+    proposer: Option<Arc<Mutex<uilab_agent::Proposer>>>,
+    /// The proposal message of the proposal waiting in `pending`, for a browser that connects.
+    shown: Option<Server>,
     operators: IndexMap<String, Operator>,
     selected_by: Option<String>,
     revision: u64,
@@ -137,39 +140,18 @@ impl App {
         out: broadcast::Sender<Server>,
         back: mpsc::Sender<Cmd>,
     ) -> Result<Self, String> {
-        let file = config.doc.to_string_lossy().into_owned();
-        let handle = Handle(Arc::new(Mutex::new(uilab_behaviour::Behaviour::new(
-            FileSource,
-        ))));
-        let mut port = UilabSession::new(handle.clone());
-        let document_id = match port
-            .open_document(s::OpenDocument { path: file.clone() })
-            .map_err(|e| e.to_string())?
-        {
-            s::OpenDocumentOutcome::Opened { document_opened } => document_opened.document_id,
-            s::OpenDocumentOutcome::Unreadable { .. } => {
-                return Err(format!("{file} is not a ui-spec/1 document"));
-            }
-        };
-        let doc = handle
-            .document(&document_id)
-            .ok_or("the opened document is not held")?;
-        let dir = config.doc.parent().unwrap_or(Path::new("."));
-        let fixtures = Fixtures::load(&doc, dir).map_err(|e| e.to_string())?;
-        let fields = fixtures.fields().into_iter().collect();
-        let journal = Journal::open(&config.journal)
-            .map_err(|e| format!("journal {}: {e}", config.journal.display()))?;
-        println!("uilab: journal in {}", journal.dir().display());
-        journal.write(
+        let mut app = Self::open(&config.doc, &config.journal, config.review, out, back)?;
+        println!("uilab: journal in {}", app.journal.dir().display());
+        app.journal.write(
             "start",
             json!({
-                "doc": file,
+                "doc": app.file,
                 "model": config.proposer.model,
                 "base_url": config.proposer.base_url,
                 "stt": config.stt.as_ref().map(|c| c.model.display().to_string()),
             }),
         );
-        let stt = match config.stt {
+        app.stt = match config.stt {
             Some(c) => {
                 let mut stt =
                     uilab_stt::Transcriber::load(c).map_err(|e| format!("speech model: {e}"))?;
@@ -191,6 +173,42 @@ impl App {
         };
         let proposer =
             uilab_agent::Proposer::new(config.proposer).map_err(|e| format!("agent: {e}"))?;
+        app.proposer = Some(Arc::new(Mutex::new(proposer)));
+        Ok(app)
+    }
+
+    /// The session over one document, with neither speech nor an agent: nothing it is asked is
+    /// sent anywhere, and the answers come as the [`Cmd::Planned`] and [`Cmd::Proposed`] the
+    /// caller hands it. [`start`](Self::start) adds both.
+    fn open(
+        doc_path: &Path,
+        journal: &Path,
+        review: bool,
+        out: broadcast::Sender<Server>,
+        back: mpsc::Sender<Cmd>,
+    ) -> Result<Self, String> {
+        let file = doc_path.to_string_lossy().into_owned();
+        let handle = Handle(Arc::new(Mutex::new(uilab_behaviour::Behaviour::new(
+            FileSource,
+        ))));
+        let mut port = UilabSession::new(handle.clone());
+        let document_id = match port
+            .open_document(s::OpenDocument { path: file.clone() })
+            .map_err(|e| e.to_string())?
+        {
+            s::OpenDocumentOutcome::Opened { document_opened } => document_opened.document_id,
+            s::OpenDocumentOutcome::Unreadable { .. } => {
+                return Err(format!("{file} is not a ui-spec/1 document"));
+            }
+        };
+        let doc = handle
+            .document(&document_id)
+            .ok_or("the opened document is not held")?;
+        let dir = doc_path.parent().unwrap_or(Path::new("."));
+        let fixtures = Fixtures::load(&doc, dir).map_err(|e| e.to_string())?;
+        let fields = fixtures.fields().into_iter().collect();
+        let journal =
+            Journal::open(journal).map_err(|e| format!("journal {}: {e}", journal.display()))?;
         Ok(App {
             port,
             handle,
@@ -199,12 +217,13 @@ impl App {
             fixtures,
             fields,
             journal: Arc::new(journal),
-            stt,
-            proposer: Arc::new(Mutex::new(proposer)),
+            stt: None,
+            proposer: None,
+            shown: None,
             operators: IndexMap::new(),
             selected_by: None,
             revision: 0,
-            review: config.review,
+            review,
             next_api_operator: 0,
             pending: None,
             audio: None,
@@ -322,6 +341,12 @@ impl App {
                 self.send_presence();
                 if let Some(goal) = &self.goal {
                     self.send(wire::goal(goal));
+                }
+                // The card of a proposal still waiting, which a goal step may be blocked on.
+                if let Some(Server::Proposal(p)) = &self.shown
+                    && self.pending.as_deref() == Some(p.proposal_id.0.as_str())
+                {
+                    self.send(Server::Proposal(p.clone()));
                 }
             }
             Cmd::Disconnected { operator } => {
@@ -595,11 +620,16 @@ impl App {
             ));
             return;
         }
-        if self.busy {
-            self.send(Server::failed(
-                "still working on the last instruction",
-                Some(by),
-            ));
+        // A plan must not land inside a transcription or an instruction still being worked on.
+        let busy = if self.busy {
+            Some("still working on the last instruction")
+        } else if self.audio.is_some() {
+            Some("an operator holds the microphone")
+        } else {
+            None
+        };
+        if let Some(message) = busy {
+            self.send(Server::refused("goal_busy", message, Some(by)));
             return;
         }
         let target = match &start.target {
@@ -636,6 +666,8 @@ impl App {
             let _ = self.port.reject_proposal(s::RejectProposal {
                 proposal_id: proposal(&pending),
             });
+            // As a reject does: every browser's card of it closes.
+            self.send_document();
         }
         self.next_goal += 1;
         let goal_id = format!("goal-{}", self.next_goal);
@@ -650,7 +682,9 @@ impl App {
         self.send_goal();
 
         let doc = self.doc();
-        let proposer = self.proposer.clone();
+        let Some(proposer) = self.proposer.clone() else {
+            return;
+        };
         let fields = self.fields.clone();
         let back = self.back.clone();
         let text = start.text;
@@ -683,6 +717,8 @@ impl App {
             ));
             return;
         };
+        let thinking = goal.current.filter(|&i| goal.awaits(i));
+        let owner = goal.by.clone();
         let (next, waiting) = goal.stop();
         self.journal
             .write("goal_stopped", json!({"by": by, "goal_id": goal_id}));
@@ -690,6 +726,18 @@ impl App {
             return;
         }
         self.send_goal();
+        if let Some(index) = thinking {
+            // The step's answer will be thrown away when it comes; end the step for its
+            // operator now, so its browser stops showing it at work.
+            self.send(Server::refused(
+                "goal_stopped",
+                format!(
+                    "the goal was stopped before step {} was proposed",
+                    index + 1
+                ),
+                Some(&owner),
+            ));
+        }
         if let Some(waiting) = waiting {
             let _ = self.port.reject_proposal(s::RejectProposal {
                 proposal_id: proposal(&waiting),
@@ -971,7 +1019,9 @@ impl App {
         let target = target.unwrap_or_else(|| self.selected());
         self.send(wire::thinking(&target.to_string(), Some(by)));
         let doc = self.doc();
-        let proposer = self.proposer.clone();
+        let Some(proposer) = self.proposer.clone() else {
+            return true;
+        };
         let fields = self.fields.clone();
         let back = self.back.clone();
         let by = by.to_owned();
@@ -1058,7 +1108,7 @@ impl App {
             "shown",
             json!({"by": by, "name": name, "proposal_id": proposal_id.0.0, "changed": changed.to_string()}),
         );
-        self.send(Server::Proposal(uilab_wire::UilabWireProposalShown {
+        let shown = Server::Proposal(uilab_wire::UilabWireProposalShown {
             after: yaml_at(&after, &changed).unwrap_or_default(),
             before: yaml_at(&before, &changed).unwrap_or_default(),
             by: uilab_wire::EssPresence::Present(by.to_owned()),
@@ -1069,11 +1119,456 @@ impl App {
             proposal_id: wire::proposal_id(&proposal_id.0.0),
             target: wire::node_path(&patch.target().to_string()),
             utterance,
-        }));
+        });
+        self.shown = Some(shown.clone());
+        self.send(shown);
         Ok(proposal_id.0.0)
     }
 }
 
 fn proposal(id: &str) -> s::ProposalId {
     s::ProposalId(Uuid(id.to_owned()))
+}
+
+/// The session actor without a model: `App::open` asks for nothing, so each test answers for the
+/// agent by handing the actor the `Planned` and `Proposed` it would have got back.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::goal::{GoalState, StepStatus};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static RIGS: AtomicU64 = AtomicU64::new(0);
+
+    struct Rig {
+        app: App,
+        rx: broadcast::Receiver<Server>,
+        _back: mpsc::Receiver<Cmd>,
+        root: PathBuf,
+    }
+
+    impl Drop for Rig {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_dir(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+    }
+
+    /// A session over a copy of the library example, with the API operator `api-1` joined.
+    fn rig(review: bool) -> Rig {
+        let root = std::env::temp_dir().join(format!(
+            "uilab-app-test-{}-{}",
+            std::process::id(),
+            RIGS.fetch_add(1, Ordering::Relaxed)
+        ));
+        let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library");
+        copy_dir(&example, &root.join("library"));
+        let (out, rx) = broadcast::channel(1024);
+        let (back, back_rx) = mpsc::channel(16);
+        let app = App::open(
+            &root.join("library/library.ui.yaml"),
+            &root.join("journal"),
+            review,
+            out,
+            back,
+        )
+        .unwrap();
+        let mut rig = Rig {
+            app,
+            rx,
+            _back: back_rx,
+            root,
+        };
+        let (reply, answer) = oneshot::channel();
+        rig.app.handle_cmd(Cmd::Register {
+            name: "Bot".into(),
+            agent: true,
+            reply,
+        });
+        assert_eq!(answer.blocking_recv().unwrap(), "api-1");
+        rig.drain();
+        rig
+    }
+
+    impl Rig {
+        fn client(&mut self, by: &str, text: &str) {
+            self.app.handle_cmd(Cmd::Client {
+                by: by.into(),
+                message: Client::from_text(text).unwrap(),
+            });
+        }
+
+        fn drain(&mut self) -> Vec<Server> {
+            let mut messages = Vec::new();
+            while let Ok(m) = self.rx.try_recv() {
+                messages.push(m);
+            }
+            messages
+        }
+
+        fn goal(&self) -> &Goal {
+            self.app.goal.as_ref().expect("a goal was given")
+        }
+
+        fn statuses(&self) -> Vec<StepStatus> {
+            self.goal().steps.iter().map(|s| s.status).collect()
+        }
+
+        fn start(&mut self, review: bool) {
+            self.client(
+                "api-1",
+                &format!(
+                    r#"{{"type":"goal","value":{{"text":"build out the member area","target":"page:members","review":{review}}}}}"#
+                ),
+            );
+        }
+
+        fn planned(&mut self, targets: &[&str]) {
+            let id = self.goal().id.clone();
+            self.app.handle_cmd(Cmd::Planned {
+                goal_id: id,
+                result: Ok(uilab_agent::Plan {
+                    steps: targets
+                        .iter()
+                        .enumerate()
+                        .map(|(i, t)| uilab_agent::Step {
+                            instruction: format!("step {i}"),
+                            target: t.parse().unwrap(),
+                            why: "w".into(),
+                        })
+                        .collect(),
+                    turns: 1,
+                    cost_micro_usd: None,
+                }),
+                ms: 1,
+            });
+        }
+
+        /// The agent answers step `index` with the removal of the member list.
+        fn answer(&mut self, index: usize) {
+            let (id, review) = (self.goal().id.clone(), self.goal().review);
+            self.app.handle_cmd(Cmd::Proposed {
+                by: "api-1".into(),
+                target: "page:members".parse().unwrap(),
+                utterance: format!("step {index}"),
+                result: Box::new(Ok(remove_list())),
+                ms: 1,
+                review,
+                step: Some((id, index)),
+            });
+        }
+    }
+
+    fn remove_list() -> uilab_agent::Proposal {
+        uilab_agent::Proposal {
+            patch: Patch::Remove {
+                target: "page:members/section:list".parse().unwrap(),
+            },
+            turns: 1,
+            cost_micro_usd: None,
+            attempts: 1,
+        }
+    }
+
+    fn goal_states(messages: &[Server]) -> Vec<String> {
+        messages
+            .iter()
+            .filter_map(|m| match m {
+                Server::Goal(g) => serde_json::to_value(&g.state)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn refusals(messages: &[Server]) -> Vec<(String, Option<String>)> {
+        messages
+            .iter()
+            .filter_map(|m| match m {
+                Server::Refused(r) => Some((r.check.clone(), m.by().map(str::to_owned))),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn proposals(messages: &[Server]) -> Vec<String> {
+        messages
+            .iter()
+            .filter_map(|m| match m {
+                Server::Proposal(p) => Some(p.proposal_id.0.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_goal_plans_then_runs_its_first_step_as_its_operator() {
+        let mut rig = rig(true);
+        rig.start(true);
+        assert_eq!(rig.goal().state, GoalState::Planning);
+        assert_eq!(goal_states(&rig.drain()), ["planning"]);
+        rig.planned(&["page:members", "page:members"]);
+        assert_eq!(rig.goal().state, GoalState::Running);
+        assert_eq!(rig.statuses(), [StepStatus::Thinking, StepStatus::Pending]);
+        assert!(rig.app.busy);
+        let messages = rig.drain();
+        assert_eq!(goal_states(&messages), ["running"]);
+        assert!(
+            messages
+                .iter()
+                .any(|m| matches!(m, Server::Thinking(_)) && m.by() == Some("api-1"))
+        );
+    }
+
+    #[test]
+    fn a_step_whose_target_is_gone_is_refused_without_asking_the_agent() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.drain();
+        rig.planned(&["page:members/section:nothing", "page:members"]);
+        assert_eq!(rig.statuses(), [StepStatus::Refused, StepStatus::Thinking]);
+        let messages = rig.drain();
+        assert_eq!(
+            refusals(&messages),
+            [("path_resolves".to_owned(), Some("api-1".to_owned()))]
+        );
+        assert_eq!(goal_states(&messages), ["running", "running"]);
+    }
+
+    #[test]
+    fn without_review_each_step_is_accepted_and_the_next_one_starts() {
+        let mut rig = rig(true);
+        rig.start(false);
+        rig.planned(&["page:members", "page:members"]);
+        rig.drain();
+        rig.answer(0);
+        assert_eq!(rig.statuses(), [StepStatus::Accepted, StepStatus::Thinking]);
+        assert_eq!(rig.app.revision, 1);
+        assert_eq!(rig.app.pending, None);
+        let messages = rig.drain();
+        assert_eq!(proposals(&messages).len(), 1);
+        assert_eq!(goal_states(&messages), ["running", "running"]);
+    }
+
+    #[test]
+    fn with_review_a_step_waits_and_a_reject_from_anybody_moves_on() {
+        let mut rig = rig(false);
+        rig.start(true);
+        rig.planned(&["page:members", "page:members"]);
+        rig.answer(0);
+        assert_eq!(rig.statuses(), [StepStatus::Proposed, StepStatus::Pending]);
+        let id = rig.goal().steps[0].proposal_id.clone().unwrap();
+        assert_eq!(rig.app.pending.as_deref(), Some(id.as_str()));
+        rig.client(
+            "ws-7",
+            &format!(r#"{{"type":"reject","value":{{"proposal_id":"{id}"}}}}"#),
+        );
+        assert_eq!(rig.statuses(), [StepStatus::Rejected, StepStatus::Thinking]);
+        assert_eq!(rig.app.revision, 0);
+    }
+
+    #[test]
+    fn stopping_while_planning_stops_and_the_late_plan_is_ignored() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.drain();
+        rig.client(
+            "ws-7",
+            r#"{"type":"stop_goal","value":{"goal_id":"goal-1"}}"#,
+        );
+        assert_eq!(rig.goal().state, GoalState::Stopped);
+        assert_eq!(goal_states(&rig.drain()), ["stopped"]);
+        rig.planned(&["page:members"]);
+        assert_eq!(rig.goal().state, GoalState::Stopped);
+        assert!(rig.goal().steps.is_empty());
+        assert!(goal_states(&rig.drain()).is_empty());
+    }
+
+    #[test]
+    fn stopping_while_a_step_thinks_ends_the_step_for_its_operator_and_drops_the_answer() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.planned(&["page:members", "page:members"]);
+        rig.drain();
+        rig.client(
+            "ws-7",
+            r#"{"type":"stop_goal","value":{"goal_id":"goal-1"}}"#,
+        );
+        let messages = rig.drain();
+        assert_eq!(goal_states(&messages), ["stopped"]);
+        assert_eq!(
+            refusals(&messages),
+            [("goal_stopped".to_owned(), Some("api-1".to_owned()))],
+            "the owner's thinking step ends with a message attributed to it"
+        );
+        rig.answer(0);
+        let messages = rig.drain();
+        assert!(
+            proposals(&messages).is_empty(),
+            "the late answer is not shown"
+        );
+        assert!(!rig.app.busy);
+        assert_eq!(rig.app.pending, None);
+        assert_eq!(rig.statuses(), [StepStatus::Pending, StepStatus::Pending]);
+    }
+
+    #[test]
+    fn stopping_with_a_proposal_waiting_rejects_it_and_sends_the_document() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.planned(&["page:members"]);
+        rig.answer(0);
+        rig.drain();
+        rig.client(
+            "ws-7",
+            r#"{"type":"stop_goal","value":{"goal_id":"goal-1"}}"#,
+        );
+        assert_eq!(rig.statuses(), [StepStatus::Rejected]);
+        assert_eq!(rig.app.pending, None);
+        let messages = rig.drain();
+        assert_eq!(goal_states(&messages), ["stopped"]);
+        assert!(messages.iter().any(|m| matches!(m, Server::Document(_))));
+        rig.client(
+            "ws-7",
+            r#"{"type":"stop_goal","value":{"goal_id":"goal-1"}}"#,
+        );
+        assert_eq!(
+            refusals(&rig.drain()),
+            [("wrong_state".to_owned(), Some("ws-7".to_owned()))]
+        );
+    }
+
+    #[test]
+    fn an_answer_for_a_step_the_run_no_longer_waits_for_is_discarded() {
+        let mut rig = rig(true);
+        rig.start(false);
+        rig.planned(&["page:members/section:nothing", "page:members"]);
+        rig.drain();
+        rig.answer(0);
+        assert!(proposals(&rig.drain()).is_empty());
+        assert_eq!(rig.statuses(), [StepStatus::Refused, StepStatus::Thinking]);
+        assert_eq!(rig.app.revision, 0);
+    }
+
+    #[test]
+    fn the_goals_api_operator_stays_present_while_the_goal_runs() {
+        let mut rig = rig(true);
+        let long_ago = Instant::now()
+            .checked_sub(API_OPERATOR_TTL * 2)
+            .expect("the clock is past two TTLs");
+        rig.start(true);
+        rig.app.operators.get_mut("api-1").unwrap().last_seen = long_ago;
+        rig.app.handle_cmd(Cmd::Tick);
+        assert!(rig.app.operators.contains_key("api-1"));
+        rig.client(
+            "ws-7",
+            r#"{"type":"stop_goal","value":{"goal_id":"goal-1"}}"#,
+        );
+        rig.app.operators.get_mut("api-1").unwrap().last_seen = long_ago;
+        rig.app.handle_cmd(Cmd::Tick);
+        assert!(!rig.app.operators.contains_key("api-1"));
+    }
+
+    #[test]
+    fn while_a_goal_runs_say_and_another_goal_are_refused() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.drain();
+        rig.client("ws-7", r#"{"type":"say","value":{"text":"add a page"}}"#);
+        rig.client("ws-7", r#"{"type":"goal","value":{"text":"another"}}"#);
+        assert_eq!(
+            refusals(&rig.drain()),
+            [
+                ("goal_running".to_owned(), Some("ws-7".to_owned())),
+                ("goal_running".to_owned(), Some("ws-7".to_owned()))
+            ]
+        );
+        assert_eq!(rig.goal().id, "goal-1");
+    }
+
+    #[test]
+    fn a_goal_is_refused_while_the_agent_is_busy_or_a_microphone_is_open() {
+        let mut rig = rig(true);
+        rig.app.audio = Some(("ws-7".into(), Vec::new()));
+        rig.start(true);
+        rig.app.audio = None;
+        rig.app.busy = true;
+        rig.start(true);
+        assert_eq!(
+            refusals(&rig.drain()),
+            [
+                ("goal_busy".to_owned(), Some("api-1".to_owned())),
+                ("goal_busy".to_owned(), Some("api-1".to_owned()))
+            ]
+        );
+        assert!(rig.app.goal.is_none());
+    }
+
+    #[test]
+    fn a_new_goal_rejects_a_waiting_proposal_and_sends_the_document() {
+        let mut rig = rig(true);
+        rig.app.handle_cmd(Cmd::Proposed {
+            by: "ws-7".into(),
+            target: "page:members".parse().unwrap(),
+            utterance: "remove the list".into(),
+            result: Box::new(Ok(remove_list())),
+            ms: 1,
+            review: true,
+            step: None,
+        });
+        assert!(rig.app.pending.is_some());
+        rig.drain();
+        rig.start(true);
+        assert_eq!(rig.app.pending, None);
+        let messages = rig.drain();
+        assert!(messages.iter().any(|m| matches!(m, Server::Document(_))));
+        assert_eq!(goal_states(&messages), ["planning"]);
+    }
+
+    #[test]
+    fn a_browser_that_connects_gets_the_goal_and_the_waiting_proposal() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.planned(&["page:members"]);
+        rig.answer(0);
+        let id = rig.goal().steps[0].proposal_id.clone().unwrap();
+        rig.drain();
+        rig.app.handle_cmd(Cmd::Connected {
+            operator: "ws-9".into(),
+        });
+        let messages = rig.drain();
+        assert_eq!(goal_states(&messages), ["running"]);
+        assert_eq!(proposals(&messages), [id]);
+    }
+
+    #[test]
+    fn a_browser_that_connects_gets_no_proposal_once_it_is_decided() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.planned(&["page:members"]);
+        rig.answer(0);
+        let id = rig.goal().steps[0].proposal_id.clone().unwrap();
+        rig.client(
+            "ws-7",
+            &format!(r#"{{"type":"reject","value":{{"proposal_id":"{id}"}}}}"#),
+        );
+        rig.drain();
+        rig.app.handle_cmd(Cmd::Connected {
+            operator: "ws-9".into(),
+        });
+        assert!(proposals(&rig.drain()).is_empty());
+    }
 }

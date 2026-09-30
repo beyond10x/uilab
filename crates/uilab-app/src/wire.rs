@@ -318,7 +318,12 @@ pub fn goal(goal: &Goal) -> Server {
 
 /// Whether a `goal` message says the run is over: done, stopped or failed.
 pub fn goal_ended(goal: &UilabWireGoal) -> bool {
-    matches!(name_of(&goal.state).as_str(), "done" | "stopped" | "failed")
+    matches!(goal_state(goal).as_str(), "done" | "stopped" | "failed")
+}
+
+/// The spec name of a `goal` message's state.
+pub fn goal_state(goal: &UilabWireGoal) -> String {
+    name_of(&goal.state)
 }
 
 pub fn rows(view: &str, total: Option<u64>, rows: Vec<Value>) -> Server {

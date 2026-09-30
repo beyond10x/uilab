@@ -243,8 +243,20 @@ pub async fn run(op: Op) -> Result<(), String> {
         OpCommand::Select { path } => {
             client(serde_json::json!({"type": "select", "value": {"path": path}}))?
         }
-        OpCommand::Accept { id } => decide("accept", id.or(cached.last_proposal.clone()))?,
-        OpCommand::Reject { id } => decide("reject", id.or(cached.last_proposal.clone()))?,
+        OpCommand::Accept { id } => {
+            let id = match id {
+                Some(id) => Some(id),
+                None => waiting_proposal(&http, &cached).await,
+            };
+            decide("accept", id)?
+        }
+        OpCommand::Reject { id } => {
+            let id = match id {
+                Some(id) => Some(id),
+                None => waiting_proposal(&http, &cached).await,
+            };
+            decide("reject", id)?
+        }
         OpCommand::Undo { id } => {
             let id = match id {
                 Some(id) => Some(id),
@@ -262,34 +274,36 @@ pub async fn run(op: Op) -> Result<(), String> {
         cached.kind = "agent".into();
         join(&http, &op.name, &mut cached).await?;
     }
-    let acted = match act(&http, &cached, &message).await {
+    let goal_run = matches!(message, Client::Goal(_)) && !op.json;
+    let watched = match act_watching(&http, &cached, &message, goal_run).await {
         Err(e) if e.starts_with("404") => {
             join(&http, &op.name, &mut cached).await?;
-            act(&http, &cached, &message).await?
+            act_watching(&http, &cached, &message, goal_run).await?
         }
         other => other?,
     };
-    let goal_run = matches!(message, Client::Goal(_));
-    let mut last_goal: Option<&uilab_wire::UilabWireGoal> = None;
+    let acted = watched.acted;
+    let mut last_goal = watched.seen;
     for message in &acted.messages {
         if let Server::Proposal(p) = message {
             cached.last_proposal = Some(p.proposal_id.0.clone());
         }
-        if goal_run && !op.json {
-            // A goal run sends a snapshot per step; the steps say what changed.
+        if goal_run {
+            // The steps were printed as they moved; what is left is the goal's last word and
+            // why steps were refused.
             match message {
-                Server::Document(_) => {}
-                Server::Goal(g) => {
-                    goal_progress(last_goal, g);
-                    last_goal = Some(g);
+                Server::Goal(g) if Some(&g.goal_id) != watched.prior.as_ref() => {
+                    goal_progress(last_goal.as_ref(), g);
+                    last_goal = Some(g.clone());
                 }
-                other => print(other, false),
+                Server::Refused(_) | Server::Failed(_) => print(message, false),
+                _ => {}
             }
         } else {
             print(message, op.json);
         }
     }
-    if let (Some(g), false) = (last_goal, op.json) {
+    if let (Some(g), true) = (&last_goal, goal_run) {
         goal_summary(g);
     }
     if !acted.settled {
@@ -300,6 +314,82 @@ pub async fn run(op: Op) -> Result<(), String> {
 
 fn client(value: Value) -> Result<Client, String> {
     serde_json::from_value(value).map_err(|e| e.to_string())
+}
+
+/// An act, and for a goal what was printed of it while it ran.
+struct Watched {
+    acted: Acted,
+    /// The goal the server held before the act; not this act's.
+    prior: Option<String>,
+    /// This act's goal as last printed.
+    seen: Option<uilab_wire::UilabWireGoal>,
+}
+
+/// The goal the server holds, if any.
+async fn current_goal(
+    http: &reqwest::Client,
+    cached: &Cached,
+) -> Result<Option<uilab_wire::UilabWireGoal>, String> {
+    let goal: Option<Server> = get(http, &format!("{}/api/goal", cached.server)).await?;
+    Ok(match goal {
+        Some(Server::Goal(g)) => Some(g),
+        _ => None,
+    })
+}
+
+/// The proposal the running goal waits on, else the last one this operator got.
+async fn waiting_proposal(http: &reqwest::Client, cached: &Cached) -> Option<String> {
+    let goal = current_goal(http, cached).await.ok().flatten();
+    goal.as_ref()
+        .and_then(waiting_on)
+        .or_else(|| cached.last_proposal.clone())
+}
+
+/// The proposal a running goal's current step waits on for accept or reject.
+fn waiting_on(goal: &uilab_wire::UilabWireGoal) -> Option<String> {
+    if crate::wire::goal_ended(goal) {
+        return None;
+    }
+    let step = goal
+        .steps
+        .get(usize::try_from(present(&goal.current)?.as_u64()?).ok()?)?;
+    (name(&step.status) == "proposed")
+        .then(|| present(&step.proposal_id).map(|id| id.0.clone()))
+        .flatten()
+}
+
+/// Acts; with `watch`, polls the goal every 2 s meanwhile and prints each step as it moves,
+/// with the proposal id a review waits on.
+async fn act_watching(
+    http: &reqwest::Client,
+    cached: &Cached,
+    message: &Client,
+    watch: bool,
+) -> Result<Watched, String> {
+    if !watch {
+        return Ok(Watched {
+            acted: act(http, cached, message).await?,
+            prior: None,
+            seen: None,
+        });
+    }
+    let prior = current_goal(http, cached).await?.map(|g| g.goal_id);
+    let mut seen: Option<uilab_wire::UilabWireGoal> = None;
+    let mut acting = std::pin::pin!(act(http, cached, message));
+    let acted = loop {
+        tokio::select! {
+            acted = &mut acting => break acted?,
+            () = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
+                if let Ok(Some(g)) = current_goal(http, cached).await
+                    && Some(&g.goal_id) != prior.as_ref()
+                {
+                    goal_progress(seen.as_ref(), &g);
+                    seen = Some(g);
+                }
+            }
+        }
+    };
+    Ok(Watched { acted, prior, seen })
 }
 
 fn goal_message(text: String, target: Option<String>, max_steps: Option<u64>, auto: bool) -> Value {
@@ -338,13 +428,24 @@ fn goal_progress(before: Option<&uilab_wire::UilabWireGoal>, goal: &uilab_wire::
         let status = name(&step.status);
         let was = before.and_then(|b| b.steps.get(i)).map(|s| name(&s.status));
         if was.as_deref() != Some(status.as_str()) && status != "pending" {
+            let proposal = match (status.as_str(), present(&step.proposal_id)) {
+                ("proposed", Some(id)) => format!(" [proposal {}: accept or reject it]", id.0),
+                _ => String::new(),
+            };
             println!(
-                "  step {}/{n} {status:<9} {}: {}",
+                "  step {}/{n} {status:<9} {}: {}{proposal}",
                 i + 1,
                 step.target.0,
                 step.instruction
             );
         }
+    }
+}
+
+fn present<T>(value: &uilab_wire::EssPresence<T>) -> Option<&T> {
+    match value {
+        uilab_wire::EssPresence::Present(v) => Some(v),
+        uilab_wire::EssPresence::Absent => None,
     }
 }
 
@@ -518,5 +619,69 @@ fn tree(node: &Value, depth: usize) {
     println!("{line}");
     for child in node["children"].as_array().into_iter().flatten() {
         tree(child, depth + 1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::goal::Goal;
+
+    fn wire_goal(f: impl FnOnce(&mut Goal)) -> uilab_wire::UilabWireGoal {
+        let mut g = Goal::new(
+            "goal-1",
+            "api-1",
+            "t",
+            "page:members".parse().unwrap(),
+            8,
+            true,
+        );
+        f(&mut g);
+        match crate::wire::goal(&g) {
+            Server::Goal(g) => g,
+            _ => unreachable!(),
+        }
+    }
+
+    fn steps(n: usize) -> Vec<uilab_agent::Step> {
+        (0..n)
+            .map(|i| uilab_agent::Step {
+                instruction: format!("step {i}"),
+                target: "page:members".parse().unwrap(),
+                why: "w".into(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_bare_accept_or_reject_acts_on_the_proposal_the_goal_waits_on() {
+        let waiting = wire_goal(|g| {
+            g.planned(steps(2));
+            g.proposed(0, "p1");
+        });
+        assert_eq!(waiting_on(&waiting).as_deref(), Some("p1"));
+    }
+
+    #[test]
+    fn nothing_is_waited_on_while_planning_thinking_after_a_decision_or_once_over() {
+        let cases = [
+            wire_goal(|_| {}),
+            wire_goal(|g| {
+                g.planned(steps(2));
+            }),
+            wire_goal(|g| {
+                g.planned(steps(2));
+                g.proposed(0, "p1");
+                g.decided("p1", true);
+            }),
+            wire_goal(|g| {
+                g.planned(steps(1));
+                g.proposed(0, "p1");
+                g.stop();
+            }),
+        ];
+        for goal in &cases {
+            assert_eq!(waiting_on(goal), None, "{}", crate::wire::goal_state(goal));
+        }
     }
 }

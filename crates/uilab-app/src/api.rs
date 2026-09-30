@@ -143,6 +143,17 @@ pub async fn act(
     let settles_immediately = matches!(&act.message, Client::Mic(mic) if wire::mic_open(mic))
         || matches!(&act.message, Client::Hello(_));
     let mut kind = Settle::of(&act.message);
+    if let Settle::Goal { prior, .. } = &mut kind {
+        let (reply, answer) = oneshot::channel();
+        shared
+            .inbox
+            .send(Cmd::CurrentGoal { reply })
+            .await
+            .map_err(|_| gone())?;
+        if let Some(Server::Goal(g)) = answer.await.map_err(|_| gone())? {
+            *prior = Some(g.goal_id);
+        }
+    }
     let mut out = shared.out.subscribe();
     shared
         .inbox
@@ -209,8 +220,12 @@ enum Settle {
     Document,
     /// A rows request.
     Rows,
-    /// A goal: its end. `started` once a goal message came.
-    Goal { started: bool },
+    /// A goal: its end. `prior` is the goal the server held before the act, whose messages are
+    /// not this act's; `id` is this act's goal, taken from its `planning` message.
+    Goal {
+        prior: Option<String>,
+        id: Option<String>,
+    },
     /// A stop: the end of the goal, whoever owns it.
     GoalEnd,
 }
@@ -227,7 +242,10 @@ impl Settle {
             | Client::Undo(_)
             | Client::Resync(_)
             | Client::Hello(_) => Settle::Document,
-            Client::Goal(_) => Settle::Goal { started: false },
+            Client::Goal(_) => Settle::Goal {
+                prior: None,
+                id: None,
+            },
             Client::StopGoal(_) => Settle::GoalEnd,
         }
     }
@@ -248,14 +266,21 @@ impl Settle {
     }
 
     fn settled_by(&mut self, message: &Server) -> bool {
-        if let Settle::Goal { started } = self {
-            // Once the goal runs, a refused or failed step is part of it, not its end.
-            return match message {
-                Server::Goal(g) => {
-                    *started = true;
-                    wire::goal_ended(g)
+        if let Settle::Goal { prior, id } = self {
+            return match (message, id.as_deref()) {
+                // Only this act's goal ends it: an earlier goal of the same operator is
+                // re-broadcast to every subscriber when a browser connects.
+                (Server::Goal(g), Some(id)) => g.goal_id == id && wire::goal_ended(g),
+                (Server::Goal(g), None) => {
+                    if prior.as_deref() != Some(g.goal_id.as_str())
+                        && wire::goal_state(g) == "planning"
+                    {
+                        *id = Some(g.goal_id.clone());
+                    }
+                    false
                 }
-                Server::Refused(_) | Server::Failed(_) => !*started,
+                // Once the goal runs, a refused or failed step is part of it, not its end.
+                (Server::Refused(_) | Server::Failed(_), id) => id.is_none(),
                 _ => false,
             };
         }
@@ -437,6 +462,43 @@ mod tests {
         assert_eq!(Settle::of(&stop()).wait(), Duration::from_secs(90));
         let say = Client::from_text(r#"{"type":"say","value":{"text":"t"}}"#).unwrap();
         assert_eq!(Settle::of(&say).wait(), Duration::from_secs(90));
+    }
+
+    fn with_id(message: Server, id: &str) -> Server {
+        match message {
+            Server::Goal(mut g) => {
+                g.goal_id = id.into();
+                Server::Goal(g)
+            }
+            other => other,
+        }
+    }
+
+    #[test]
+    fn a_goal_ignores_the_prior_goal_even_while_it_plans_and_any_other_goal_ending() {
+        let mut settle = Settle::Goal {
+            prior: Some("goal-1".into()),
+            id: None,
+        };
+        assert!(
+            !settle.settled_by(&goal_at("api-1", |_| {})),
+            "goal-1 planning"
+        );
+        assert!(
+            settle.settled_by(&Server::refused("goal_running", "m", Some("api-1"))),
+            "the prior goal was not adopted, so the refusal of this one ends the act"
+        );
+
+        let mut settle = Settle::of(&start());
+        assert!(!settle.settled_by(&with_id(goal_at("api-1", |_| {}), "goal-2")));
+        let other_ended = goal_at("api-1", |g| {
+            g.stop();
+        });
+        assert!(
+            !settle.settled_by(&other_ended),
+            "goal-1 ended, this act runs goal-2"
+        );
+        assert!(settle.settled_by(&with_id(other_ended, "goal-2")));
     }
 
     #[test]

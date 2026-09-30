@@ -27,7 +27,7 @@ import {
   type InFlight,
 } from './lib/collab.ts';
 import { settleCard } from './lib/card.ts';
-import { bannerLabel, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
+import { bannerLabel, goalMessage, isActive, settleGoal, stopMessage } from './lib/goal.ts';
 import { findNode, homePage, isDraftView, isWithin, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf, segments } from './lib/outline.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
@@ -342,6 +342,10 @@ function onMessage(msg: ServerMessage): void {
     case 'rows':
       state.rows = { ...state.rows, [msg.value.view]: msg.value };
       break;
+    case 'goal':
+      // A stopped goal's thinking step never answers; this browser stops waiting on it.
+      if (local && !isActive(msg.value) && state.phase === 'thinking') state.phase = 'idle';
+      break;
   }
 }
 
@@ -352,6 +356,9 @@ function onState(conn: ConnState, retryInMs?: number): void {
     // `hello` goes first on every connection; the server names operators by it.
     hello();
     state.resyncing = false;
+    // The server sends the goal it holds, if any, on every connection; a goal from before the
+    // connection dropped may no longer exist.
+    state.goal = null;
     // Requests that were never answered are asked again on the new connection.
     for (const view of rowsRequested) if (!state.rows[view]) rowsRequested.delete(view);
     for (const view of pendingViews) requestRows(view);
