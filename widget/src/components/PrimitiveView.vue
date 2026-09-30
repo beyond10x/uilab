@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { displayValue } from '../lib/components.ts';
 import { propsOf } from '../lib/outline.ts';
-import { isRemoved, marks, select, tint } from '../store.ts';
+import { marks, select, tint } from '../store.ts';
 
 const props = defineProps<{ node: OutlineNode }>();
 
@@ -18,7 +18,7 @@ const alt = computed(() => displayValue(p.value.alt ?? p.value.text ?? 'image'))
 <template>
   <div
     class="prim node"
-    :class="[marks(node.path), { removed: isRemoved(node.path) }]"
+    :class="marks(node.path)"
     :style="tint(node.path)"
     :data-path="node.path"
     :title="`${node.name} · ${node.kind}`"
