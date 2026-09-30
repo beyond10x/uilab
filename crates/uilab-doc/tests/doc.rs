@@ -561,6 +561,62 @@ fn docs_and_help_describe_the_document_and_every_kind() {
     assert!(help.contains("| page (a route) | section, overlay |"));
 }
 
+/// Help describes what shipped: goals planned into steps, the Components tab as a workspace where
+/// instructions build widgets, its key, and proposal cards that list only the proposal's findings.
+#[test]
+fn help_describes_goals_the_components_workspace_and_card_findings() {
+    let help = uilab_doc::help_markdown();
+    assert!(!help.contains("no multi-step goal"), "{help}");
+    for expected in [
+        "## Goals",
+        "**goal**",
+        "plans it into steps",
+        "## The Components tab",
+        "`4`",
+        "builds widgets",
+        "under the selected widget",
+        "at the root",
+        "only the findings the proposal brings",
+    ] {
+        assert!(help.contains(expected), "help misses {expected:?}:\n{help}");
+    }
+}
+
+/// The docs spell every enum the way the document and the wire do, never through `Debug`: the
+/// placement profile, an overlay's kind and a finding's severity. Names stay as written.
+#[test]
+fn docs_spell_enums_as_the_document_does() {
+    let mut doc = library();
+    let edit = doc.pages["loans"].overlays.shift_remove("edit").unwrap();
+    doc.pages["loans"].overlays.insert("editLoan".into(), edit);
+    let findings = [
+        uilab_doc::Finding {
+            check: "draft_read",
+            severity: Severity::Warning,
+            path: "page:loans/section:list".into(),
+            message: "reads a draft view".into(),
+        },
+        uilab_doc::Finding {
+            check: "unknown_view",
+            severity: Severity::Error,
+            path: "page:loans/section:list".into(),
+            message: "no such view".into(),
+        },
+    ];
+    let docs = uilab_doc::docs_markdown(&doc, &Fixtures::default(), &findings);
+    for expected in [
+        "placement `fat`",
+        "`editLoan` (drawer form)",
+        "- warning `draft_read` at `page:loans/section:list`",
+        "- error `unknown_view` at `page:loans/section:list`",
+    ] {
+        assert!(docs.contains(expected), "docs miss {expected:?}:\n{docs}");
+    }
+    for debug in ["`Fat`", "- Warning ", "- Error ", "(Drawer "] {
+        assert!(!docs.contains(debug), "docs use Debug {debug:?}");
+    }
+}
+
 #[test]
 fn a_patch_that_changes_nothing_is_refused() {
     let doc = library();
