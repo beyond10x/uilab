@@ -2734,4 +2734,78 @@ pages:
         assert_eq!(entries[2]["check"], "retarget_once");
         assert_eq!(entries[2]["to"], "page:members");
     }
+
+    /// Adversary pass 2. Design: "presence shows who moved it". Once `Tick` prunes the session's
+    /// agent (round 2), the presence it sends still names the agent as the one who made the
+    /// selection, while no longer listing it; the widget's `operatorView` then falls back to a
+    /// human named "agent" (`kind` defaults to `human`), so the move reads as a person's.
+    #[test]
+    fn adversary_presence_names_no_selector_it_does_not_list_after_the_agent_expires() {
+        let mut rig = rig(true);
+        rig.connect("ws-1");
+        let text = "go to the members page";
+        say_at_the_loans_list(&mut rig, "ws-1", text);
+        agent_moves(
+            &mut rig,
+            "ws-1",
+            "page:loans/section:list",
+            text,
+            "page:members",
+            true,
+        );
+        rig.drain();
+        rig.app.operators.get_mut(AGENT_OPERATOR).unwrap().last_seen = Instant::now()
+            .checked_sub(API_OPERATOR_TTL * 2)
+            .expect("the clock is past two TTLs");
+        rig.app.handle_cmd(Cmd::Tick);
+        let presence = rig
+            .drain()
+            .into_iter()
+            .rev()
+            .find_map(|m| match m {
+                Server::Presence(p) => Some(p),
+                _ => None,
+            })
+            .expect("presence is sent when the agent leaves");
+        if let uilab_wire::EssPresence::Present(selector) = &presence.selected_by {
+            assert!(
+                presence.operators.iter().any(|o| &o.id == selector),
+                "presence names `{selector}` as the one who selected, but does not list it: \
+                 {presence:?}"
+            );
+        }
+    }
+
+    /// Adversary pass 2, a probe that holds: each move refreshes the session's agent, so a second
+    /// instruction's move after a long quiet keeps it present through the next `Tick`.
+    #[test]
+    fn adversary_a_later_move_keeps_the_agent_present() {
+        let mut rig = rig(true);
+        rig.connect("ws-1");
+        let text = "go to the members page";
+        say_at_the_loans_list(&mut rig, "ws-1", text);
+        agent_moves(
+            &mut rig,
+            "ws-1",
+            "page:loans/section:list",
+            text,
+            "page:members",
+            true,
+        );
+        rig.app.operators.get_mut(AGENT_OPERATOR).unwrap().last_seen = Instant::now()
+            .checked_sub(API_OPERATOR_TTL * 2)
+            .expect("the clock is past two TTLs");
+        say_at_the_loans_list(&mut rig, "ws-1", text);
+        agent_moves(
+            &mut rig,
+            "ws-1",
+            "page:loans/section:list",
+            text,
+            "page:members",
+            true,
+        );
+        rig.app.handle_cmd(Cmd::Tick);
+        assert!(rig.app.operators.contains_key(AGENT_OPERATOR));
+        assert_eq!(rig.app.selected_by.as_deref(), Some(AGENT_OPERATOR));
+    }
 }
