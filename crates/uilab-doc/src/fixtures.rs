@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::model::{DRAFT_VIEW_PREFIX, Document};
+use crate::model::{CompositeKind, DRAFT_VIEW_PREFIX, Document};
 
 /// Sample rows of one view.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -188,20 +188,24 @@ fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, FixtureEr
 
 /// Made-up rows for a view that has no fixture, most often a `draft.` placeholder, so the canvas
 /// shows the composites that read it with data of the right shape. The fields are the ones those
-/// composites name (columns, fields, a metric's `from`, a chart's `x` and `series`); the values
-/// are shaped by the field name. Never data anybody should read as real.
+/// composites name (columns, fields, a metric's `from`, a chart's `x` and `series`). A field read
+/// as a quantity (a metric's `from`, a chart's `series`) is a number whatever its name; any other
+/// value is shaped by the field name. Never data anybody should read as real.
 pub fn sample_rows(doc: &Document, view: &str) -> Vec<Value> {
     let mut fields: Vec<String> = Vec::new();
-    let mut add = |f: &str| {
-        if !f.is_empty() && !fields.iter().any(|x| x == f) {
-            fields.push(f.to_owned());
+    let mut quantities: Vec<String> = Vec::new();
+    let add = |list: &mut Vec<String>, f: &str| {
+        if !f.is_empty() && !list.iter().any(|x| x == f) {
+            list.push(f.to_owned());
         }
     };
     for (_, composite) in crate::check::composites(doc) {
         if composite.reads.as_ref().is_none_or(|r| r.view != view) {
             continue;
         }
+        let kind = composite.component.kind();
         for key in ["columns", "fields", "series"] {
+            let quantity = key == "series" && kind == Some(CompositeKind::Chart);
             for entry in composite
                 .props
                 .get(key)
@@ -209,19 +213,27 @@ pub fn sample_rows(doc: &Document, view: &str) -> Vec<Value> {
                 .into_iter()
                 .flatten()
             {
-                match entry {
-                    Value::String(f) => add(f),
-                    Value::Object(o) => add(o.get("field").and_then(Value::as_str).unwrap_or("")),
-                    _ => {}
+                let field = match entry {
+                    Value::String(f) => f.as_str(),
+                    Value::Object(o) => o.get("field").and_then(Value::as_str).unwrap_or(""),
+                    _ => "",
+                };
+                add(&mut fields, field);
+                if quantity {
+                    add(&mut quantities, field);
                 }
             }
         }
         for key in ["from", "x"] {
-            add(composite
+            let field = composite
                 .props
                 .get(key)
                 .and_then(Value::as_str)
-                .unwrap_or(""));
+                .unwrap_or("");
+            add(&mut fields, field);
+            if key == "from" && kind == Some(CompositeKind::Metric) {
+                add(&mut quantities, field);
+            }
         }
     }
     if fields.is_empty() {
@@ -232,30 +244,50 @@ pub fn sample_rows(doc: &Document, view: &str) -> Vec<Value> {
             Value::Object(
                 fields
                     .iter()
-                    .map(|f| (f.clone(), sample_value(f, n)))
+                    .map(|f| {
+                        let value = if quantities.contains(f) {
+                            sample_number(n)
+                        } else {
+                            sample_value(f, n)
+                        };
+                        (f.clone(), value)
+                    })
                     .collect(),
             )
         })
         .collect()
 }
 
+fn sample_number(n: i64) -> Value {
+    Value::from(n * 7 % 23 + 3)
+}
+
+/// A value shaped by the field's name. The last word names what the field is (`created_on`,
+/// `loan_status`, `day_count`); a flag also shows in its first word (`is_member`, `show_badge`).
+/// A word that marks a kind at one end of a name does not mark it at the other: `on_loan`,
+/// `at_risk` and `due_amount` are not dates, `active_loans` is not a flag, `month_total` is not a
+/// month.
 fn sample_value(field: &str, n: i64) -> Value {
     let f = field.to_lowercase();
-    let parts: Vec<&str> = f.split(['_', '-', ' ']).collect();
+    let parts: Vec<&str> = f.split(['_', '-', ' ']).filter(|p| !p.is_empty()).collect();
+    let first = parts.first().copied().unwrap_or("");
+    let last = parts.last().copied().unwrap_or("");
     let has = |words: &[&str]| words.iter().any(|w| parts.contains(w));
-    if has(&["enabled", "is", "has", "active", "notify", "allow", "show"]) {
+    if ["is", "has", "can", "allow", "show", "notify"].contains(&first)
+        || ["enabled", "active", "allowed", "visible", "verified"].contains(&last)
+    {
         Value::Bool(n % 2 == 1)
-    } else if has(&["month"]) {
+    } else if last == "month" {
         Value::String(format!("2026-{:02}", n + 4))
-    } else if has(&["week"]) {
+    } else if last == "week" {
         Value::String(format!("2026-W{}", 30 + n))
-    } else if has(&["date", "due", "joined", "at", "day", "time", "on"]) {
+    } else if ["date", "due", "joined", "at", "day", "time", "on"].contains(&last) {
         Value::String(format!("2026-10-{:02}", n * 3))
     } else if has(&[
         "count", "total", "number", "amount", "value", "sum", "loans", "overdue", "qty", "score",
     ]) {
-        Value::from(n * 7 % 23 + 3)
-    } else if has(&["state", "status", "standing", "stage"]) {
+        sample_number(n)
+    } else if ["state", "status", "standing", "stage"].contains(&last) {
         Value::String(["open", "overdue", "closed"][(n % 3) as usize].to_owned())
     } else if has(&["email"]) {
         Value::String(format!("person{n}@example.com"))

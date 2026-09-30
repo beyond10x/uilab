@@ -46,7 +46,21 @@ store.connect({
   sendBinary: () => true,
 });
 
-const outline: OutlineNode = { path: '/', layer: 'root', name: '', kind: 'document', children: [] };
+/** A page whose charts and collection read the views the cases ask for. */
+const outline: OutlineNode = {
+  path: '/',
+  layer: 'root',
+  name: '',
+  kind: 'document',
+  children: ['draft.LoansPerMonth', 'draft.LoansByState', 'loans.All'].map((view, i) => ({
+    path: `page:p/section:s${i}`,
+    layer: 'section',
+    name: `s${i}`,
+    kind: view === 'loans.All' ? 'collection' : 'chart',
+    view,
+    children: [],
+  })),
+};
 
 function document(revision: number): ServerMessage {
   return {
@@ -109,4 +123,33 @@ test('a draft request left unanswered when the connection drops is asked again o
   handlers!.state('closed');
   handlers!.state('open');
   assert.equal(rowsAskedFor('draft.LoansByState'), 2);
+});
+
+test('a draft view only the waiting proposal preview reads is asked again on reconnect while unanswered', () => {
+  const preview: OutlineNode = {
+    ...outline,
+    children: [
+      ...outline.children,
+      { path: 'page:p/section:new', layer: 'section', name: 'new', kind: 'metric', view: 'draft.PreviewOnly', children: [] },
+    ],
+  };
+  handlers!.message({
+    type: 'proposal',
+    value: {
+      after: '',
+      before: '',
+      changed: 'page:p/section:new',
+      findings: [],
+      op: 'Insert',
+      outline: preview,
+      proposal_id: 'p1',
+      target: 'page:p',
+      utterance: 'add a metric of overdue members',
+    },
+  });
+  store.requestRows('draft.PreviewOnly');
+  assert.equal(rowsAskedFor('draft.PreviewOnly'), 1);
+  handlers!.state('closed');
+  handlers!.state('open');
+  assert.equal(rowsAskedFor('draft.PreviewOnly'), 2, 'the preview is the outline shown, and it reads the view');
 });

@@ -31,7 +31,7 @@ import { bannerLabel, goalEnded, goalMessage, settleGoal, stopMessage } from './
 import { targetIn, workspaceOf } from './lib/workspace.ts';
 import { markClasses, outlineMarks, previewBase, withRemoved, type Mark } from './lib/marks.ts';
 import { findNode, homePage, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf } from './lib/outline.ts';
-import { rowsDue } from './lib/rows.ts';
+import { rowsDue, unanswered, viewsOf } from './lib/rows.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
 
@@ -113,7 +113,10 @@ let flashSeq = 0;
 let transport: Transport | null = null;
 /** View → document revision its rows were last asked for at. */
 const rowsAsked = new Map<string, number | null>();
-/** Views the canvas wants rows for; asked again on reconnect. */
+/** View → document revision the browser was at when its rows last arrived. The server builds
+ *  them at the revision it last sent, so this is the revision the rows are for. */
+const rowsAnswered = new Map<string, number | null>();
+/** Views the canvas wants rows for; asked again on reconnect while the shown outline reads them. */
 const pendingViews = new Set<string>();
 let micHeld = false;
 
@@ -357,6 +360,7 @@ function onMessage(msg: ServerMessage): void {
       break;
     case 'rows':
       state.rows = { ...state.rows, [msg.value.view]: msg.value };
+      rowsAnswered.set(msg.value.view, state.revision);
       break;
     case 'goal': {
       // Only the moment a goal ends: a stopped goal's thinking step never answers, so its
@@ -392,8 +396,11 @@ function onState(conn: ConnState, retryInMs?: number): void {
     // The server sends the goal it holds, if any, on every connection; a goal from before the
     // connection dropped may no longer exist.
     state.goal = null;
-    // Requests that were never answered are asked again on the new connection.
-    for (const view of rowsAsked.keys()) if (!state.rows[view]) rowsAsked.delete(view);
+    // A request whose answer did not arrive at the revision it was asked at is asked again on the
+    // new connection, if the outline shown (document or proposal preview) still reads its view.
+    for (const view of unanswered(rowsAsked, rowsAnswered)) rowsAsked.delete(view);
+    const read = viewsOf(shownOutline.value);
+    for (const view of pendingViews) if (!read.has(view)) pendingViews.delete(view);
     for (const view of pendingViews) requestRows(view);
   } else if (conn === 'closed') {
     if (state.phase === 'listening') mic.end();
