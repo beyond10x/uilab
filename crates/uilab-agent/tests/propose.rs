@@ -369,8 +369,8 @@ fn a_target_nothing_earlier_creates_is_refused_and_retried_with_the_refusal() {
     let doc = library();
     let premature = plan_of(vec![
         step(
-            "add the member's loans to the details card",
-            "page:members/section:details",
+            "tag overdue loans in the details card's rows",
+            "page:members/section:details/item:loan",
         ),
         step("add a details card for the selected member", "page:members"),
     ]);
@@ -386,7 +386,35 @@ fn a_target_nothing_earlier_creates_is_refused_and_retried_with_the_refusal() {
     assert!(!texts(&seen[0]).contains("plan_target"));
     let second = texts(&seen[1]);
     assert!(second.contains("plan_target: "), "{second}");
-    assert!(second.contains("page:members/section:details"), "{second}");
+    assert!(
+        second.contains("page:members/section:details/item:loan"),
+        "{second}"
+    );
+}
+
+#[test]
+fn a_blank_target_is_refused_rather_than_read_as_the_root() {
+    let doc = library();
+    for blank in ["", "  "] {
+        let (mut planner, seen) = proposer(vec![
+            plan_of(vec![step("add a search bar above the member list", blank)]),
+            member_area_plan(),
+        ]);
+        let plan = planner.plan_goal(&doc, &members(), MEMBER_AREA, 8).unwrap();
+        assert_eq!(plan.steps.len(), 3, "the blank-target plan is not the plan");
+        let seen = seen.lock().unwrap();
+        if blank.is_empty() {
+            let refused_in_loop = seen[1].items.iter().any(|item| {
+                matches!(item, Item::ToolResult { output, failed: true, .. }
+                    if output.to_string().contains("published schema"))
+            });
+            assert!(refused_in_loop, "minLength refuses it: {:?}", seen[1].items);
+        } else {
+            let second = texts(&seen[1]);
+            assert!(second.contains("plan_step_blank: "), "{second}");
+            assert!(second.contains("step 1"), "{second}");
+        }
+    }
 }
 
 #[test]
@@ -406,7 +434,7 @@ fn two_refused_plans_are_refused() {
 }
 
 #[test]
-fn a_step_under_an_earlier_steps_target_is_accepted_at_any_depth() {
+fn a_new_child_of_an_earlier_steps_target_is_accepted() {
     let doc = library();
     let deep = plan_of(vec![
         step("add a details card with a loans list", "page:members"),

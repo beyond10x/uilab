@@ -111,7 +111,8 @@ pub struct Plan {
 pub struct Step {
     /// What to change, as the operator would say it.
     pub instruction: String,
-    /// The node the instruction is about: one that exists, or one under an earlier step's target.
+    /// The node the instruction is about: one that exists, a new child of one, or a new child of
+    /// an earlier step's target.
     pub target: NodePath,
     /// What the step contributes to the goal.
     pub why: String,
@@ -121,7 +122,45 @@ pub struct Step {
 #[derive(Deserialize)]
 struct PlanAnswer {
     #[serde(default)]
-    steps: Vec<Step>,
+    steps: Vec<RawStep>,
+}
+
+/// A step with its target still as text: a blank one would otherwise parse as the root.
+#[derive(Deserialize)]
+struct RawStep {
+    instruction: String,
+    target: String,
+    why: String,
+}
+
+impl PlanAnswer {
+    /// The steps with parsed targets; a blank or malformed target is refused, naming the step.
+    fn steps(self) -> Result<Vec<Step>, Refusal> {
+        self.steps
+            .into_iter()
+            .enumerate()
+            .map(|(index, raw)| {
+                if raw.target.trim().is_empty() {
+                    return Err(Refusal {
+                        check: "plan_step_blank".to_owned(),
+                        message: format!(
+                            "step {} has no target; name the node the instruction is about",
+                            index + 1
+                        ),
+                    });
+                }
+                let target = raw.target.parse().map_err(|error: PathError| Refusal {
+                    check: "plan_shape".to_owned(),
+                    message: format!("step {}: {error}", index + 1),
+                })?;
+                Ok(Step {
+                    instruction: raw.instruction,
+                    target,
+                    why: raw.why,
+                })
+            })
+            .collect()
+    }
 }
 
 /// An accepted answer and what the attempts took.
@@ -163,12 +202,19 @@ impl Retry {
 }
 
 /// Whether `steps` is a plan the runner can carry out on `doc`, one proposal at a time: at least
-/// one step, at most `max_steps`, and every target either a node of `doc` or a node under an
-/// earlier step's target, which that step may create.
+/// one step, at most `max_steps`, every instruction non-blank, and every target valid. A target
+/// is valid when it resolves in `doc`, or its parent resolves in `doc`, or its parent is an
+/// earlier step's target; nothing else. So a step may target a node an earlier step inserts under
+/// an existing node or under that earlier step's own target, but not one deeper than that.
+///
+/// This checks the plan against `doc` as it is, not as the earlier steps will leave it: a target
+/// that an earlier step removes or replaces away still passes here. The runner re-checks each
+/// step's target when it proposes it, on the document the earlier steps left.
 ///
 /// # Errors
 ///
-/// The [`Refusal`] `plan_empty`, `plan_too_long` or `plan_target`, naming the step.
+/// The [`Refusal`] `plan_empty`, `plan_too_long`, `plan_step_blank` or `plan_target`, naming the
+/// step.
 pub fn check_plan(doc: &Document, steps: &[Step], max_steps: usize) -> Result<(), Refusal> {
     if steps.is_empty() {
         return Err(Refusal {
@@ -185,18 +231,29 @@ pub fn check_plan(doc: &Document, steps: &[Step], max_steps: usize) -> Result<()
             ),
         });
     }
+    let resolves = |path: &NodePath| uilab_doc::resolve(doc, path).is_ok();
     for (index, step) in steps.iter().enumerate() {
-        let under_earlier = steps[..index].iter().any(|earlier| {
-            earlier.target.0.len() < step.target.0.len()
-                && step.target.0.starts_with(&earlier.target.0)
-        });
-        if !under_earlier && uilab_doc::resolve(doc, &step.target).is_err() {
+        if step.instruction.trim().is_empty() {
+            return Err(Refusal {
+                check: "plan_step_blank".to_owned(),
+                message: format!(
+                    "step {} has no instruction; say what to change at `{}`, or drop the step",
+                    index + 1,
+                    step.target
+                ),
+            });
+        }
+        let valid = resolves(&step.target)
+            || step.target.parent().is_some_and(|parent| {
+                resolves(&parent) || steps[..index].iter().any(|e| e.target == parent)
+            });
+        if !valid {
             return Err(Refusal {
                 check: "plan_target".to_owned(),
                 message: format!(
-                    "step {} targets `{}`, which is no node of the document and not under any \
-                     earlier step's target; put the step that creates it first, or target a node \
-                     that exists",
+                    "step {} targets `{}`: neither it nor its parent is a node of the document, \
+                     and its parent is no earlier step's target; target a node that exists, a \
+                     new child of one, or a new child of an earlier step's target",
                     index + 1,
                     step.target
                 ),
@@ -233,11 +290,13 @@ fn plan_schema(max_steps: usize) -> Value {
                     "properties": {
                         "instruction": {
                             "type": "string",
+                            "minLength": 1,
                             "description": "one instruction, complete on its own, that one patch at `target` carries out"
                         },
                         "target": {
                             "type": "string",
-                            "description": "the node path the instruction is about: an existing node, or one under an earlier step's target"
+                            "minLength": 1,
+                            "description": "the node path the instruction is about: an existing node, a new child of one, or a new child of an earlier step's target"
                         },
                         "why": {
                             "type": "string",
@@ -426,8 +485,9 @@ impl Proposer {
                         check: "plan_shape".to_owned(),
                         message: error.to_string(),
                     })?;
-                check_plan(doc, &answer.steps, max_steps)?;
-                Ok(answer.steps)
+                let steps = answer.steps()?;
+                check_plan(doc, &steps, max_steps)?;
+                Ok(steps)
             },
         )?;
         Ok(Plan {
@@ -667,8 +727,9 @@ and the name of any node it creates. `why` says in one line what the step adds t
 Steps run in order, each on the document the earlier steps left. A later step may target a node \
 an earlier step creates: name that node by the path it will have, for example \
 `page:members/section:details` after a step at `page:members` that inserts the section \
-`details`, and give that name in the earlier step's instruction. Every target is either a node \
-of the outline below or lies under an earlier step's target. Use as few steps as the goal needs \
+`details`, and give that name in the earlier step's instruction. Every target is a node of the \
+outline below, a new child of one, or a new child of an earlier step's target; never deeper. \
+Every instruction says something. Use as few steps as the goal needs \
 and never more than the cap; one step that adds several related nodes as a batch is better than \
 several tiny steps. A drawer or dialog and the row action that opens it belong in one step.
 
@@ -865,16 +926,50 @@ mod tests {
         assert_eq!(refused.check, "plan_too_long");
         assert!(refused.message.contains('1'), "{}", refused.message);
         assert_eq!(check_plan(&doc, &[], 8).unwrap_err().check, "plan_empty");
-        let refused = check_plan(&doc, &steps(&["page:members/section:details"]), 8).unwrap_err();
+        let refused =
+            check_plan(&doc, &steps(&["page:members/section:details/item:loan"]), 8).unwrap_err();
         assert_eq!(refused.check, "plan_target");
+        check_plan(&doc, &steps(&["page:members/section:details"]), 8)
+            .expect("a new child of a node that resolves");
         check_plan(
             &doc,
-            &steps(&["page:members", "page:members/section:details"]),
+            &steps(&[
+                "page:members/section:details",
+                "page:members/section:details/item:loan",
+            ]),
             8,
         )
-        .expect("a target under an earlier step's target");
+        .expect("a new child of an earlier step's target");
         check_plan(&doc, &steps(&["page:members/section:list"]), 8)
             .expect("a target that resolves");
+    }
+
+    #[test]
+    fn a_step_at_the_root_admits_only_its_new_children() {
+        let doc = library();
+        check_plan(&doc, &steps(&["/", "page:reports"]), 8).expect("a new page under the root");
+        let refused =
+            check_plan(&doc, &steps(&["/", "page:reports/section:table"]), 8).unwrap_err();
+        assert_eq!(refused.check, "plan_target");
+        assert!(refused.message.contains("step 2"), "{}", refused.message);
+    }
+
+    #[test]
+    fn a_blank_instruction_is_refused_by_the_check_and_the_schema() {
+        let doc = library();
+        let mut plan = steps(&["page:members"]);
+        plan[0].instruction = " \t".to_owned();
+        let refused = check_plan(&doc, &plan, 8).unwrap_err();
+        assert_eq!(refused.check, "plan_step_blank");
+        assert!(refused.message.contains("step 1"), "{}", refused.message);
+        let schema = plan_schema(8);
+        for field in ["instruction", "target"] {
+            assert_eq!(
+                schema["properties"]["steps"]["items"]["properties"][field]["minLength"],
+                serde_json::json!(1),
+                "{field}"
+            );
+        }
     }
 
     #[test]

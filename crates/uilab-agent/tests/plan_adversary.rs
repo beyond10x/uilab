@@ -152,32 +152,41 @@ fn a_blank_instruction_is_not_a_step_the_runner_can_carry_out() {
     }
 }
 
-/// `check_plan`'s target rule with the `starts_with` conjunct dropped: the mutant the unit's
-/// suite does not kill, since every `plan_target` refusal it asserts has no shorter earlier step.
-fn mutant_without_prefix(doc: &Document, steps: &[Step]) -> bool {
+/// `check_plan`'s decided target rule with "its parent is an earlier step's target" weakened to
+/// "some earlier step's target is one level shallower": a mutant that ignores which node the
+/// earlier step was at.
+fn mutant_parent_by_depth(doc: &Document, steps: &[Step]) -> bool {
+    let resolves = |path: &NodePath| uilab_doc::resolve(doc, path).is_ok();
     steps.iter().enumerate().all(|(index, step)| {
-        steps[..index]
-            .iter()
-            .any(|earlier| earlier.target.0.len() < step.target.0.len())
-            || uilab_doc::resolve(doc, &step.target).is_ok()
+        resolves(&step.target)
+            || step.target.parent().is_some_and(|parent| {
+                resolves(&parent)
+                    || steps[..index]
+                        .iter()
+                        .any(|earlier| earlier.target.0.len() == parent.0.len())
+            })
     })
 }
 
 #[test]
-fn a_target_under_no_earlier_target_is_refused_even_after_a_shorter_unrelated_step() {
+fn a_target_whose_parent_is_no_earlier_target_is_refused_even_after_an_unrelated_step_at_that_depth()
+ {
     let doc = library();
     let plan = [
-        step("add a search bar above the loan list", "page:loans"),
         step(
-            "add the member's loans to the details card",
-            "page:members/section:details",
+            "add a due-date column to the loan list",
+            "page:loans/section:list",
+        ),
+        step(
+            "tag overdue loans in the details card's rows",
+            "page:members/section:details/item:row",
         ),
     ];
     let refused = check_plan(&doc, &plan, 8).unwrap_err();
     assert_eq!(refused.check, "plan_target");
     assert!(refused.message.contains("step 2"), "{}", refused.message);
     assert!(
-        mutant_without_prefix(&doc, &plan),
+        mutant_parent_by_depth(&doc, &plan),
         "this input tells the rule from the mutant"
     );
 }
@@ -219,7 +228,7 @@ fn root_and_nav_are_plan_and_step_targets() {
     for target in ["/", "nav"] {
         let mut planner = proposer(vec![json!({"op": "plan", "steps": [
             step_json("add a reports page", "/"),
-            step_json("give the reports page a table", "page:reports/section:table"),
+            step_json("give the reports page a table", "page:reports"),
         ]})]);
         let planned = planner
             .plan_goal(&doc, &target.parse().unwrap(), "add a reports page", 8)
