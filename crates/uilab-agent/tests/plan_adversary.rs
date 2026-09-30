@@ -238,6 +238,126 @@ fn root_and_nav_are_plan_and_step_targets() {
     }
 }
 
+/// `check_plan`'s decided target rule with "an earlier step's target" read as "any step's
+/// target": a mutant that ignores the order of the steps.
+fn mutant_any_step(doc: &Document, steps: &[Step]) -> bool {
+    let resolves = |path: &NodePath| uilab_doc::resolve(doc, path).is_ok();
+    steps.iter().all(|step| {
+        resolves(&step.target)
+            || step.target.parent().is_some_and(|parent| {
+                resolves(&parent) || steps.iter().any(|other| other.target == parent)
+            })
+    })
+}
+
+#[test]
+fn a_step_before_the_step_whose_target_is_its_parent_is_refused() {
+    let doc = library();
+    let plan = [
+        step(
+            "tag overdue loans in the details card's rows",
+            "page:members/section:details/item:loan",
+        ),
+        step(
+            "add a details card for the selected member",
+            "page:members/section:details",
+        ),
+    ];
+    let refused = check_plan(&doc, &plan, 8).unwrap_err();
+    assert_eq!(refused.check, "plan_target");
+    assert!(refused.message.contains("step 1"), "{}", refused.message);
+    assert!(
+        mutant_any_step(&doc, &plan),
+        "this input tells the ordered rule from the mutant"
+    );
+}
+
+#[test]
+fn the_decided_target_rule_at_each_boundary() {
+    let doc = library();
+    check_plan(
+        &doc,
+        &[step("add an edit drawer", "page:members/overlay:edit")],
+        8,
+    )
+    .expect("the parent resolves, no earlier step needed");
+    check_plan(
+        &doc,
+        &[step(
+            "add a menu section for reports",
+            "nav/nav_section:reports",
+        )],
+        8,
+    )
+    .expect("a new child of nav");
+    check_plan(
+        &doc,
+        &[
+            step("add a details card", "page:members/section:details"),
+            step("tag its rows", "page:members/section:details/item:loan"),
+        ],
+        8,
+    )
+    .expect("the parent is an earlier step's target");
+
+    let refused = check_plan(
+        &doc,
+        &[
+            step("add a details card", "page:members"),
+            step("tag its rows", "page:members/section:details/item:loan"),
+        ],
+        8,
+    )
+    .unwrap_err();
+    assert_eq!(
+        refused.check, "plan_target",
+        "only the grandparent is earlier"
+    );
+    assert!(refused.message.contains("step 2"), "{}", refused.message);
+
+    let refused = check_plan(
+        &doc,
+        &[step("tag its rows", "page:ghost/section:list/item:loan")],
+        8,
+    )
+    .unwrap_err();
+    assert_eq!(
+        refused.check, "plan_target",
+        "neither it nor its parent resolves"
+    );
+}
+
+#[test]
+fn an_instruction_of_only_unicode_whitespace_is_blank() {
+    let doc = library();
+    for blank in ["\u{a0}", "\u{3000}", "\n\r"] {
+        let refused = check_plan(&doc, &[step(blank, "page:members")], 8).unwrap_err();
+        assert_eq!(refused.check, "plan_step_blank", "{blank:?}");
+    }
+}
+
+#[test]
+fn a_blank_target_after_a_valid_step_names_its_step() {
+    let doc = library();
+    let mut planner = proposer(vec![
+        json!({"op": "plan", "steps": [
+            step_json("add a search bar above the member list", "page:members"),
+            step_json("add a details card", "\t"),
+        ]}),
+        json!({"op": "plan", "steps": [
+            step_json("add a search bar above the member list", "page:members"),
+            step_json("add a details card", "\t"),
+        ]}),
+    ]);
+    match planner.plan_goal(&doc, &"page:members".parse().unwrap(), "a goal", 8) {
+        Err(ProposeError::Refused { check, message }) => {
+            assert_eq!(check, "plan_step_blank");
+            assert!(message.contains("step 2"), "{message}");
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
 #[test]
 fn a_decline_after_a_refused_plan_is_a_decline() {
     let doc = library();
