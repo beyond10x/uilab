@@ -438,4 +438,25 @@ mod tests {
         let say = Client::from_text(r#"{"type":"say","value":{"text":"t"}}"#).unwrap();
         assert_eq!(Settle::of(&say).wait(), Duration::from_secs(90));
     }
+
+    #[test]
+    fn a_goal_does_not_settle_on_the_operators_earlier_goal() {
+        // A browser that connects gets the latest goal re-broadcast to every subscriber
+        // (app.rs, Cmd::Connected), attributed to its operator. When that is this operator's
+        // previous goal, ended, and it reaches `act` before the new goal's planning message,
+        // the new `op goal` must not settle on it.
+        let earlier = goal_at("api-1", |g| {
+            g.planned(vec![step()]);
+            g.not_proposed(0, false);
+        });
+        assert!(
+            matches!(&earlier, Server::Goal(g) if wire::goal_ended(g)),
+            "precondition: the earlier goal is over"
+        );
+        let mut settle = Settle::of(&start());
+        assert!(
+            !settle.settled_by(&earlier),
+            "settled on the previous goal before the new one was planned"
+        );
+    }
 }
