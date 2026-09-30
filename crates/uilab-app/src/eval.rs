@@ -246,14 +246,13 @@ fn holds(node: &Value, layer: &str, component: Option<&str>) -> bool {
             _ => false,
         };
     };
-    let here = map
-        .get(key)
-        .and_then(Value::as_object)
-        .is_some_and(|children| {
-            children
-                .values()
-                .any(|c| component.is_none_or(|want| c["component"].as_str() == Some(want)))
-        });
+    // Children are a map (sections, overlays, widgets) or, for items, a list of named nodes.
+    let matches = |c: &Value| component.is_none_or(|want| c["component"].as_str() == Some(want));
+    let here = match map.get(key) {
+        Some(Value::Object(children)) => children.values().any(matches),
+        Some(Value::Array(children)) => children.iter().any(matches),
+        _ => false,
+    };
     here || map.values().any(|v| holds(v, layer, component))
 }
 

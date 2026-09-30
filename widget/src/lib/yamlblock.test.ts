@@ -104,3 +104,40 @@ test('CRLF line endings', () => {
   const r = yamlBlock(DOC.replace(/\n/g, '\r\n'), 'page:loans/overlay:edit')!;
   assert.equal(lines[r.start], '      edit:');
 });
+
+test('collection items in the list form the server writes, and in the old map form', () => {
+  const doc = [
+    'pages:',
+    '  members:',
+    '    sections:',
+    '      list:',
+    '        component: collection',
+    '        item:',
+    '        - name: badge',
+    '          primitive: badge',
+    '        - name: card',
+    '          component: member_card',
+    '      old:',
+    '        component: collection',
+    '        item:',
+    '          count:',
+    '            component: metric',
+    '',
+  ].join('\n');
+  const at = (p: string) => {
+    const r = yamlBlock(doc, p);
+    return r && [r.start, r.end];
+  };
+  assert.deepEqual(at('page:members/section:list/item:card'), [8, 10]);
+  assert.deepEqual(at('page:members/section:list/item:badge'), [6, 8]);
+  assert.deepEqual(at('page:members/section:old/item:count'), [13, 15]);
+  assert.equal(at('page:members/section:list/item:nope'), null);
+});
+
+test('widgets under the root and their body nodes', () => {
+  const doc = ['widgets:', '  member_card:', '    summary: s', '    body:', '    - name: title', '      primitive: text', '    - name: tone', '      primitive: badge', ''].join('\n');
+  const r = yamlBlock(doc, 'component:member_card')!;
+  assert.deepEqual([r.start, r.end], [1, 8]);
+  const n = yamlBlock(doc, 'component:member_card/node:tone')!;
+  assert.deepEqual([n.start, n.end], [6, 8]);
+});

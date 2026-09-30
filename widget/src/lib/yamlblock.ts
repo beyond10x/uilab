@@ -33,8 +33,14 @@ function isContent(line: string): boolean {
 
 /** End of the block whose header is `start`: the next content line indented at most `indent`. */
 function blockEnd(lines: string[], start: number, end: number, indent: number): number {
+  // A key's value may be a list written at the key's own indent (`item:` then `- name: …`, the
+  // style the server writes); those entries belong to the key. A list entry's own block does not
+  // take its siblings.
+  const keyHeader = !/^\s*-(\s|$)/.test(lines[start]);
+  const inside = (line: string) =>
+    indentOf(line) > indent || (keyHeader && indentOf(line) === indent && /^\s*-(\s|$)/.test(line));
   let k = start + 1;
-  while (k < end && (!isContent(lines[k]) || indentOf(lines[k]) > indent)) k++;
+  while (k < end && (!isContent(lines[k]) || inside(lines[k]))) k++;
   // Trailing blank lines and comments belong to what follows.
   while (k - 1 > start && !isContent(lines[k - 1])) k--;
   return k;
@@ -105,11 +111,21 @@ export function yamlBlock(text: string, path: string): LineRange | null {
     if (colon < 0) return null;
     const layer = seg.slice(0, colon);
     const name = seg.slice(colon + 1);
-    if (layer === 'nav_section') {
-      if (!step('sections')) return null;
+    // Lists of named entries: the menu's sections, a collection's items (the server writes the
+    // ess list form; an old map form is still found by key), a widget's body nodes.
+    const list = layer === 'nav_section' ? 'sections' : layer === 'item' ? 'item' : layer === 'node' ? 'body' : null;
+    if (list) {
+      if (!step(list)) return null;
       const entry = namedEntry(lines, range, name);
-      if (!entry) return null;
-      range = entry;
+      if (entry) {
+        range = entry;
+        continue;
+      }
+      if (layer === 'item' && step(name)) continue;
+      return null;
+    }
+    if (layer === 'component') {
+      if (!step('widgets') || !step(name)) return null;
       continue;
     }
     const key = KEYS[layer];
