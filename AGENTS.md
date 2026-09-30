@@ -3,6 +3,14 @@
 uilab edits a `ui-spec/1` UI document by voice in the browser. What it is and how to run it is in
 [README.md](README.md); this file is what an agent changing it must know.
 
+## Serves
+
+- **O1 — governed reach.** The agent changes the document only through a proposal the person
+  decides: one patch at the selected node, shown as a diff and a preview, written back only when
+  accepted.
+- **O5 — the generic agent platform.** A person shapes an application's UI by talking to it and
+  sees what the agent proposes before anything lands.
+
 ## Rules
 
 - Anything that runs is Rust, with clap derive for command lines. The browser app in `widget/` is
@@ -50,3 +58,17 @@ task check     # validate, drift, widget build, cargo test/clippy/fmt
 ```
 
 No paid model call is part of the gate.
+
+## Common Gates
+
+Public Gates owns the common security and privacy checks and bot delivery (Atlas ADR 0048).
+`.github/workflows/shared-gates.yml` runs the shared check; require it before integration alongside
+`task check`. Install coordinated hooks with `b10x-gates --repository beyond10x/uilab install`. They
+scan the index, messages, filenames, metadata, annotated tags and every outgoing commit since the
+adoption baseline. Private policy and signing keys stay outside this repository. From the baseline
+on, an absolute home path is refused in any file, planning records and evidence included: write
+`$HOME` or `~`.
+
+Direct commits, tags and pushes use `b10x-gates bot` as `b10x-bot[bot]`; `check`, `verify` and
+`publish` carry signed common evidence. A receipt reuses only the common checks and does not replace
+`task check`. Commit and publish paths need no Atlas checkout.
