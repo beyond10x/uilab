@@ -2,20 +2,27 @@
 format: aep.planning-md/3
 id: story:draft-sample-rows
 kind: story
-status: active
+status: implemented
 title: Draft views show sample rows in the browser
 relations:
 - decomposes: epic:ux-fidelity
 - serves: vision:website-harness
 scope:
 - confidence: cited
+  path: crates/uilab-app/src/app.rs
+- confidence: cited
+  path: crates/uilab-doc/src/fixtures.rs
+- confidence: cited
   path: widget/src/components/CompositeView.vue
 - confidence: cited
+  path: widget/src/lib/rows.ts
+- confidence: cited
   path: widget/src/store.ts
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T12:08:58Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T12:08:58Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T13:44:06Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 

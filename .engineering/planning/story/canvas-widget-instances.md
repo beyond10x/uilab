@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:canvas-widget-instances
 kind: story
-status: draft
+status: active
 title: Widget instances render their body on the canvas
 relations:
 - decomposes: epic:ux-fidelity
@@ -12,7 +12,10 @@ scope:
   path: widget/src/components/CanvasView.vue
 - confidence: cited
   path: widget/src/components/CompositeView.vue
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T13:08:12Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T13:08:12Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

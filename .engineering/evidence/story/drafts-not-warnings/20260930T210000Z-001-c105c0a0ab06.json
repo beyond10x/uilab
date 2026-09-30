@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-30T21:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:drafts-not-warnings",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "no blocker; closed by the adversary case",
+    "review": "review-result:drafts-not-warnings-adversary-1",
+    "outcome": "no-op"
+  }
+}
