@@ -141,3 +141,56 @@ test('widgets under the root and their body nodes', () => {
   const n = yamlBlock(doc, 'component:member_card/node:tone')!;
   assert.deepEqual([n.start, n.end], [6, 8]);
 });
+
+test('a section, an item in a list and a widget body node, in the layout the server writes', () => {
+  const doc = [
+    'widgets:', //                         0
+    '  loan_card:', //                     1
+    '    arrange: column', //              2
+    '    body:', //                        3
+    '    - name: title', //                4
+    '      primitive: text', //            5
+    '      style: heading', //             6
+    '    - name: state', //                7
+    '      primitive: badge', //           8
+    '      tone: neutral', //              9
+    'pages:', //                           10
+    '  showcase:', //                      11
+    '    kind: dashboard_page', //         12
+    '    sections:', //                    13
+    '      loans:', //                     14
+    '        component: collection', //    15
+    '        reads:', //                   16
+    '          view: loans.All', //        17
+    '        columns:', //                 18
+    '        - field: title', //           19
+    '        item:', //                    20
+    '        - name: card', //             21
+    '          component: loan_card', //   22
+    '          args:', //                  23
+    '            loan: row', //            24
+    '        - name: due', //              25
+    '          primitive: text', //        26
+    '      highlights:', //                27
+    '        component: board', //         28
+    '        widgets:', //                 29
+    '          overdue:', //               30
+    '            component: metric', //    31
+    '            from: overdue', //        32
+    '    overlays:', //                    33
+    '      edit:', //                      34
+    '        kind: drawer', //             35
+    '',
+  ].join('\n');
+  const at = (p: string) => {
+    const r = yamlBlock(doc, p);
+    return r && [r.start, r.end];
+  };
+  assert.deepEqual(at('page:showcase/section:loans'), [14, 27], 'a section holds its lists and ends at its sibling');
+  assert.deepEqual(at('page:showcase/section:highlights'), [27, 33], 'the last section ends at the overlays');
+  assert.deepEqual(at('page:showcase/section:loans/item:card'), [21, 25], 'an item holds its nested keys');
+  assert.deepEqual(at('page:showcase/section:loans/item:due'), [25, 27], 'the last item ends at the next section');
+  assert.deepEqual(at('page:showcase/section:highlights/widget:overdue'), [30, 33]);
+  assert.deepEqual(at('component:loan_card/node:title'), [4, 7]);
+  assert.deepEqual(at('component:loan_card/node:state'), [7, 10], 'the last body node ends at the next top-level key');
+});

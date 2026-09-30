@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { childrenOf, findNode, labelOf, navLayout, shellOf } from '../lib/outline.ts';
-import { activePage, highlight, isRemoved, marks, select, shownOutline, showPage, state, tint } from '../store.ts';
+import { activePage, marks, select, shownOutline, showPage, state, tint } from '../store.ts';
 import CompositeView from './CompositeView.vue';
 
 const root = computed(() => shownOutline.value);
@@ -23,9 +23,9 @@ const overlay = computed(() => (state.openOverlay && root.value ? findNode(root.
 
 /** Where the pending change is, when it is not on the page shown. */
 const changeElsewhere = computed(() => {
-  const h = highlight.value;
-  if (!h) return null;
-  return h.path.startsWith('page:') ? null : h.path;
+  const changed = state.proposal?.changed;
+  if (!changed) return null;
+  return changed.startsWith('page:') ? null : changed;
 });
 
 function openPage(p: OutlineNode): void {
@@ -52,7 +52,7 @@ function openOverlay(o: OutlineNode): void {
         v-for="r in barRegions"
         :key="r.path"
         class="chip node"
-        :class="[marks(r.path), { removed: isRemoved(r.path) }]" :style="tint(r.path)"
+        :class="marks(r.path)" :style="tint(r.path)"
         @click.stop="select(r.path)"
       >
         {{ r.name }} <span class="muted">{{ r.kind }}</span>
@@ -61,7 +61,7 @@ function openOverlay(o: OutlineNode): void {
         v-for="o in shellOverlays"
         :key="o.path"
         class="chip node"
-        :class="[marks(o.path), { removed: isRemoved(o.path) }]" :style="tint(o.path)"
+        :class="marks(o.path)" :style="tint(o.path)"
         @click.stop="openOverlay(o)"
       >
         ▢ {{ o.title || o.name }}
@@ -71,7 +71,7 @@ function openOverlay(o: OutlineNode): void {
       <nav
         v-if="showNav"
         class="nav-col node"
-        :class="[navRegion ? marks(navRegion.path) : {}, nav ? marks(nav.path) : {}, { removed: nav && isRemoved(nav.path) }]" :style="tint(nav?.path) ?? tint(navRegion?.path)"
+        :class="[navRegion ? marks(navRegion.path) : {}, nav ? marks(nav.path) : {}]" :style="tint(nav?.path) ?? tint(navRegion?.path)"
         @click.stop="nav ? select(nav.path) : navRegion && select(navRegion.path)"
       >
         <div class="card-label">nav{{ navRegion ? ` · ${navRegion.kind}` : '' }}</div>
@@ -79,7 +79,7 @@ function openOverlay(o: OutlineNode): void {
           <div
             v-if="g.section"
             class="nav-heading node"
-            :class="[marks(g.section.path), { removed: isRemoved(g.section.path) }]" :style="tint(g.section.path)"
+            :class="marks(g.section.path)" :style="tint(g.section.path)"
             @click.stop="select(g.section.path)"
           >
             {{ g.section.title || g.section.name }}
@@ -90,7 +90,7 @@ function openOverlay(o: OutlineNode): void {
             :key="e.page.path"
             href="#"
             class="nav-page node"
-            :class="[marks(e.page.path), { current: page?.path === e.page.path, removed: isRemoved(e.page.path) }]" :style="tint(e.page.path)"
+            :class="[marks(e.page.path), { current: page?.path === e.page.path }]" :style="tint(e.page.path)"
             @click.stop.prevent="openPage(e.page)"
           >
             {{ e.page.title || e.page.name }}
@@ -103,7 +103,7 @@ function openOverlay(o: OutlineNode): void {
         <div
           v-if="page"
           class="page node"
-          :class="[marks(page.path), { removed: isRemoved(page.path) }]" :style="tint(page.path)"
+          :class="marks(page.path)" :style="tint(page.path)"
           :data-path="page.path"
           @click.stop="select(page.path)"
         >
@@ -114,7 +114,7 @@ function openOverlay(o: OutlineNode): void {
               v-for="o in pageOverlays"
               :key="o.path"
               class="chip node"
-              :class="[marks(o.path), { removed: isRemoved(o.path) }]" :style="tint(o.path)"
+              :class="marks(o.path)" :style="tint(o.path)"
               @click.stop="openOverlay(o)"
             >
               ▢ {{ o.title || o.name }} <span class="muted">{{ o.kind }}</span>
