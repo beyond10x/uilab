@@ -11,7 +11,7 @@ const kind = computed(() => (props.node.layer === 'overlay' ? props.node.kind.sp
 const p = computed(() => propsOf(props.node));
 const view = computed(() => props.node.view);
 const draft = computed(() => isDraftView(view.value));
-const needsRows = computed(() => ['collection', 'metric', 'record'].includes(kind.value));
+const needsRows = computed(() => ['collection', 'metric', 'record', 'chart'].includes(kind.value));
 const rows = computed(() => (view.value ? state.rows[view.value] : undefined));
 const rowObjects = computed<Record<string, unknown>[]>(() => {
   const all: unknown[] = rows.value?.rows ?? [];
@@ -24,7 +24,6 @@ watchEffect(() => {
 
 const emptyLine = computed(() => {
   if (!view.value) return 'no data yet (no view)';
-  if (draft.value) return `no data yet (${view.value})`;
   if (!rows.value) return state.conn === 'open' ? `loading ${view.value}…` : `no data yet (${view.value})`;
   if (rowObjects.value.length === 0) return `no data yet (${view.value})`;
   return null;
@@ -61,6 +60,19 @@ const moreRows = computed(() => {
   const total = rows.value?.total;
   return typeof total === 'number' && total > rowObjects.value.length ? total - rowObjects.value.length : 0;
 });
+/** A chart as horizontal bars: the label is `x` (or the first text field), the value the first
+ *  series field (or the first number). Enough to see the shape, not a charting library. */
+const chartBars = computed(() => {
+  const first = rowObjects.value[0];
+  if (!first) return [];
+  const series = fieldsOf(props.node, 'series')[0]?.field;
+  const x = typeof p.value.x === 'string' ? p.value.x : Object.keys(first).find((k) => typeof first[k] === 'string');
+  const y = series ?? Object.keys(first).find((k) => typeof first[k] === 'number');
+  if (!x || !y) return [];
+  const values = rowObjects.value.map((r) => Number(r[y]) || 0);
+  const max = Math.max(1, ...values);
+  return rowObjects.value.map((r, i) => ({ label: display(r[x]), value: values[i], pct: Math.round((values[i] / max) * 100) }));
+});
 const title = computed(() => props.node.title);
 const does = computed(() => (typeof p.value.does === 'string' ? p.value.does : null));
 
@@ -77,7 +89,7 @@ function display(v: unknown): string {
     :data-path="node.path"
     @click.stop="select(node.path)"
   >
-    <div class="card-label">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span></div>
+    <div class="card-label">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span><span v-if="draft && rowObjects.length" class="sample-tag" title="made-up rows: this view has no model binding yet">sample data</span></div>
     <h3 v-if="title" class="card-title">{{ title }}</h3>
 
     <template v-if="kind === 'collection'">
@@ -136,6 +148,16 @@ function display(v: unknown): string {
     <template v-else-if="kind === 'filter_bar'">
       <div class="filter-bar">
         <input v-for="f in filterFields" :key="f.field" type="text" :placeholder="f.label" tabindex="-1" />
+      </div>
+    </template>
+
+    <template v-else-if="kind === 'chart' && chartBars.length">
+      <div class="chart-bars">
+        <div v-for="b in chartBars" :key="b.label" class="chart-bar">
+          <span class="chart-label">{{ b.label }}</span>
+          <span class="chart-fill" :style="{ width: b.pct + '%' }"></span>
+          <span class="chart-value">{{ b.value }}</span>
+        </div>
       </div>
     </template>
 

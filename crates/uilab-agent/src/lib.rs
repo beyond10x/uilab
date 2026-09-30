@@ -350,7 +350,8 @@ The 14 composite kinds, and when to use each:
 - overlay: a nested overlay opened from inside a composite.
 - confirm: a confirmation step before a command runs.
 - metric: one number (`title`, `from: <field>`).
-- chart: a series over time or categories.
+- chart: a series over time or categories (`chart: bar`, `line` or `pie`; `x: <field>`; \
+`series: [{field: …}]`).
 - board: a grid of widgets.
 - graph_editor: nodes and edges edited as a whole.
 - rich_text: formatted text.

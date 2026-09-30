@@ -417,3 +417,34 @@ fn a_batch_admits_what_its_parts_cannot_alone() {
     let wire: Patch = serde_json::from_value(serde_json::to_value(&batch).unwrap()).unwrap();
     assert_eq!(wire, batch);
 }
+
+#[test]
+fn draft_views_get_sample_rows_shaped_by_their_readers() {
+    let mut doc = library();
+    let chart = uilab_doc::model::Composite {
+        component: uilab_doc::model::CompositeKind::Chart,
+        reads: Some(uilab_doc::model::Reads {
+            view: "draft.LoansPerMonth".into(),
+            extra: Default::default(),
+        }),
+        widgets: Default::default(),
+        item: Default::default(),
+        props: [
+            ("x".to_owned(), json!("month")),
+            ("series".to_owned(), json!([{"field": "loans"}])),
+        ]
+        .into_iter()
+        .collect(),
+    };
+    doc.pages["overview"]
+        .sections
+        .insert("trend".into(), Some(chart));
+    let rows = uilab_doc::sample_rows(&doc, "draft.LoansPerMonth");
+    assert_eq!(rows.len(), 5);
+    assert_eq!(rows[0]["month"], json!("2026-05"));
+    assert!(rows[0]["loans"].is_number());
+    assert_eq!(
+        uilab_doc::sample_rows(&doc, "draft.Nothing")[0]["name"],
+        json!("name 1")
+    );
+}

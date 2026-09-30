@@ -373,11 +373,26 @@ export function requestRows(view: string | undefined): void {
   if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsRequested.add(view);
 }
 
+/**
+ * Where an instruction goes: the selection, unless nothing below the root is selected while a
+ * page is on screen. Then the page on screen is selected first, so "add a header" lands on the
+ * page the operator is looking at rather than at the document root, where only pages fit.
+ */
+export function instructionTarget(): string | undefined {
+  const selected = state.doc?.selected;
+  const page = activePage.value;
+  if ((!selected || selected === '/') && page) {
+    select(page.path);
+    return page.path;
+  }
+  return selected;
+}
+
 export function say(text: string): void {
   const t = text.trim();
   if (!t) return;
   state.notice = null;
-  const target = state.doc?.selected;
+  const target = instructionTarget();
   if (send({ type: 'say', value: target ? { text: t, target } : { text: t } })) {
     state.typed = t;
     state.transcript = null;
@@ -426,6 +441,7 @@ export async function micDown(): Promise<void> {
     state.phase = 'idle';
     return;
   }
+  instructionTarget();
   if (!send({ type: 'mic', value: { state: 'open' } })) {
     state.phase = 'idle';
     return;

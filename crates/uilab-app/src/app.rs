@@ -518,7 +518,14 @@ impl App {
                 }
             }
             Client::Rows(read) => {
-                let rows = self.fixtures.rows(&read.view);
+                let rows = if self.fixtures.has(&read.view) {
+                    self.fixtures.rows(&read.view)
+                } else {
+                    uilab_doc::ViewRows {
+                        total: None,
+                        rows: uilab_doc::sample_rows(&self.doc(), &read.view),
+                    }
+                };
                 self.send(wire::rows(&read.view, rows.total, rows.rows));
             }
         }
