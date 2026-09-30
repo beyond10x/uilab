@@ -15,6 +15,7 @@
 //! inline union tags; this crate follows when that ships.
 
 pub mod check;
+pub mod docs;
 pub mod fixtures;
 pub mod model;
 pub mod outline;
@@ -23,6 +24,7 @@ pub mod path;
 pub mod schema;
 
 pub use check::{CHECKS, Finding, Severity, check};
+pub use docs::{docs_markdown, help_markdown};
 pub use fixtures::{Fixtures, ViewRows, field_findings, sample_rows};
 pub use model::Document;
 pub use outline::{

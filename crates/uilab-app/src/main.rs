@@ -168,6 +168,9 @@ async fn run(serve: Serve) -> Result<(), String> {
         .route("/api/operators", post(api::join))
         .route("/api/act", post(api::act))
         .route("/api/state", get(api::state))
+        .route("/api/document.yaml", get(api::document_yaml))
+        .route("/api/docs.md", get(api::docs_md))
+        .route("/api/help.md", get(api::help_md))
         .fallback_service(ServeDir::new(&serve.assets))
         .with_state(shared);
     let listener = tokio::net::TcpListener::bind(serve.listen)

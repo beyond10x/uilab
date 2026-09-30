@@ -273,7 +273,10 @@ fn fields_from_view_name(view: &str) -> Vec<String> {
         if c.is_uppercase() || words.is_empty() {
             words.push(String::new());
         }
-        words.last_mut().expect("a word was pushed").push(c.to_ascii_lowercase());
+        words
+            .last_mut()
+            .expect("a word was pushed")
+            .push(c.to_ascii_lowercase());
     }
     match words.iter().position(|w| w == "per") {
         Some(i) if i > 0 && i + 1 < words.len() => {

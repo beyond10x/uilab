@@ -312,6 +312,28 @@ impl CompositeKind {
             CompositeKind::References => "references",
         }
     }
+
+    /// One line on when to use the kind, for people reading help and documentation.
+    pub fn summary(self) -> &'static str {
+        match self {
+            CompositeKind::Collection => {
+                "rows of a view as a table, cards, a list or a tree, with columns and row actions"
+            }
+            CompositeKind::Record => "one row shown as labelled fields",
+            CompositeKind::Form => "inputs bound to a command (`does`)",
+            CompositeKind::Choice => "a pick from fixed options or from a view",
+            CompositeKind::FilterBar => "search, time window and filter inputs above a collection",
+            CompositeKind::Header => "a page's title, total and actions",
+            CompositeKind::Overlay => "an overlay opened from inside a composite",
+            CompositeKind::Confirm => "a confirmation step before a command runs",
+            CompositeKind::Metric => "one number (`from` a field of the first row)",
+            CompositeKind::Chart => "a series over time or categories (`x`, `series`)",
+            CompositeKind::Board => "a grid of widgets, each an ordinary composite",
+            CompositeKind::GraphEditor => "nodes and edges edited as a whole",
+            CompositeKind::RichText => "formatted text",
+            CompositeKind::References => "what uses a record",
+        }
+    }
 }
 
 /// How a composite reads an ESS view.

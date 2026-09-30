@@ -66,6 +66,11 @@ pub enum Cmd {
     },
     /// The current document message.
     Snapshot { reply: oneshot::Sender<Server> },
+    /// The document as YAML or as generated documentation, with the app name.
+    Render {
+        docs: bool,
+        reply: oneshot::Sender<(String, String)>,
+    },
     /// Expire operators the API stopped calling.
     Tick,
 }
@@ -317,6 +322,15 @@ impl App {
             }
             Cmd::Snapshot { reply } => {
                 let _ = reply.send(self.document_message());
+            }
+            Cmd::Render { docs, reply } => {
+                let doc = self.doc();
+                let text = if docs {
+                    uilab_doc::docs_markdown(&doc, &self.fixtures, &self.findings(&doc))
+                } else {
+                    doc.to_yaml().unwrap_or_default()
+                };
+                let _ = reply.send((doc.app.clone(), text));
             }
             Cmd::Tick => {
                 let before = self.operators.len();

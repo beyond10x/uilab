@@ -448,3 +448,31 @@ fn draft_views_get_sample_rows_shaped_by_their_readers() {
         json!("name 1")
     );
 }
+
+#[test]
+fn docs_and_help_describe_the_document_and_every_kind() {
+    let doc = library();
+    let fixtures = Fixtures::load(&doc, &examples().join("library")).unwrap();
+    let docs = uilab_doc::docs_markdown(&doc, &fixtures, &check(&doc));
+    for heading in [
+        "# Lending library",
+        "## Navigation",
+        "## Pages",
+        "## Components",
+        "## Data",
+        "## Commands",
+        "## Interactions",
+        "## State and events",
+        "## Findings",
+    ] {
+        assert!(docs.contains(heading), "missing {heading}");
+    }
+    assert!(docs.contains("| `loans.All` | fixture | id, title, member, due, state |"));
+    assert!(docs.contains("`loans.ExtendLoan`"));
+    assert!(docs.contains("- `page:loans/section:list` opens `edit`"));
+    let help = uilab_doc::help_markdown();
+    for kind in uilab_doc::model::CompositeKind::ALL {
+        assert!(help.contains(&format!("**{}**", kind.as_str())));
+    }
+    assert!(help.contains("| page (a route) | section, overlay |"));
+}

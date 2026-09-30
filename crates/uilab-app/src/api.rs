@@ -216,3 +216,74 @@ impl Settle {
         }
     }
 }
+
+#[derive(Deserialize)]
+pub struct Export {
+    /// Present to download the file rather than show it.
+    #[serde(default)]
+    pub download: Option<String>,
+}
+
+async fn render(shared: &Shared, docs: bool) -> Result<(String, String), (StatusCode, String)> {
+    let (reply, answer) = oneshot::channel();
+    let gone = || {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the session is gone".to_owned(),
+        )
+    };
+    shared
+        .inbox
+        .send(Cmd::Render { docs, reply })
+        .await
+        .map_err(|_| gone())?;
+    answer.await.map_err(|_| gone())
+}
+
+/// `GET /api/document.yaml`: the document as it stands; `?download` saves it as `<app>.ui.yaml`.
+pub async fn document_yaml(
+    State(shared): State<Shared>,
+    axum::extract::Query(export): axum::extract::Query<Export>,
+) -> Result<axum::response::Response, (StatusCode, String)> {
+    use axum::response::IntoResponse;
+    let (app, yaml) = render(&shared, false).await?;
+    let mut response = (
+        [(axum::http::header::CONTENT_TYPE, "text/yaml; charset=utf-8")],
+        yaml,
+    )
+        .into_response();
+    if export.download.is_some() {
+        let value = format!("attachment; filename=\"{app}.ui.yaml\"");
+        if let Ok(value) = axum::http::HeaderValue::from_str(&value) {
+            response
+                .headers_mut()
+                .insert(axum::http::header::CONTENT_DISPOSITION, value);
+        }
+    }
+    Ok(response)
+}
+
+/// `GET /api/docs.md`: documentation generated from the document.
+pub async fn docs_md(
+    State(shared): State<Shared>,
+) -> Result<([(axum::http::HeaderName, &'static str); 1], String), (StatusCode, String)> {
+    let (_, docs) = render(&shared, true).await?;
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/markdown; charset=utf-8",
+        )],
+        docs,
+    ))
+}
+
+/// `GET /api/help.md`: what uilab and its agent can do.
+pub async fn help_md() -> ([(axum::http::HeaderName, &'static str); 1], String) {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/markdown; charset=utf-8",
+        )],
+        uilab_doc::help_markdown(),
+    )
+}
