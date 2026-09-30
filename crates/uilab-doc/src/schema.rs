@@ -22,9 +22,14 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
         ops.push("remove");
     }
     ops.push("batch");
+    ops.push("decline");
 
     let mut properties = serde_json::Map::new();
-    properties.insert("op".into(), json!({"enum": ops, "description": "insert adds a child under target; replace swaps the node at target; remove deletes it; batch applies `patches` together, for one instruction that must change more than one node"}));
+    properties.insert("op".into(), json!({"enum": ops, "description": "insert adds a child under target; replace swaps the node at target; remove deletes it; batch applies `patches` together, for one instruction that must change more than one node; decline changes nothing, with a `reason`, when the words are not a request to change the UI"}));
+    properties.insert(
+        "reason".into(),
+        json!({"type": "string", "description": "for decline only: why nothing is proposed, or the answer to a question"}),
+    );
     properties.insert(
         "patches".into(),
         json!({

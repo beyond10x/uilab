@@ -154,9 +154,23 @@ impl App {
             }),
         );
         let stt = match config.stt {
-            Some(c) => Some(Arc::new(Mutex::new(
-                uilab_stt::Transcriber::load(c).map_err(|e| format!("speech model: {e}"))?,
-            ))),
+            Some(c) => {
+                let mut stt =
+                    uilab_stt::Transcriber::load(c).map_err(|e| format!("speech model: {e}"))?;
+                // The first transcription in a process compiles the GPU shaders (29.7 s measured on
+                // 2026-09-30); pay it here, before anybody speaks. Quiet noise, loud enough to pass
+                // the silence gate; whatever whisper hears in it is thrown away.
+                let started = Instant::now();
+                let noise: Vec<f32> = (0..16_000)
+                    .map(|i| ((i * 7919 % 97) as f32 - 48.0) * 0.004)
+                    .collect();
+                let _ = stt.transcribe(&noise, "");
+                println!(
+                    "uilab: speech warmed up in {} ms",
+                    started.elapsed().as_millis()
+                );
+                Some(Arc::new(Mutex::new(stt)))
+            }
             None => None,
         };
         let proposer =
@@ -670,6 +684,7 @@ impl App {
                 .propose_with(&doc, &target, &utterance, &fields)
                 .map_err(|e| match e {
                     uilab_agent::ProposeError::Refused { check, message } => (check, message),
+                    uilab_agent::ProposeError::Declined(reason) => ("declined".to_owned(), reason),
                     other => ("agent".to_owned(), other.to_string()),
                 });
             let ms = started.elapsed().as_millis() as u64;

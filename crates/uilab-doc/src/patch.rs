@@ -137,6 +137,15 @@ pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), 
     let before = check(doc);
     let mut next = doc.clone();
     apply_unchecked(&mut next, patch)?;
+    if next == *doc {
+        return Err(Refusal::new(
+            "no_change",
+            format!(
+                "the patch at `{}` leaves the document as it is",
+                patch.target()
+            ),
+        ));
+    }
     let after = check(&next);
     if let Some(new) = after
         .iter()

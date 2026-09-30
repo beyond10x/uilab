@@ -68,7 +68,7 @@ cases:
 
   - id: add-column
     target: page:loans/section:list
-    say: also show the member in this table
+    say: also show the loan id in this table
     expect: {op: Replace, layer: section, component: collection}
 
   - id: remove-section
@@ -100,3 +100,23 @@ cases:
     target: page:members/section:list
     say: add an edit action on each row that opens a drawer to edit the member
     expect: {op: Replace, layer: section, component: collection}
+
+  - id: thanks
+    target: page:members/section:list
+    say: Thank you.
+    expect: {declined: true}
+
+  - id: dot
+    target: page:members
+    say: "."
+    expect: {declined: true}
+
+  - id: question
+    target: page:loans
+    say: what can you do here?
+    expect: {declined: true}
+
+  - id: creative
+    target: page:overview
+    say: show me how creative you can be
+    expect: {}

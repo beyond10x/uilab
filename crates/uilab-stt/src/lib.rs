@@ -61,6 +61,10 @@ pub enum SttError {
     },
     #[error("audio too short: {audio_ms} ms, at least {min_ms} ms is required")]
     TooShort { audio_ms: u64, min_ms: u64 },
+    #[error(
+        "no speech: the microphone delivered near silence (peak {peak_db:.0} dBFS, RMS {rms_db:.0} dBFS); check the input device"
+    )]
+    Silence { peak_db: f32, rms_db: f32 },
     #[error("audio sample {index} is not a finite number")]
     NonFiniteSample { index: usize },
     #[error("whisper failed: {0}")]
@@ -197,7 +201,41 @@ fn check_audio(samples: &[f32]) -> Result<u64, SttError> {
     if let Some(index) = samples.iter().position(|s| !s.is_finite()) {
         return Err(SttError::NonFiniteSample { index });
     }
+    let (peak_db, rms_db) = levels(samples);
+    if peak_db < SILENCE_PEAK_DBFS {
+        return Err(SttError::Silence { peak_db, rms_db });
+    }
     Ok(audio_ms)
+}
+
+/// Below this peak level an utterance is the input's noise floor, not speech. Whisper turns such
+/// audio into invented text ("Thank you."), which then reads as an instruction. Measured on
+/// 2026-09-30: speech peaked between -19 and -0.4 dBFS; three silent recordings between -52 and
+/// -49 dBFS.
+pub const SILENCE_PEAK_DBFS: f32 = -40.0;
+
+/// Peak and RMS level of the samples, in dBFS.
+pub fn levels(samples: &[f32]) -> (f32, f32) {
+    let peak = samples.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+    let mean_square = samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32;
+    let db = |v: f32| 20.0 * v.max(1e-9).log10();
+    (db(peak), db(mean_square.sqrt()))
+}
+
+#[cfg(test)]
+mod level_tests {
+    use super::*;
+
+    #[test]
+    fn near_silence_is_refused_and_speech_level_passes() {
+        let quiet = vec![0.003_f32; 16_000];
+        assert!(matches!(check_audio(&quiet), Err(SttError::Silence { .. })));
+        let mut speech = vec![0.0_f32; 16_000];
+        speech[100] = 0.2;
+        assert!(check_audio(&speech).is_ok());
+        let (peak, rms) = levels(&[0.5, -0.5]);
+        assert!((peak + 6.02).abs() < 0.01 && (rms + 6.02).abs() < 0.01);
+    }
 }
 
 /// whisper's C API takes the prompt as a C string; drop NUL bytes and surrounding whitespace.
@@ -389,8 +427,8 @@ mod tests {
             check_audio(&[]),
             Err(SttError::TooShort { audio_ms: 0, .. })
         ));
-        assert_eq!(check_audio(&vec![0.0; 4_800]).unwrap(), 300);
-        assert_eq!(check_audio(&vec![0.0; 32_000]).unwrap(), 2_000);
+        assert_eq!(check_audio(&vec![0.1; 4_800]).unwrap(), 300);
+        assert_eq!(check_audio(&vec![0.1; 32_000]).unwrap(), 2_000);
     }
 
     #[test]
@@ -465,7 +503,14 @@ mod tests {
             gpu: cfg!(feature = "cuda"),
         })
         .unwrap();
-        let t = stt.transcribe(&vec![0.0; 32_000], "").unwrap();
+        assert!(matches!(
+            stt.transcribe(&vec![0.0; 32_000], ""),
+            Err(SttError::Silence { .. })
+        ));
+        let quiet_noise: Vec<f32> = (0..32_000)
+            .map(|i| ((i * 7919 % 97) as f32 - 48.0) * 0.004)
+            .collect();
+        let t = stt.transcribe(&quiet_noise, "").unwrap();
         assert_eq!(t.audio_ms, 2_000);
         assert!(!t.text.contains('['), "{:?}", t.text);
         assert!(matches!(

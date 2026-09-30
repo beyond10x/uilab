@@ -231,3 +231,15 @@ fn a_target_that_names_no_node_is_refused_before_any_turn() {
     assert!(matches!(error, ProposeError::Target(_)), "{error}");
     assert!(seen.lock().unwrap().is_empty());
 }
+
+#[test]
+fn a_decline_proposes_nothing_and_says_why() {
+    let doc = library();
+    let (mut proposer, _) = proposer(vec![
+        serde_json::json!({"op": "decline", "target": "page:loans", "reason": "that was thanks, not an instruction"}),
+    ]);
+    match proposer.propose(&doc, &loans(), "Thank you.") {
+        Err(uilab_agent::ProposeError::Declined(reason)) => assert!(reason.contains("thanks")),
+        other => panic!("expected a decline, got {other:?}"),
+    }
+}

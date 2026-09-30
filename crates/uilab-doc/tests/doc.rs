@@ -115,11 +115,14 @@ fn patch_schema_offers_only_what_the_node_can_take() {
     assert!(metric["properties"].get("child").is_none());
     assert_eq!(
         metric["properties"]["op"]["enum"],
-        json!(["replace", "remove", "batch"])
+        json!(["replace", "remove", "batch", "decline"])
     );
 
     let root = patch_schema(&doc, &NodePath::root()).unwrap();
-    assert_eq!(root["properties"]["op"]["enum"], json!(["insert", "batch"]));
+    assert_eq!(
+        root["properties"]["op"]["enum"],
+        json!(["insert", "batch", "decline"])
+    );
     assert_eq!(layers(root.clone()), ["shell", "page"]);
     let nav = &root["properties"]["child"]["oneOf"][1]["properties"]["nav_section"]["enum"];
     assert_eq!(nav, &json!(["circulation", "people"]));
@@ -475,4 +478,24 @@ fn docs_and_help_describe_the_document_and_every_kind() {
         assert!(help.contains(&format!("**{}**", kind.as_str())));
     }
     assert!(help.contains("| page (a route) | section, overlay |"));
+}
+
+#[test]
+fn a_patch_that_changes_nothing_is_refused() {
+    let doc = library();
+    let list = path("page:members/section:list");
+    let same =
+        serde_json::to_value(doc.pages["members"].sections["list"].as_ref().unwrap()).unwrap();
+    assert_eq!(
+        admit(
+            &doc,
+            &Patch::Replace {
+                target: list,
+                node: same
+            }
+        )
+        .unwrap_err()
+        .check,
+        "no_change"
+    );
 }

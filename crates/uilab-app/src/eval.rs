@@ -40,6 +40,9 @@ pub struct Expect {
     /// Longest acceptable time from instruction to proposal.
     #[serde(default)]
     pub max_ms: Option<u64>,
+    /// The words are not an instruction: the case passes only when the agent declines.
+    #[serde(default)]
+    pub declined: bool,
 }
 
 #[derive(Serialize)]
@@ -81,6 +84,16 @@ pub fn judge(case: &Case, messages: &[Server], ms: u64) -> Outcome {
                 _ => None,
             });
             got = why.unwrap_or_else(|| "no answer before the wait ran out".into());
+            if !(case.expect.declined && got.starts_with("refused declined")) {
+                reasons.push(got.clone());
+            }
+        }
+        Some(p) if case.expect.declined => {
+            got = format!(
+                "proposed at {} for words that are no instruction",
+                p.changed.0
+            );
+            after = p.after.clone();
             reasons.push(got.clone());
         }
         Some(p) => {
@@ -97,6 +110,7 @@ pub fn judge(case: &Case, messages: &[Server], ms: u64) -> Outcome {
             let batch_judged = op == "Batch" && case.expect.op.as_deref() != Some("Batch");
             if batch_judged {
                 match (&case.expect.layer, &case.expect.component) {
+                    (None, None) => {}
                     (Some(layer), component) if holds(&node, layer, component.as_deref()) => {}
                     (layer, component) => reasons.push(format!(
                         "batch holds no {} {}",
@@ -275,6 +289,7 @@ mod tests {
             layer: Some("overlay".into()),
             component: Some("confirm".into()),
             max_ms: None,
+            declined: false,
         };
         let page = "kind: list_page\nsections:\n  list: {component: collection}\noverlays:\n  cancel: {kind: dialog, component: confirm}\n";
         let out = judge(
@@ -299,6 +314,7 @@ mod tests {
             layer: Some("section".into()),
             component: Some("collection".into()),
             max_ms: None,
+            declined: false,
         };
         let out = judge(
             &case(expect),
@@ -319,6 +335,7 @@ mod tests {
             layer: Some("overlay".into()),
             component: Some("form".into()),
             max_ms: Some(5),
+            declined: false,
         };
         let out = judge(
             &case(expect.clone()),

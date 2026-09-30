@@ -108,6 +108,10 @@ pub enum ProposeError {
     /// Every attempt was refused; this is the last refusal.
     #[error("the patch was refused on every attempt; last refusal {check}: {message}")]
     Refused { check: String, message: String },
+    /// The words were not a request to change the UI (thanks, a greeting, a question, noise);
+    /// nothing is proposed, and this says why or answers the question.
+    #[error("declined: {0}")]
+    Declined(String),
 }
 
 /// Proposes patches. One model connection, reused across proposals.
@@ -222,6 +226,12 @@ impl Proposer {
                 (true, Some(structured)) => structured,
                 (_, _) => return Err(ProposeError::Stopped(describe_stop(&outcome.stop))),
             };
+            if structured["op"] == "decline" {
+                let reason = structured["reason"]
+                    .as_str()
+                    .unwrap_or("not an instruction to change the UI");
+                return Err(ProposeError::Declined(reason.to_owned()));
+            }
             let refused = match serde_json::from_value::<Patch>(structured) {
                 Ok(patch) => match uilab_doc::admit(doc, &patch) {
                     Ok(_) => {
@@ -321,6 +331,15 @@ You edit one user-interface document in the `ui-spec/1` format by proposing exac
 The operator speaks an instruction while pointing at one node of the document; you answer by \
 calling the `answer` tool once with a patch whose `target` is that node. Do not explain; call \
 `answer`.
+
+Not every utterance is an instruction. When the words do not ask for a change to the UI (thanks, \
+a greeting, small talk, a question about what you can do, a fragment, or text speech recognition \
+invents from silence such as \"Thank you.\" or \"you\"), answer `op: decline` with a one-line \
+`reason`; for a question, the reason is the short answer. Never turn such words into a change. \
+An open request is an instruction, not a reason to decline: \"show me what you can do\", \"be \
+creative\", \"surprise me\", \"build the most complex form you can\", \"draw some charts\" ask \
+for a substantial, sensible change at the target, usually a `batch` of several composites that \
+fit the page and read views the document has. Decline only when there is nothing to build.
 
 The instruction comes from speech-to-text. Ignore filler words (um, uh, like, so, please, can \
 you), false starts and repetitions. Kind names may be mis-heard: \"table\", \"list\", \"grid\" or \

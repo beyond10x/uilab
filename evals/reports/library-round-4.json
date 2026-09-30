@@ -1,0 +1,285 @@
+{
+  "suite": "library",
+  "round": 4,
+  "model": "claude-sonnet-5-5",
+  "passed": 22,
+  "cases": 24,
+  "outcomes": [
+    {
+      "id": "overdue-table",
+      "target": "page:loans",
+      "say": "add a table of overdue loans with the title, the member and the due date",
+      "pass": true,
+      "reasons": [],
+      "ms": 2141,
+      "got": "Insert page:loans -> page:loans/section:overdue",
+      "after": "component: collection\nreads:\n  view: loans.All\n  params:\n    state: overdue\ntitle: Overdue loans\ncolumns:\n- field: title\n- field: member\n- field: due\n",
+      "warnings": []
+    },
+    {
+      "id": "filler-words",
+      "target": "page:loans",
+      "say": "um so can you like add uh a list of loans that are due soon please",
+      "pass": true,
+      "reasons": [],
+      "ms": 3444,
+      "got": "Insert page:loans -> page:loans/section:due_soon",
+      "after": "component: collection\nreads:\n  view: loans.All\n  params:\n    state: due_soon\ntitle: Due soon\ncolumns:\n- field: title\n- field: member\n- field: due\n- field: state\n  as: tag\n",
+      "warnings": []
+    },
+    {
+      "id": "misheard-kind",
+      "target": "page:overview",
+      "say": "add a collections of recent members",
+      "pass": true,
+      "reasons": [],
+      "ms": 2160,
+      "got": "Insert page:overview -> page:overview/section:recent_members",
+      "after": "component: collection\nreads:\n  view: members.All\n  params:\n    size: 5\ntitle: Recent members\ncolumns:\n- field: name\n- field: joined\n- field: standing\n",
+      "warnings": []
+    },
+    {
+      "id": "metric-count",
+      "target": "page:members",
+      "say": "add a number showing how many members we have",
+      "pass": true,
+      "reasons": [],
+      "ms": 2530,
+      "got": "Insert page:members -> page:members/section:member_count",
+      "after": "component: metric\nreads:\n  view: draft.MemberCount\ntitle: Members\nfrom: total\n",
+      "warnings": [
+        "draft_read at page:members/section:member_count: reads `draft.MemberCount`, a placeholder with no model binding yet"
+      ]
+    },
+    {
+      "id": "chart",
+      "target": "page:overview",
+      "say": "add a chart of loans per week",
+      "pass": true,
+      "reasons": [],
+      "ms": 2425,
+      "got": "Insert page:overview -> page:overview/section:loans_per_week",
+      "after": "component: chart\nreads:\n  view: draft.LoansPerWeek\ntitle: Loans per week\nchart: bar\nx: week\nseries:\n- field: loans\n",
+      "warnings": [
+        "draft_read at page:overview/section:loans_per_week: reads `draft.LoansPerWeek`, a placeholder with no model binding yet"
+      ]
+    },
+    {
+      "id": "filter-bar",
+      "target": "page:loans",
+      "say": "add a filter bar to search loans by title and member",
+      "pass": true,
+      "reasons": [],
+      "ms": 1639,
+      "got": "Insert page:loans -> page:loans/section:filters",
+      "after": "component: filter_bar\nreads:\n  view: loans.All\n",
+      "warnings": []
+    },
+    {
+      "id": "record",
+      "target": "page:members",
+      "say": "add a details card for the selected member with name, joined and standing",
+      "pass": true,
+      "reasons": [],
+      "ms": 1901,
+      "got": "Insert page:members -> page:members/section:details",
+      "after": "component: record\nreads:\n  view: members.All\ntitle: Member details\nfields:\n- name\n- joined\n- standing\n",
+      "warnings": []
+    },
+    {
+      "id": "drawer-form",
+      "target": "page:members",
+      "say": "add a drawer to add a new member with name and email",
+      "pass": true,
+      "reasons": [],
+      "ms": 3436,
+      "got": "Insert page:members -> page:members/overlay:add_member",
+      "after": "kind: drawer\ncomponent: form\ntitle: Add member\ndoes: members.AddMember\nfields:\n- name\n- email\n",
+      "warnings": []
+    },
+    {
+      "id": "confirm-dialog",
+      "target": "page:loans",
+      "say": "add a confirmation dialog before a loan is cancelled",
+      "pass": true,
+      "reasons": [],
+      "ms": 5800,
+      "got": "Batch page:loans -> page:loans",
+      "after": "kind: list_page\ntitle: Loans\nsections:\n  list:\n    component: collection\n    reads:\n      view: loans.All\n      paging: server\n    columns:\n    - field: title\n    - field: member\n    - field: due\n    - field: state\n      as: tag\n    row_actions:\n    - opens: edit\n      label: Extend\n    - opens: cancel\n      label: Cancel\noverlays:\n  edit:\n    kind: drawer\n    component: form\n    title: Extend loan\n    does: loans.ExtendLoan\n    fields:\n    - due\n  cancel:\n    kind: dialog\n    component: confirm\n    title: Cancel this loan?\n    does: loans.CancelLoan\n",
+      "warnings": []
+    },
+    {
+      "id": "new-page-in-menu",
+      "target": "/",
+      "say": "add a page for reservations in the circulation menu with a table of reservations",
+      "pass": true,
+      "reasons": [],
+      "ms": 2302,
+      "got": "Insert / -> page:reservations",
+      "after": "kind: list_page\nshell: app\ntitle: Reservations\nsections:\n  reservations:\n    component: collection\n    reads:\n      view: draft.Reservations\n    title: Reservations\n    columns:\n    - field: title\n    - field: member\n    - field: reserved\n    - field: state\n      as: tag\n",
+      "warnings": [
+        "draft_read at page:reservations/section:reservations: reads `draft.Reservations`, a placeholder with no model binding yet"
+      ]
+    },
+    {
+      "id": "new-hidden-page",
+      "target": "/",
+      "say": "add a settings page for library opening hours",
+      "pass": true,
+      "reasons": [],
+      "ms": 2029,
+      "got": "Insert / -> page:opening_hours",
+      "after": "kind: settings_page\nshell: app\ntitle: Opening hours\nsections:\n  hours:\n    component: form\n    reads:\n      view: draft.OpeningHours\n    does: library.SetOpeningHours\n    title: Library opening hours\n    fields:\n    - day\n    - opens\n    - closes\n    - closed\n",
+      "warnings": [
+        "draft_read at page:opening_hours/section:hours: reads `draft.OpeningHours`, a placeholder with no model binding yet"
+      ]
+    },
+    {
+      "id": "nav-section",
+      "target": "nav",
+      "say": "add a menu section called reports",
+      "pass": true,
+      "reasons": [],
+      "ms": 3303,
+      "got": "Insert nav -> nav/nav_section:reports",
+      "after": "name: reports\nlabel: Reports\npages: []\n",
+      "warnings": []
+    },
+    {
+      "id": "rename-title",
+      "target": "page:members/section:list",
+      "say": "give this table the title all members",
+      "pass": true,
+      "reasons": [],
+      "ms": 1972,
+      "got": "Replace page:members/section:list -> page:members/section:list",
+      "after": "component: collection\nreads:\n  view: members.All\ntitle: All members\ncolumns:\n- field: name\n- field: joined\n- field: loans\n- field: standing\n  as: tag\n",
+      "warnings": []
+    },
+    {
+      "id": "add-column",
+      "target": "page:loans/section:list",
+      "say": "also show the member in this table",
+      "pass": false,
+      "reasons": [
+        "refused declined: This table already shows the member column, so nothing needs to change."
+      ],
+      "ms": 3278,
+      "got": "refused declined: This table already shows the member column, so nothing needs to change.",
+      "after": "",
+      "warnings": []
+    },
+    {
+      "id": "remove-section",
+      "target": "page:overview/section:recent",
+      "say": "remove this",
+      "pass": true,
+      "reasons": [],
+      "ms": 1614,
+      "got": "Remove page:overview/section:recent -> page:overview/section:recent",
+      "after": "",
+      "warnings": []
+    },
+    {
+      "id": "board-widget",
+      "target": "page:overview",
+      "say": "add a dashboard board with a widget for overdue loans",
+      "pass": true,
+      "reasons": [],
+      "ms": 3242,
+      "got": "Insert page:overview -> page:overview/section:dashboard",
+      "after": "component: board\nwidgets:\n  overdue:\n    component: metric\n    reads:\n      view: loans.Summary\n    title: Overdue loans\n    from: overdue\n",
+      "warnings": []
+    },
+    {
+      "id": "item-in-collection",
+      "target": "page:members/section:list",
+      "say": "show a small metric of open loans in each member row",
+      "pass": true,
+      "reasons": [],
+      "ms": 3218,
+      "got": "Insert page:members/section:list -> page:members/section:list/item:open_loans",
+      "after": "component: metric\ntitle: Open loans\nfrom: loans\n",
+      "warnings": []
+    },
+    {
+      "id": "shell-overlay",
+      "target": "shell:app",
+      "say": "add a help popover available on every page",
+      "pass": true,
+      "reasons": [],
+      "ms": 1907,
+      "got": "Insert shell:app -> shell:app/overlay:help",
+      "after": "kind: popover\ncomponent: rich_text\ntitle: Help\n",
+      "warnings": []
+    },
+    {
+      "id": "german",
+      "target": "page:members",
+      "say": "füge eine Tabelle mit den Mitgliedern hinzu, mit Name und Beitrittsdatum",
+      "pass": true,
+      "reasons": [],
+      "ms": 2492,
+      "got": "Insert page:members -> page:members/section:joined",
+      "after": "component: collection\nreads:\n  view: members.All\ntitle: Mitglieder\ncolumns:\n- field: name\n- field: joined\n",
+      "warnings": []
+    },
+    {
+      "id": "row-action",
+      "target": "page:members/section:list",
+      "say": "add an edit action on each row that opens a drawer to edit the member",
+      "pass": true,
+      "reasons": [],
+      "ms": 4493,
+      "got": "Batch page:members/section:list -> page:members",
+      "after": "kind: list_page\ntitle: Members\nsections:\n  list:\n    component: collection\n    reads:\n      view: members.All\n    columns:\n    - field: name\n    - field: joined\n    - field: loans\n    - field: standing\n      as: tag\n    row_actions:\n    - opens: edit_member\n      label: Edit\noverlays:\n  edit_member:\n    kind: drawer\n    component: form\n    reads:\n      view: members.All\n    title: Edit member\n    does: members.EditMember\n    fields:\n    - name\n    - standing\n",
+      "warnings": []
+    },
+    {
+      "id": "thanks",
+      "target": "page:members/section:list",
+      "say": "Thank you.",
+      "pass": true,
+      "reasons": [],
+      "ms": 1559,
+      "got": "refused declined: \"Thank you.\" is not a request to change the UI, so nothing was changed.",
+      "after": "",
+      "warnings": []
+    },
+    {
+      "id": "dot",
+      "target": "page:members",
+      "say": ".",
+      "pass": true,
+      "reasons": [],
+      "ms": 1993,
+      "got": "refused declined: The instruction was only punctuation, so it doesn't ask for any change to the UI.",
+      "after": "",
+      "warnings": []
+    },
+    {
+      "id": "question",
+      "target": "page:loans",
+      "say": "what can you do here?",
+      "pass": true,
+      "reasons": [],
+      "ms": 2395,
+      "got": "refused declined: I can edit this Loans page: add or change sections like tables, filter bars, metrics, charts, forms and record details, plus drawers and dialogs, and rename or remove things. Just say what you want.",
+      "after": "",
+      "warnings": []
+    },
+    {
+      "id": "creative",
+      "target": "page:overview",
+      "say": "show me how creative you can be",
+      "pass": false,
+      "reasons": [
+        "batch holds no node "
+      ],
+      "ms": 6803,
+      "got": "Batch page:overview -> page:overview",
+      "after": "kind: dashboard_page\ntitle: Overview\nsections:\n  on_loan:\n    component: metric\n    reads:\n      view: loans.Summary\n    title: Copies on loan\n    from: on_loan\n  recent:\n    component: collection\n    reads:\n      view: loans.All\n      params:\n        size: 5\n    title: Recent loans\n    columns:\n    - field: title\n    - field: member\n    - field: due\n  overdue:\n    component: metric\n    reads:\n      view: loans.Summary\n    title: Overdue copies\n    from: overdue\n  loans_by_member:\n    component: chart\n    reads:\n      view: members.All\n    title: Loans per member\n    chart: bar\n    x: name\n    series:\n    - field: loans\n  overdue_loans:\n    component: collection\n    reads:\n      view: loans.All\n      params:\n        state: overdue\n    title: Overdue loans\n    columns:\n    - field: title\n    - field: member\n    - field: due\n    - field: state\n      as: tag\n  members:\n    component: collection\n    reads:\n      view: members.All\n      params:\n        size: 5\n    title: Members\n    columns:\n    - field: name\n    - field: joined\n    - field: loans\n    - field: standing\n      as: tag\n",
+      "warnings": []
+    }
+  ]
+}
