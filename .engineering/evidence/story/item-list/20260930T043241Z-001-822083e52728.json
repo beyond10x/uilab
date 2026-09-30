@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T04:32:41Z",
+  "actor": "human:timo",
+  "artifact": "story:item-list",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "VERIFIED: the ess list form item: [{name, component, args}] parses and resolves on unit/item-list 8d37151 (cargo test -p uilab-doc 55 passed 0 failed); baseline refused it with 'item: invalid type: sequence, expected a map' (the pinned case at 5e4fefc and the round-1 red run)",
+    "reference": "~/.cache/uilab-wave-w2/item-list/r2-green.log"
+  }
+}

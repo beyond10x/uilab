@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T04:55:57Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-goals",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "VERIFIED (new behaviour): live goal on 70f8ac4 planned 3 steps at page:members, all accepted, state done, document changed (revision 3, 0 findings); round 3 6fbb56a: cargo test -p uilab-app 57 passed, widget 80 passed; coordinator read the round-3 test diff (adversary files unchanged, one own test replaced by a stricter one); baseline wave/2026-09-30-w2 has no goal message",
+    "reference": "~/.cache/uilab-wave-w2/agent-goals/gates-r3.log"
+  }
+}

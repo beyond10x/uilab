@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T04:24:09Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-widgets",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "VERIFIED: cargo test -p uilab-agent on unit/agent-widgets 1fd3184 exit 0 (51 cases); live check 2 (cd1e73c) returned a batch inserting component:member_card at / and an item under page:members/section:list, leaving its 4 columns; baseline wave/2026-09-30-w2 INSTRUCTIONS have no widget section (round-1 red run: the_instructions_explain_widgets... FAILED)",
+    "reference": "~/.cache/uilab-wave-w2/agent-widgets/live2.out"
+  }
+}
