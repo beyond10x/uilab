@@ -81,7 +81,7 @@ function openOverlay(o: OutlineNode): void {
           class="chrome-account node"
           :class="marks(r.path)" :style="tint(r.path)"
           :title="r.name"
-          :aria-label="account(r).name"
+          :aria-label="account(r).sample ? `${account(r).name}, sample data` : account(r).name"
           @click.stop="select(r.path)"
         >
           <span class="avatar" aria-hidden="true">{{ account(r).initial }}</span>
@@ -94,7 +94,7 @@ function openOverlay(o: OutlineNode): void {
           class="chrome-bell node"
           :class="marks(r.path)" :style="tint(r.path)"
           :title="r.title || 'notifications'"
-          aria-label="notifications"
+          :aria-label="r.title || 'notifications'"
           @click.stop="select(r.path)"
         >
           🔔

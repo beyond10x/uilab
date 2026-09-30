@@ -33,7 +33,7 @@ onMounted(() => helpText.reload());
         <button class="link" @click="state.helpOpen = false">close <kbd>Esc</kbd></button>
       </div>
       <h3>Keys</h3>
-      <p class="muted small">Keys other than Esc do nothing while a text field has focus.</p>
+      <p class="muted small">Keys do nothing while a text field has focus; in the name field Enter keeps and Esc cancels the new name.</p>
       <table class="shortcuts">
         <tr v-for="[keys, what] in SHORTCUTS" :key="what">
           <td>
