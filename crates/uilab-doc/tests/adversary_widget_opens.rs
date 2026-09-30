@@ -80,6 +80,30 @@ fn opens_at(doc: &Document) -> Vec<String> {
         .collect()
 }
 
+/// Asserts the `opens_resolves` findings are at `expected` instance paths, in order, and each
+/// message names its body trail.
+fn assert_opens(found: Vec<(String, String)>, expected: &[(&str, &str)], context: &str) {
+    assert_eq!(
+        found.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
+        expected.iter().map(|(p, _)| *p).collect::<Vec<_>>(),
+        "{context}: {found:#?}"
+    );
+    for ((_, message), (_, trail)) in found.iter().zip(expected) {
+        assert!(
+            message.contains(trail),
+            "{context}: `{message}` lacks `{trail}`"
+        );
+    }
+}
+
+fn opens_found(doc: &Document) -> Vec<(String, String)> {
+    check(doc)
+        .into_iter()
+        .filter(|f| f.check == "opens_resolves")
+        .map(|f| (f.path, f.message))
+        .collect()
+}
+
 fn with_widgets(text: &str, widgets: &str) -> String {
     text.replace("widgets:\n", &format!("widgets:\n{widgets}"))
 }
@@ -178,23 +202,32 @@ fn a_recursive_widget_reached_first_inside_another_is_still_expanded_at_its_own_
         &with_widgets(DOC, widgets),
         "          - {name: la, component: loop_a}\n",
     ));
-    assert_eq!(
-        opens_at(&alone),
-        ["page:members/section:list/item:la/body/b/body/go"],
-        "loop_a used alone"
+    assert_opens(
+        opens_found(&alone),
+        &[(
+            "page:members/section:list/item:la",
+            "widget `loop_a`, body `body/b/body/go`",
+        )],
+        "loop_a used alone",
     );
 
     let after_b = parse(&with_member_items(
         &with_widgets(DOC, widgets),
         "          - {name: lb, component: loop_b}\n          - {name: la, component: loop_a}\n",
     ));
-    assert_eq!(
-        opens_at(&after_b),
-        [
-            "page:members/section:list/item:lb/body/go",
-            "page:members/section:list/item:la/body/b/body/go",
+    assert_opens(
+        opens_found(&after_b),
+        &[
+            (
+                "page:members/section:list/item:lb",
+                "widget `loop_b`, body `body/go`",
+            ),
+            (
+                "page:members/section:list/item:la",
+                "widget `loop_a`, body `body/b/body/go`",
+            ),
         ],
-        "loop_a used after loop_b"
+        "loop_a used after loop_b",
     );
 
     let with_b = parse(&with_member_items(
@@ -275,15 +308,22 @@ fn every_page_position_is_a_use_site_and_shell_or_batch_overlays_resolve() {
         "          - {name: pick, primitive: button, label: Pick, action: {name: pick, does: loans.Pick, choice: {component: loan_card, args: {loan: row}}}}\n          - {name: ask, component: helper}\n",
     );
     let doc = parse(&text);
-    let mut found = opens_at(&doc);
+    let mut found = opens_found(&doc);
     found.sort();
-    assert_eq!(
+    assert_opens(
         found,
-        [
-            "page:members/overlay:peek/body/extend",
-            "page:members/section:board/widget:top/item:c/body/extend",
-            "page:members/section:list/item:pick/action/choice/body/extend",
-        ]
+        &[
+            ("page:members/overlay:peek", "body `body/extend`"),
+            (
+                "page:members/section:board/widget:top/item:c",
+                "body `body/extend`",
+            ),
+            (
+                "page:members/section:list/item:pick",
+                "at `action/choice`, body `body/extend`",
+            ),
+        ],
+        "every page position",
     );
 
     let clean = parse(DOC);

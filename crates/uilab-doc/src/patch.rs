@@ -1,5 +1,7 @@
 //! Patches: one insert, replace or remove at one node, and whether the result is admissible.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -137,7 +139,8 @@ pub fn apply(doc: &mut Document, patch: &Patch) -> Result<(), Refusal> {
 /// Returns the patched document and all of its findings, followed by a `replace_drops` warning
 /// for what each replace, alone or in a batch, removes.
 pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), Refusal> {
-    let before = check(doc);
+    let stored = check(doc);
+    let before: HashSet<&Finding> = stored.iter().collect();
     let mut next = doc.clone();
     apply_unchecked(&mut next, patch)?;
     if next == *doc {

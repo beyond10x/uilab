@@ -99,18 +99,38 @@ fn an_opens_in_a_widget_body_is_checked_at_each_use_site() {
     assert!(
         refused
             .message
-            .starts_with("page:members/section:list/item:card/body/extend: "),
+            .starts_with("page:members/section:list/item:card: ")
+            && refused.message.contains("body `body/extend`"),
         "{refused}"
     );
 }
 
 /// The paths of every `opens_resolves` finding, in order.
 fn opens_at(doc: &Document) -> Vec<String> {
+    opens_found(doc).into_iter().map(|(p, _)| p).collect()
+}
+
+/// Every `opens_resolves` finding as (path, message), in order.
+fn opens_found(doc: &Document) -> Vec<(String, String)> {
     check(doc)
         .into_iter()
         .filter(|f| f.check == "opens_resolves")
-        .map(|f| f.path)
+        .map(|f| (f.path, f.message))
         .collect()
+}
+
+/// Asserts the `opens_resolves` findings are at `expected` instance paths, in order, and each
+/// message names its body trail.
+fn assert_opens(doc: &Document, expected: &[(&str, &str)]) {
+    let found = opens_found(doc);
+    assert_eq!(
+        found.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
+        expected.iter().map(|(p, _)| *p).collect::<Vec<_>>(),
+        "{found:#?}"
+    );
+    for ((_, message), (_, trail)) in found.iter().zip(expected) {
+        assert!(message.contains(trail), "`{message}` lacks `{trail}`");
+    }
 }
 
 fn with_widgets(text: &str, widgets: &str) -> String {
@@ -137,13 +157,12 @@ fn a_widget_used_on_two_pages_is_reported_only_where_its_opens_does_not_resolve(
         .filter(|f| f.check == "opens_resolves")
         .collect();
     assert_eq!(found.len(), 1, "{found:#?}");
-    assert_eq!(
-        found[0].path,
-        "page:members/section:list/item:card/body/extend"
-    );
+    assert_eq!(found[0].path, "page:members/section:list/item:card");
     assert_eq!(found[0].severity, uilab_doc::Severity::Error);
     assert!(
-        found[0].message.contains("`loan_card`") && found[0].message.contains("`extend`"),
+        found[0].message.contains("`loan_card`")
+            && found[0].message.contains("body `body/extend`")
+            && found[0].message.contains("opens `extend`"),
         "{}",
         found[0].message
     );
@@ -167,13 +186,19 @@ fn a_widget_in_a_header_a_board_or_a_shell_overlay_is_checked_where_it_sits() {
             "    sections:\n      board:\n        component: board\n        widgets:\n          top: {component: loan_card, args: {loan: rows.first}}\n      list:\n",
         );
     let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(
-        opens_at(&doc),
-        [
-            "shell:app/overlay:quick/body/extend",
-            "page:members/section:board/widget:top/body/extend",
-            "page:members/header/metrics/due/body/extend",
-        ]
+    assert_opens(
+        &doc,
+        &[
+            ("shell:app/overlay:quick", "body `body/extend`"),
+            (
+                "page:members/section:board/widget:top",
+                "body `body/extend`",
+            ),
+            (
+                "page:members",
+                "at `header/metrics/due`, body `body/extend`",
+            ),
+        ],
     );
 }
 
@@ -191,12 +216,18 @@ fn a_nested_widget_body_is_checked_at_the_outer_use_site() {
 
     let on_members =
         Document::from_yaml(&with_member_item(&text, "{name: shelf, component: shelf}")).unwrap();
-    assert_eq!(
-        opens_at(&on_members),
-        [
-            "page:members/section:list/item:shelf/body/rows/item:card/body/extend",
-            "page:members/section:list/item:shelf/body/pick/action/choice/body/extend",
-        ]
+    assert_opens(
+        &on_members,
+        &[
+            (
+                "page:members/section:list/item:shelf",
+                "body `body/rows/item:card/body/extend`",
+            ),
+            (
+                "page:members/section:list/item:shelf",
+                "body `body/pick/action/choice/body/extend`",
+            ),
+        ],
     );
 }
 
@@ -225,9 +256,168 @@ fn a_recursive_widget_body_is_expanded_once() {
     );
     let doc = Document::from_yaml(&text).unwrap();
     assert!(check(&doc).iter().any(|f| f.check == "widget_recursion"));
-    assert_eq!(
-        opens_at(&doc),
-        ["page:members/section:list/item:loop/body/go"]
+    assert_opens(
+        &doc,
+        &[("page:members/section:list/item:loop", "body `body/go`")],
+    );
+}
+
+const OPENER: &str = "  opener:\n    summary: A button that opens the overlay it is given.\n    params:\n      target: {type: {ref: overlay}}\n    body:\n      - {name: go, primitive: button, label: Open, action: {name: go, opens: args.target}}\n  opens_extend:\n    summary: An opener that opens extend by default.\n    params:\n      target: {type: {ref: overlay}, default: extend}\n    body:\n      - {name: go, primitive: button, label: Open, action: {name: go, opens: args.target}}\n";
+
+/// ess WidgetInstance.expansion substitutes `args.<param>` before the body is checked. An
+/// `opens: args.target` is held to the overlay the instance binds, or the param's default when it
+/// binds none. The same widget bound differently at two uses is judged per use, in either order.
+/// An unbound param with no default, or one bound to a runtime reference or a non-string, cannot
+/// be judged statically and reports nothing.
+#[test]
+fn an_args_opens_is_held_to_the_bound_literal_or_the_default_and_skipped_otherwise() {
+    let items = [
+        "{name: a, component: opener, args: {target: extend}}",
+        "{name: b, component: opener, args: {target: help}}",
+        "{name: c, component: opener}",
+        "{name: d, component: opener, args: {target: row.overlay}}",
+        "{name: e, component: opener, args: {target: rows.first}}",
+        "{name: f, component: opener, args: {target: args.other}}",
+        "{name: g, component: opener, args: {target: 3}}",
+        "{name: h, component: opens_extend}",
+        "{name: i, component: opens_extend, args: {target: help}}",
+    ]
+    .join("\n          - ");
+    let with_help = DOC.replace(
+        "      main: {kind: page_outlet}\n",
+        "      main: {kind: page_outlet}\n    overlays:\n      help: {kind: drawer, component: record, reads: {view: loans.All}}\n",
+    );
+    let used = |overview: &str| {
+        let text = with_member_item(&with_widgets(&with_help, OPENER), &items).replace(
+            "      latest: {component: loan_card, args: {loan: rows.first}}\n",
+            &format!(
+                "      latest: {{component: loan_card, args: {{loan: rows.first}}}}\n{overview}"
+            ),
+        );
+        Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"))
+    };
+    let expected = [
+        (
+            "page:members/section:list/item:a",
+            "widget `opener`, body `body/go`, opens `extend`,",
+        ),
+        (
+            "page:members/section:list/item:h",
+            "widget `opens_extend`, body `body/go`, opens `extend`,",
+        ),
+    ];
+    assert_opens(&used(""), &expected);
+    assert_opens(
+        &used(
+            "      o1: {component: opener, args: {target: extend}}\n      o2: {component: opens_extend}\n",
+        ),
+        &expected,
+    );
+}
+
+/// A widget in another widget's body is expanded with the args that body binds: a literal is held
+/// to the overlays of the outer use site; a pass-through of the outer widget's own `args.<param>`
+/// reports nothing.
+#[test]
+fn a_nested_instance_is_expanded_with_the_args_its_holder_binds() {
+    let holders = "  holds_literal:\n    summary: Opens nowhere through an opener.\n    body:\n      - {name: inner, component: opener, args: {target: nowhere}}\n  passes_through:\n    summary: Hands its target to an opener.\n    params:\n      target: {type: {ref: overlay}}\n    body:\n      - {name: inner, component: opener, args: {target: args.target}}\n";
+    let widgets = format!("{OPENER}{holders}");
+    let text = with_member_item(
+        &with_member_item(
+            &with_widgets(DOC, &widgets),
+            "{name: p, component: passes_through, args: {target: nowhere}}",
+        ),
+        "{name: l, component: holds_literal}",
+    );
+    let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
+    assert_opens(
+        &doc,
+        &[(
+            "page:members/section:list/item:l",
+            "body `body/inner/body/go`, opens `nowhere`,",
+        )],
+    );
+}
+
+/// path.rs: "Adding a sibling never changes an existing path." An unnamed header metric holding an
+/// undeclared widget, and an unnamed header action whose `choice` holds a widget whose body opens
+/// an overlay the page lacks, are errors already there. A replace of the page that puts a clean
+/// entry in front of each brings nothing new and is admitted.
+#[test]
+fn a_clean_unnamed_entry_in_front_of_a_broken_one_is_not_refused_for_the_old_error() {
+    let text = DOC.replace(
+        "    kind: list_page\n    title: Members\n",
+        "    kind: list_page\n    title: Members\n    header: {metrics: [{component: missing}], actions: [{label: Pick, choice: {component: loan_card, args: {loan: rows.first}}}]}\n",
+    );
+    let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
+    let errors: Vec<_> = check(&doc)
+        .into_iter()
+        .filter(|f| f.check == "widget_resolves" || f.check == "opens_resolves")
+        .collect();
+    assert_eq!(errors.len(), 2, "{errors:#?}");
+    let mut page = serde_json::to_value(&doc.pages["members"]).unwrap();
+    page["header"]["metrics"] = json!([{"component": "state_badge", "args": {"state": "rows.first"}}, {"component": "missing"}]);
+    page["header"]["actions"] = json!([
+        {"label": "Other"},
+        {"label": "Pick", "choice": {"component": "loan_card", "args": {"loan": "rows.first"}}},
+    ]);
+    let replace = Patch::Replace {
+        target: path("page:members"),
+        node: page,
+    };
+    admit(&doc, &replace).unwrap_or_else(|refused| {
+        panic!("a clean entry in front of a pre-existing error is refused: {refused}")
+    });
+}
+
+/// A chain of 15 widgets, each using the next twice, the last opening `nowhere`: the use expands
+/// to 2^14 unresolved buttons. Admitting an unrelated insert compares the findings before and
+/// after, and stays within a small multiple of one check, not the square of the finding count.
+#[test]
+fn admitting_beside_sixteen_thousand_body_findings_stays_near_the_cost_of_a_check() {
+    let depth = 14;
+    let mut widgets = String::new();
+    for i in 0..=depth {
+        let body = if i < depth {
+            let next = i + 1;
+            format!(
+                "      - {{name: l, component: d{next}}}\n      - {{name: r, component: d{next}}}\n"
+            )
+        } else {
+            "      - {name: go, primitive: button, label: Go, action: {name: go, opens: nowhere}}\n"
+                .to_owned()
+        };
+        widgets.push_str(&format!(
+            "  d{i}:\n    summary: Level {i}.\n    body:\n{body}"
+        ));
+    }
+    let doc = Document::from_yaml(&with_member_item(
+        &with_widgets(DOC, &widgets),
+        "{name: deep, component: d0}",
+    ))
+    .unwrap_or_else(|e| panic!("{e}"));
+
+    let started = Instant::now();
+    let found = opens_at(&doc).len();
+    let checked = started.elapsed();
+    assert_eq!(found, 1 << depth);
+
+    let insert = Patch::Insert {
+        target: path("page:members/section:list"),
+        child: Child {
+            layer: Layer::Item,
+            name: "extra".into(),
+            node: json!({"primitive": "divider"}),
+            nav_section: None,
+        },
+    };
+    let started = Instant::now();
+    admit(&doc, &insert).unwrap_or_else(|e| panic!("{e}"));
+    let admitted = started.elapsed();
+    eprintln!("depth {depth}: {found} findings, check {checked:?}, admit {admitted:?}");
+    assert!(
+        admitted < checked * 10 + Duration::from_millis(300),
+        "check took {checked:?}, admit took {admitted:?}"
     );
 }
 
