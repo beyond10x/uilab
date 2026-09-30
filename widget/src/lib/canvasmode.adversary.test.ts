@@ -1,0 +1,137 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { stripTypeScriptTypes } from 'node:module';
+import { compileScript, parse } from 'vue/compiler-sfc';
+import type { UilabWireOutlineNode as OutlineNode, UilabWireRows as Rows } from '../generated/types.ts';
+import { accountName, canvasMode, type CanvasMode } from './canvasmode.ts';
+
+// Adversary cases for story:canvas-preview-mode. The preview is drawn by CanvasView and
+// CompositeView, which no lib test reaches, so these render the real components server-side: each
+// SFC is compiled with vue/compiler-sfc, its types stripped, its imports pointed at the same module
+// files this test imports (one `vue`, one store, one canvas mode), and rendered to a string.
+
+interface StoreApi {
+  state: {
+    conn: string;
+    doc: { outline: OutlineNode; selected: string } | null;
+    rows: Record<string, Rows>;
+    currentPage: string | null;
+  };
+}
+
+(globalThis as unknown as { window: unknown }).window = {
+  location: { search: '?name=Adversary' },
+  localStorage: { getItem: () => null, setItem: () => undefined },
+};
+const storeModule: string = '../store.ts';
+const { state } = (await import(storeModule)) as StoreApi;
+const vueUrl = import.meta.resolve('vue');
+const rendererModule: string = 'vue/server-renderer';
+const { renderToString } = (await import(rendererModule)) as { renderToString(app: unknown): Promise<string> };
+const vueModule: string = vueUrl;
+const { createSSRApp, h } = (await import(vueModule)) as {
+  createSSRApp(root: unknown): unknown;
+  h(component: unknown, props?: Record<string, unknown>): unknown;
+};
+
+/** An SFC compiled to a `data:` module whose imports resolve to the files this test uses. */
+function compileSfc(file: URL, vueImports: Record<string, string> = {}): string {
+  const { descriptor } = parse(readFileSync(file, 'utf8'), { filename: file.pathname });
+  const script = compileScript(descriptor, { id: 'adversary', inlineTemplate: true });
+  const code = stripTypeScriptTypes(script.content, { mode: 'strip' }).replace(
+    /from\s+(['"])([^'"]+)\1/g,
+    (_m, _q: string, spec: string) => {
+      if (spec === 'vue') return `from '${vueUrl}'`;
+      if (spec.endsWith('.vue')) return `from '${vueImports[spec]}'`;
+      return `from '${new URL(spec, file).href}'`;
+    },
+  );
+  return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+}
+
+const compositeUrl = compileSfc(new URL('../components/CompositeView.vue', import.meta.url));
+const canvasUrl = compileSfc(new URL('../components/CanvasView.vue', import.meta.url), { './CompositeView.vue': compositeUrl });
+const CompositeView = ((await import(compositeUrl)) as { default: unknown }).default;
+const CanvasView = ((await import(canvasUrl)) as { default: unknown }).default;
+
+function setMode(m: CanvasMode): void {
+  canvasMode.mode.value = m;
+}
+
+function node(layer: string, name: string, kind: string, extra: Partial<OutlineNode> = {}, children: OutlineNode[] = []): OutlineNode {
+  const path = extra.path ?? `${layer}:${name}`;
+  return { layer, name, kind, path, children, ...extra };
+}
+
+/** Visible text of rendered HTML: tags and comments dropped, whitespace collapsed. */
+function text(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function renderComposite(n: OutlineNode): Promise<string> {
+  return renderToString(createSSRApp({ render: () => h(CompositeView, { node: n }) }));
+}
+
+async function renderCanvas(outline: OutlineNode, selected = '/'): Promise<string> {
+  state.doc = { outline, selected } as StoreApi['state']['doc'];
+  state.currentPage = null;
+  return renderToString(createSSRApp({ render: () => h(CanvasView) }));
+}
+
+/** A document with one shell (account menu, notifications, overlay outlet) and one page. */
+function app(accountView: string): OutlineNode {
+  const shell = node('shell', 'main', 'shell', {}, [
+    node('region', 'account', 'account_menu', { path: 'shell:main/account', view: accountView }),
+    node('region', 'notify', 'notifications', { path: 'shell:main/notify' }),
+    node('region', 'overlay', 'overlay_outlet', { path: 'shell:main/overlay' }),
+    node('region', 'body', 'page_outlet', { path: 'shell:main/body' }),
+  ]);
+  const page = node('page', 'overview', 'page', { title: 'Overview' });
+  return node('root', 'library', 'app', { path: '/', title: 'Lending library' }, [shell, page]);
+}
+
+test('preview hides the view a composite reads, including in its empty line', async () => {
+  state.conn = 'closed';
+  state.rows = {};
+  const members = node('section', 'members', 'collection', { path: 'page:p/members', view: 'members.All', props: { columns: ['name'] } });
+  setMode('structure');
+  const structure = text(await renderComposite(members));
+  assert.match(structure, /members · collection · members\.All/, 'structure keeps the label');
+  setMode('preview');
+  const preview = text(await renderComposite(members));
+  assert.doesNotMatch(preview, /members · collection/, 'preview drops the label line');
+  assert.doesNotMatch(preview, /members\.All/, `preview still names the view: ${JSON.stringify(preview)}`);
+});
+
+test('preview keeps a marked overlay outlet and its selection, and hides an unmarked one', async () => {
+  state.rows = {};
+  setMode('preview');
+  const plain = await renderCanvas(app('staff.Me'));
+  assert.doesNotMatch(text(plain), /overlay_outlet/, 'an unmarked outlet is invisible in preview');
+  const selected = await renderCanvas(app('staff.Me'), 'shell:main/overlay');
+  assert.match(selected, /class="chip node selected"[^>]*>\s*overlay\s*<span class="muted">overlay_outlet<\/span>/);
+});
+
+test('preview draws the account menu as the name from its rows', async () => {
+  state.rows = { 'staff.Me': { view: 'staff.Me', rows: [{ id: 's-1', name: 'Example Librarian' }] } };
+  setMode('preview');
+  const html = await renderCanvas(app('staff.Me'), 'shell:main/account');
+  assert.match(html, /class="chrome-account node selected"/);
+  assert.match(text(html), /E Example Librarian ▾/);
+});
+
+test('an account menu on a draft view says its name is sample data, as every other draft read does', async () => {
+  state.rows = { 'draft.Me': { view: 'draft.Me', rows: [{ id: 's-1', name: 'Sample Person' }] } };
+  setMode('preview');
+  const html = await renderCanvas(app('draft.Me'));
+  assert.match(text(html), /Sample Person/, 'the made-up name is drawn');
+  assert.match(html, /sample data|sample-tag/, `the made-up name carries no sample marker: ${JSON.stringify(text(html))}`);
+});
+
+test('accountName falls back to full_name, and trims what it returns', () => {
+  assert.equal(accountName([{ id: 's-1', full_name: 'Full Name' }]), 'Full Name');
+  assert.equal(accountName([{ id: 's-1', name: '  Padded  ' }]), 'Padded');
+  assert.equal(accountName([{ id: 's-1', name: ' ', display_name: 'Shown' }]), 'Shown');
+  assert.equal(accountName([{ id: 's-1', name: 42, email: 'a@example.com' }]), 'a@example.com');
+});
