@@ -20,7 +20,7 @@ pub struct OutlineNode {
     /// Its title or label, where it has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// The view it reads, for a composite.
+    /// The view it reads: a composite's or an overlay's `reads`, a region's `props.reads`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
     /// A composite's props other than `component`, `reads`, `widgets` and `item`: what a renderer
@@ -103,6 +103,14 @@ fn node(
                 .and_then(|v| v.as_str())
                 .map(str::to_owned),
             c.reads.as_ref().map(|r| r.view.clone()),
+        ),
+        NodeRef::Region(r) => (
+            None,
+            r.props
+                .get("reads")
+                .and_then(|reads| reads.get("view"))
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
         ),
         _ => (None, None),
     };
@@ -351,6 +359,31 @@ pages:
             json!([{"path": "page:overview/section:latest"}])
         );
         assert_eq!(uses(&doc, "unused"), json!([]));
+    }
+
+    /// A shell region that reads a view (the library's `account` menu reads `staff.Me` through its
+    /// props) carries that view in the outline, as a composite does; a region that reads none
+    /// carries none.
+    #[test]
+    fn a_region_carries_the_view_its_props_read() {
+        let root = outline(&library());
+        let shell = root
+            .children
+            .iter()
+            .find(|c| c.path == "shell:app")
+            .expect("the library has the shell `app`");
+        let view = |region: &str| {
+            shell
+                .children
+                .iter()
+                .find(|c| c.path == format!("shell:app/region:{region}"))
+                .unwrap_or_else(|| panic!("no region `{region}`"))
+                .view
+                .clone()
+        };
+        assert_eq!(view("account"), Some("staff.Me".to_owned()));
+        assert_eq!(view("nav"), None);
+        assert_eq!(view("main"), None);
     }
 
     /// Every widget's `uses` are the use sites the docs list for it, in the same order: the

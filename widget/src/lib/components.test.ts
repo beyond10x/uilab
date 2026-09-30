@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import {
   componentsOf,
+  displayValue,
+  entityOf,
+  entityViews,
   filterComponents,
+  fixtureRowOf,
   isPrimitive,
   paramsOf,
   previewNode,
@@ -12,6 +16,9 @@ import {
   substitute,
   typeLabel,
   useSites,
+  useSiteTarget,
+  viewForEntity,
+  viewsRead,
 } from './components.ts';
 
 function n(path: string, layer: string, kind: string, children: OutlineNode[] = [], extra: Partial<OutlineNode> = {}): OutlineNode {
@@ -242,4 +249,166 @@ test('search filters by name, summary and param names, case-insensitively', () =
   assert.deepEqual(names('loan'), ['loan_card', 'state_badge']);
   assert.deepEqual(names('nothing uses'), ['unused']);
   assert.deepEqual(names('zzz'), []);
+});
+
+/** The library's fixture rows, as the server answers `rows` for its views. */
+const FIXTURE_ROWS = {
+  'loans.Summary': { view: 'loans.Summary', rows: [{ on_loan: 4, overdue: 1 }] },
+  'loans.All': {
+    view: 'loans.All',
+    total: 4,
+    rows: [
+      { id: 'l-1', title: 'The Left Hand of Darkness', member: 'Robin Example', due: '2026-10-14', state: 'on_loan' },
+      { id: 'l-2', title: 'A Pattern Language', member: 'Kim Sample', due: '2026-10-02', state: 'overdue' },
+    ],
+  },
+  'members.All': {
+    view: 'members.All',
+    rows: [
+      { name: 'Robin Example', joined: '2024-03-01', loans: 1, standing: 'good' },
+      { name: 'Kim Sample', joined: '2025-06-12', loans: 1, standing: 'overdue' },
+    ],
+  },
+};
+const LIBRARY_VIEWS = ['loans.Summary', 'loans.All', 'members.All', 'staff.Me'];
+
+test('entityOf names the entity a param type refers to, through lists and wrappers', () => {
+  assert.equal(entityOf('Member'), 'Member');
+  assert.equal(entityOf('library.Member'), 'Member');
+  assert.equal(entityOf({ list: 'Loan' }), 'Loan');
+  assert.equal(entityOf({ optional: 'Member' }), 'Member');
+  assert.equal(entityOf({ record: 'Member' }), 'Member');
+  assert.equal(entityOf('string'), null);
+  assert.equal(entityOf('integer'), null);
+  assert.equal(entityOf('title'), null);
+  assert.equal(entityOf({ enum: ['open', 'late'] }), null);
+  assert.equal(entityOf(undefined), null);
+});
+
+test('an entity maps to a view named after it, preferring `.All`', () => {
+  assert.equal(viewForEntity('Member', LIBRARY_VIEWS), 'members.All');
+  assert.equal(viewForEntity('Loan', LIBRARY_VIEWS), 'loans.All', 'loans.All wins over loans.Summary listed first');
+  assert.equal(viewForEntity('Loan', ['loans.Summary']), 'loans.Summary');
+  assert.equal(viewForEntity('Staff', LIBRARY_VIEWS), 'staff.Me');
+  assert.equal(viewForEntity('Category', ['categories.Top']), 'categories.Top');
+  assert.equal(viewForEntity('Box', ['boxes.All']), 'boxes.All');
+  assert.equal(viewForEntity('Ghost', LIBRARY_VIEWS), null);
+  assert.equal(viewForEntity('Member', []), null);
+});
+
+test('an entity maps to its view whatever the underscores, and by an irregular plural', () => {
+  assert.equal(viewForEntity('LoanRequest', ['loan_requests.All']), 'loan_requests.All');
+  assert.equal(viewForEntity('LoanRequest', ['loanrequests.All']), 'loanrequests.All');
+  assert.equal(viewForEntity('LoanRequest', ['loan_request.Open']), 'loan_request.Open');
+  assert.equal(viewForEntity('ShelfCategory', ['shelf_categories.All']), 'shelf_categories.All');
+  assert.equal(viewForEntity('Person', ['people.All']), 'people.All');
+  assert.equal(viewForEntity('Child', ['children.All']), 'children.All');
+  assert.equal(viewForEntity('ContactPerson', ['contact_people.All']), 'contact_people.All');
+  assert.equal(viewForEntity('Loan', ['loan_requests.All']), null, 'a longer entity’s view is not the shorter one’s');
+});
+
+test('viewsRead lists each view the outline reads once, in document order, drafts left out', () => {
+  const root = n('/', 'root', 'document', [
+    n('page:p', 'page', 'dashboard_page', [
+      n('page:p/section:a', 'section', 'metric', [], { view: 'loans.Summary' }),
+      n('page:p/section:b', 'section', 'collection', [n('page:p/section:b/item:c', 'item', 'record', [], { view: 'members.All' })], {
+        view: 'loans.All',
+      }),
+      n('page:p/section:d', 'section', 'chart', [], { view: 'draft.LoansPerMonth' }),
+      n('page:p/section:e', 'section', 'metric', [], { view: 'loans.Summary' }),
+    ]),
+  ]);
+  assert.deepEqual(viewsRead(root), ['loans.Summary', 'loans.All', 'members.All']);
+});
+
+test('viewsRead also lists the views shell regions and dynamic menu sections read', () => {
+  const root = n('/', 'root', 'document', [
+    n('shell:app', 'shell', 'shell', [
+      n('shell:app/region:nav', 'region', 'navigation'),
+      n('shell:app/region:account', 'region', 'account_menu', [], { view: 'staff.Me' }),
+    ]),
+    n('nav', 'nav', 'navigation', [
+      n('nav/nav_section:people', 'nav_section', 'nav_section', [], { props: { from_view: 'members.All', page: 'member' } }),
+      n('nav/nav_section:drafts', 'nav_section', 'nav_section', [], { props: { from_view: 'draft.Shelves', page: 'shelf' } }),
+      n('nav/nav_section:fixed', 'nav_section', 'nav_section', [], { props: { pages: ['overview'] } }),
+    ]),
+    n('page:p', 'page', 'list_page', [n('page:p/section:a', 'section', 'collection', [], { view: 'loans.All' })]),
+  ]);
+  assert.deepEqual(viewsRead(root), ['staff.Me', 'members.All', 'loans.All']);
+});
+
+test('entityViews names the views a widget’s samples need rows from', () => {
+  const params = paramsOf(
+    n('component:w', 'component', 'widget', [], {
+      props: { params: { member: { type: 'Member' }, loans: { type: { list: 'Loan' } }, other: { type: 'Member' }, ghost: { type: 'Ghost' }, n: { type: 'integer' } } },
+    }),
+  );
+  assert.deepEqual(entityViews(params, LIBRARY_VIEWS), ['members.All', 'loans.All']);
+});
+
+test('sample args for an entity param use the first fixture row of its view', () => {
+  const rowOf = fixtureRowOf(LIBRARY_VIEWS, FIXTURE_ROWS);
+  const member = n('component:member_card', 'component', 'widget', [
+    n('component:member_card/node:name', 'node', 'text', [], { props: { text: 'args.member.name', style: 'heading' } }),
+    n('component:member_card/node:standing', 'node', 'badge', [], { props: { text: 'args.member.standing' } }),
+    n('component:member_card/node:joined', 'node', 'text', [], { props: { text: 'args.member.joined' } }),
+  ], { props: { params: { member: { type: 'Member', required: true } } } });
+  const args = sampleArgs(paramsOf(member), rowOf);
+  assert.deepEqual(args, { member: FIXTURE_ROWS['members.All'].rows[0] });
+  assert.deepEqual(
+    member.children.map((b) => (previewNode(b, args).props as Record<string, unknown>).text),
+    ['Robin Example', 'good', '2024-03-01'],
+  );
+  assert.deepEqual(sampleValue({ name: 'loans', type: { list: 'Loan' } }, rowOf), [FIXTURE_ROWS['loans.All'].rows[0]]);
+  assert.deepEqual(sampleValue({ name: 'loan', type: { optional: 'Loan' } }, rowOf), FIXTURE_ROWS['loans.All'].rows[0]);
+  assert.equal(sampleValue({ name: 'note', type: 'Member', hasDefault: true, default: 'as written' }, rowOf), 'as written');
+  assert.equal(sampleValue({ name: 'title', type: 'string' }, rowOf), 'title');
+});
+
+test('without fixture rows an entity param falls back to the name-shaped value', () => {
+  assert.deepEqual(sampleValue({ name: 'member', type: 'Member' }, fixtureRowOf(LIBRARY_VIEWS, {})), { name: 'member' });
+  assert.deepEqual(sampleValue({ name: 'ghost', type: 'Ghost' }, fixtureRowOf(LIBRARY_VIEWS, FIXTURE_ROWS)), { name: 'ghost' });
+  assert.deepEqual(sampleValue({ name: 'member', type: 'Member' }, fixtureRowOf([], FIXTURE_ROWS)), { name: 'member' });
+  const empty = { 'members.All': { view: 'members.All', rows: [null, 'junk', []] } };
+  assert.deepEqual(sampleValue({ name: 'member', type: 'Member' }, fixtureRowOf(LIBRARY_VIEWS, empty)), { name: 'member' });
+  const later = { 'members.All': { view: 'members.All', rows: [null, { name: 'Kim Sample' }] } };
+  assert.deepEqual(sampleValue({ name: 'member', type: 'Member' }, fixtureRowOf(LIBRARY_VIEWS, later)), { name: 'Kim Sample' });
+  assert.deepEqual(sampleArgs(paramsOf(componentsOf(doc())[0].node)), { loan: { name: 'loan' }, compact: false, copies: 3 });
+});
+
+test('a row without a name shows its title', () => {
+  assert.equal(displayValue(FIXTURE_ROWS['loans.All'].rows[0]), 'The Left Hand of Darkness');
+  assert.equal(displayValue({ name: 'Robin Example', title: 'x' }), 'Robin Example');
+  assert.equal(displayValue({ label: 'Due soon' }), 'Due soon');
+});
+
+test('a use site on a page shows that page in the UI tab, opening the overlay it sits in', () => {
+  assert.deepEqual(useSiteTarget({ path: 'page:overview/section:latest' }), {
+    select: 'page:overview/section:latest',
+    page: 'page:overview',
+    overlay: null,
+  });
+  assert.deepEqual(useSiteTarget({ path: 'page:overview/section:list/item:card' }).page, 'page:overview');
+  assert.deepEqual(useSiteTarget({ path: 'page:overview/overlay:peek' }), {
+    select: 'page:overview/overlay:peek',
+    page: 'page:overview',
+    overlay: 'page:overview/overlay:peek',
+  });
+  assert.deepEqual(useSiteTarget({ path: 'page:p', trail: 'header/metrics/due' }), { select: 'page:p', page: 'page:p', overlay: null });
+  assert.deepEqual(useSiteTarget({ path: 'component:loan_card/node:state' }), {
+    select: 'component:loan_card/node:state',
+    page: null,
+    overlay: null,
+  });
+  assert.deepEqual(useSiteTarget({ path: '/', trail: 'page_kinds/board_page/sections/s' }).page, null);
+});
+
+test('a use site in a shell overlay opens that overlay on no page of its own', () => {
+  assert.deepEqual(useSiteTarget({ path: 'shell:app/overlay:whoami' }), {
+    select: 'shell:app/overlay:whoami',
+    page: null,
+    overlay: 'shell:app/overlay:whoami',
+  });
+  assert.equal(useSiteTarget({ path: 'shell:app/overlay:whoami/item:name' }).overlay, 'shell:app/overlay:whoami');
+  assert.equal(useSiteTarget({ path: 'component:w/overlay:x' }).overlay, null, 'a widget body shows on no canvas');
 });
