@@ -56,6 +56,9 @@ file under version control, while you try things.
 - **Left: the canvas.** The document rendered with sample rows. Click anything to select it.
 - **Top: four views.** `1` UI, `2` YAML, `3` Docs, `4` Components. **Export YAML** downloads the
   current document.
+- **Structure or preview.** On the UI tab, `p` (or the **Preview** button) switches the canvas
+  between structure, with each node labelled by name, kind and view, and a preview drawn as the
+  app would look. Selection and proposal marks work in both.
 - **Right: the sidebar.** The talk button (or hold `Space`), the instruction field with its
   **instruction / goal** toggle, the document tree, the selected path, and the activity feed.
 - **Top right: who is here.** Every browser and every scripted operator connected to the server.
@@ -92,6 +95,7 @@ file under version control, while you try things.
 | `Ctrl`+`Z` | undo the last accepted change |
 | `?` | open the help |
 | `1` `2` `3` `4` | UI, YAML, Docs, Components |
+| `p` | on the UI tab: switch the canvas between structure (labels) and preview (the app) |
 
 While a text field has focus, none of these keys acts on the workbench, `Esc` included: they go to
 the field, and `Enter` in the instruction field sends the instruction. Click the canvas or the tree

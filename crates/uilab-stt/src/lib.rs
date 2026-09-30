@@ -1,5 +1,5 @@
 //! Local speech-to-text for uilab: whisper.cpp through `whisper-rs`, on the GPU with the default
-//! `cuda` feature and on the CPU with `--no-default-features` or `gpu: false`.
+//! `vulkan` feature (or `cuda`), and on the CPU with `--no-default-features` or `gpu: false`.
 //!
 //! A [`Transcriber`] loads the model once and is reused for every utterance. Input is 16 kHz mono
 //! `f32` audio; [`resample_to_16k`] converts other rates. whisper.cpp's own log output is routed
@@ -31,7 +31,8 @@ pub struct TranscriberConfig {
     pub model: PathBuf,
     /// Spoken language as a whisper code (`en`, `de`, ...); `None` or `"auto"` detects it.
     pub language: Option<String>,
-    /// Run on the GPU. Without the `cuda` feature this has no effect and whisper runs on the CPU.
+    /// Run on the GPU. Without the `vulkan` or `cuda` feature this has no effect and whisper runs
+    /// on the CPU.
     pub gpu: bool,
 }
 
@@ -500,7 +501,7 @@ mod tests {
         let mut stt = Transcriber::load(TranscriberConfig {
             model: model.into(),
             language: Some("en".into()),
-            gpu: cfg!(feature = "cuda"),
+            gpu: cfg!(any(feature = "vulkan", feature = "cuda")),
         })
         .unwrap();
         assert!(matches!(
