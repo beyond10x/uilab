@@ -44,6 +44,10 @@ pub enum OpCommand {
         /// Hold this proposal for accept or reject, whatever the session setting.
         #[arg(long)]
         review: bool,
+        /// Give it as from the Components tab: it builds widgets, at the root unless `--target`
+        /// names one.
+        #[arg(long)]
+        components: bool,
         text: String,
     },
     /// Give the agent a goal: it plans steps and proposes them one at a time. Waits until the
@@ -216,10 +220,20 @@ pub async fn run(op: Op) -> Result<(), String> {
             target,
             text,
             review,
-        } => client(serde_json::json!({
-            "type": "say",
-            "value": match (target, review) { (Some(t), true) => serde_json::json!({"text": text, "target": t, "review": true}), (Some(t), false) => serde_json::json!({"text": text, "target": t}), (None, true) => serde_json::json!({"text": text, "review": true}), (None, false) => serde_json::json!({"text": text}) },
-        }))?,
+            components,
+        } => {
+            let mut value = serde_json::json!({"text": text});
+            if let Some(t) = target {
+                value["target"] = t.into();
+            }
+            if review {
+                value["review"] = true.into();
+            }
+            if components {
+                value["workspace"] = "components".into();
+            }
+            client(serde_json::json!({"type": "say", "value": value}))?
+        }
         OpCommand::Goal {
             target,
             max_steps,

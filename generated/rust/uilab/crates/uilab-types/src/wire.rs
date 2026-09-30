@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest c1c9563af89cf1f1f8ef7782b80ff93b32b7086e6e86f27333557738d9508f0c
-// contract digest 80afaf984fa26a672bfaf0ddb52dc82a4b8cea5b476335aed27257b03acacaab
+// model digest b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a
+// contract digest 382360f755c7a7fe5f6fc4cb540326082dab33d91dbb381976dae34503c8a0e5
 // do not edit: regenerate with `ess synthesize`
 
 //! wire — `uilab.wire`.
@@ -172,6 +172,8 @@ pub struct Hello {
 pub struct Mic {
     /// `state` — `uilab.wire.MicState`.
     pub state: MicState,
+    /// `workspace` — `Optional<uilab.wire.Workspace>`.
+    pub workspace: Option<Workspace>,
 }
 
 /// MicState — `uilab.wire.MicState`: one of a closed set of names.
@@ -305,6 +307,8 @@ pub struct Say {
     pub target: Option<crate::session::NodePath>,
     /// `review` — `Optional<Boolean>`.
     pub review: Option<bool>,
+    /// `workspace` — `Optional<uilab.wire.Workspace>`.
+    pub workspace: Option<Workspace>,
 }
 
 /// Select — `uilab.wire.Select`.
@@ -366,6 +370,8 @@ pub struct StartGoal {
     pub max_steps: Option<i64>,
     /// `review` — `Optional<Boolean>`.
     pub review: Option<bool>,
+    /// `workspace` — `Optional<uilab.wire.Workspace>`.
+    pub workspace: Option<Workspace>,
 }
 
 /// StepStatus — `uilab.wire.StepStatus`: one of a closed set of names.
@@ -414,4 +420,13 @@ pub struct Transcript {
     pub audio_ms: i64,
     /// `took_ms` — `Integer`.
     pub took_ms: i64,
+}
+
+/// Workspace — `uilab.wire.Workspace`: one of a closed set of names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Workspace {
+    /// `app`.
+    App,
+    /// `components`.
+    Components,
 }

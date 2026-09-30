@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest c1c9563af89cf1f1f8ef7782b80ff93b32b7086e6e86f27333557738d9508f0c
-// contract digest 80afaf984fa26a672bfaf0ddb52dc82a4b8cea5b476335aed27257b03acacaab
+// model digest b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a
+// contract digest 382360f755c7a7fe5f6fc4cb540326082dab33d91dbb381976dae34503c8a0e5
 // do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
@@ -799,6 +799,10 @@ pub fn encode_uilab_wire_mic(value: &uilab_types::wire::Mic, out: &mut String) {
     out.push('{');
     json::member(out, "state");
     encode_uilab_wire_mic_state(&value.state, out);
+    if let Some(held0) = &value.workspace {
+        json::member(out, "workspace");
+        encode_uilab_wire_workspace(&*held0, out);
+    }
     out.push('}');
 }
 
@@ -813,6 +817,13 @@ pub fn decode_uilab_wire_mic(value: &json::Value, at: &str) -> Result<uilab_type
             let at0 = json::nested(at, "state");
             let member0 = json::member_at(value, at, "state")?;
             decode_uilab_wire_mic_state(member0, &at0)?
+        },
+        workspace: match value.member("workspace") {
+            None | Some(json::Value::Null) => None,
+            Some(member1) => {
+                let at1 = json::nested(at, "workspace");
+                Some(decode_uilab_wire_workspace(member1, &at1)?)
+            }
         },
     })
 }
@@ -1308,6 +1319,10 @@ pub fn encode_uilab_wire_say(value: &uilab_types::wire::Say, out: &mut String) {
         json::member(out, "review");
         json::push_bool(out, *held0);
     }
+    if let Some(held0) = &value.workspace {
+        json::member(out, "workspace");
+        encode_uilab_wire_workspace(&*held0, out);
+    }
     out.push('}');
 }
 
@@ -1335,6 +1350,13 @@ pub fn decode_uilab_wire_say(value: &json::Value, at: &str) -> Result<uilab_type
             Some(member2) => {
                 let at2 = json::nested(at, "review");
                 Some(json::bool_at(member2, &at2, "a boolean")?)
+            }
+        },
+        workspace: match value.member("workspace") {
+            None | Some(json::Value::Null) => None,
+            Some(member3) => {
+                let at3 = json::nested(at, "workspace");
+                Some(decode_uilab_wire_workspace(member3, &at3)?)
             }
         },
     })
@@ -1573,6 +1595,10 @@ pub fn encode_uilab_wire_start_goal(value: &uilab_types::wire::StartGoal, out: &
         json::member(out, "review");
         json::push_bool(out, *held0);
     }
+    if let Some(held0) = &value.workspace {
+        json::member(out, "workspace");
+        encode_uilab_wire_workspace(&*held0, out);
+    }
     out.push('}');
 }
 
@@ -1607,6 +1633,13 @@ pub fn decode_uilab_wire_start_goal(value: &json::Value, at: &str) -> Result<uil
             Some(member3) => {
                 let at3 = json::nested(at, "review");
                 Some(json::bool_at(member3, &at3, "a boolean")?)
+            }
+        },
+        workspace: match value.member("workspace") {
+            None | Some(json::Value::Null) => None,
+            Some(member4) => {
+                let at4 = json::nested(at, "workspace");
+                Some(decode_uilab_wire_workspace(member4, &at4)?)
             }
         },
     })
@@ -1745,6 +1778,27 @@ pub fn decode_uilab_wire_transcript(value: &json::Value, at: &str) -> Result<uil
             let member3 = json::member_at(value, at, "took_ms")?;
             json::integer_at(member3, &at3, "an integer")?
         },
+    })
+}
+
+/// Writes `uilab.wire.Workspace` as JSON.
+pub fn encode_uilab_wire_workspace(value: &uilab_types::wire::Workspace, out: &mut String) {
+    match value {
+        uilab_types::wire::Workspace::App => json::push_text(out, "app"),
+        uilab_types::wire::Workspace::Components => json::push_text(out, "components"),
+    }
+}
+
+/// Reads `uilab.wire.Workspace` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_workspace(value: &json::Value, at: &str) -> Result<uilab_types::wire::Workspace, json::DecodeError> {
+    Ok(match json::text_at(value, at, "one of `app`, `components`")? {
+        "app" => uilab_types::wire::Workspace::App,
+        "components" => uilab_types::wire::Workspace::Components,
+        other => return Err(json::DecodeError { at: at.to_owned(), expected: "one of `app`, `components`".to_owned(), found: format!("`{other}`") }),
     })
 }
 

@@ -28,6 +28,7 @@ import {
 } from './lib/collab.ts';
 import { settleCard } from './lib/card.ts';
 import { bannerLabel, goalEnded, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
+import { targetIn, workspaceOf } from './lib/workspace.ts';
 import { findNode, homePage, isDraftView, isWithin, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf, segments } from './lib/outline.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
@@ -407,19 +408,11 @@ export function requestRows(view: string | undefined): void {
   if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsRequested.add(view);
 }
 
-/**
- * Where an instruction goes: the selection, unless nothing below the root is selected while a
- * page is on screen. Then the page on screen is selected first, so "add a header" lands on the
- * page the operator is looking at rather than at the document root, where only pages fit.
- */
+/** Where an instruction goes, in the view on screen (`targetIn`); selects the page it names. */
 export function instructionTarget(): string | undefined {
-  const selected = state.doc?.selected;
-  const page = activePage.value;
-  if ((!selected || selected === '/') && page) {
-    select(page.path);
-    return page.path;
-  }
-  return selected;
+  const { target, selectPage } = targetIn(state.view, state.doc?.selected, activePage.value?.path);
+  if (selectPage) select(selectPage);
+  return target;
 }
 
 export function say(text: string): void {
@@ -427,17 +420,19 @@ export function say(text: string): void {
   if (!t) return;
   state.notice = null;
   const target = instructionTarget();
-  if (send({ type: 'say', value: target ? { text: t, target } : { text: t } })) {
+  const workspace = workspaceOf(state.view);
+  const value = { text: t, ...(target ? { target } : {}), ...(workspace ? { workspace } : {}) };
+  if (send({ type: 'say', value })) {
     state.typed = t;
     state.transcript = null;
     state.phase = 'thinking';
-    state.thinkingTarget = state.doc?.selected ?? null;
+    state.thinkingTarget = target ?? null;
   }
 }
 
 /** Sends the typed text as a goal at the instruction target; the agent plans and proposes steps. */
 export function sayGoal(text: string): void {
-  const message = goalMessage(text, instructionTarget());
+  const message = goalMessage(text, instructionTarget(), workspaceOf(state.view));
   if (!message) return;
   state.notice = null;
   if (send(message)) {
@@ -495,7 +490,8 @@ export async function micDown(): Promise<void> {
     return;
   }
   instructionTarget();
-  if (!send({ type: 'mic', value: { state: 'open' } })) {
+  const workspace = workspaceOf(state.view);
+  if (!send({ type: 'mic', value: workspace ? { state: 'open', workspace } : { state: 'open' } })) {
     state.phase = 'idle';
     return;
   }

@@ -15,7 +15,7 @@ use uilab_wire::{
     UilabWireOutlineNode, UilabWirePresence, UilabWireProposalShown, UilabWireReadRows,
     UilabWireRefused, UilabWireResync, UilabWireRows, UilabWireSay, UilabWireSelect,
     UilabWireSettings, UilabWireStartGoal, UilabWireStopGoal, UilabWireThinking,
-    UilabWireTranscript,
+    UilabWireTranscript, UilabWireWorkspace,
 };
 
 use crate::goal::Goal;
@@ -146,6 +146,16 @@ fn name_of<T: Serialize>(value: &T) -> String {
 /// Whether a mic message opens the microphone.
 pub fn mic_open(mic: &UilabWireMic) -> bool {
     name_of::<UilabWireMicState>(&mic.state) == "open"
+}
+
+/// The workspace an instruction came from; the app canvas when the message names none.
+pub fn workspace(sent: &EssPresence<Box<UilabWireWorkspace>>) -> uilab_agent::Workspace {
+    match sent {
+        EssPresence::Present(w) if name_of::<UilabWireWorkspace>(w) == "components" => {
+            uilab_agent::Workspace::Components
+        }
+        _ => uilab_agent::Workspace::App,
+    }
 }
 
 /// Whether a hello or operator is an agent.

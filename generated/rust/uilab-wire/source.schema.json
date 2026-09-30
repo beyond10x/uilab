@@ -514,6 +514,9 @@
       "properties": {
         "state": {
           "$ref": "#/$defs/uilab.wire.MicState"
+        },
+        "workspace": {
+          "$ref": "#/$defs/uilab.wire.Workspace"
         }
       },
       "required": [
@@ -772,6 +775,9 @@
         },
         "text": {
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/uilab.wire.Workspace"
         }
       },
       "required": [
@@ -1024,6 +1030,9 @@
         },
         "text": {
           "type": "string"
+        },
+        "workspace": {
+          "$ref": "#/$defs/uilab.wire.Workspace"
         }
       },
       "required": [
@@ -1107,12 +1116,22 @@
       "type": "object",
       "x-ess-kind": "struct",
       "x-ess-name": "uilab.wire.Transcript"
+    },
+    "uilab.wire.Workspace": {
+      "enum": [
+        "app",
+        "components"
+      ],
+      "title": "Workspace",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "uilab.wire.Workspace"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "x-ess-provenance": {
-    "contract_digest": "slice-sha256/2:f0375981206ba50f4e8ee6f82dfeef64131d42d34be5bd3b49ebff80d452635e",
-    "source_digest": "c1c9563af89cf1f1f8ef7782b80ff93b32b7086e6e86f27333557738d9508f0c",
+    "contract_digest": "slice-sha256/2:35c728bccc1e3a09e0d3a8fb1b2a0376a8d684032f6dc0cc66405120d9e460ac",
+    "source_digest": "b49ec22e0519143d410cde9e2fa36346e670414275339df6320419160b60ba3a",
     "specification_version": "v1",
     "system": "uilab"
   }

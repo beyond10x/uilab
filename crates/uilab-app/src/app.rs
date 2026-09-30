@@ -6,6 +6,7 @@
 //! results back. Everything is broadcast to every connection, attributed to the operator it came
 //! from.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -129,6 +130,8 @@ pub struct App {
     next_api_operator: u64,
     pending: Option<String>,
     audio: Option<(String, Vec<f32>)>,
+    /// Where the microphone was opened; the transcription is proposed there.
+    listening_in: uilab_agent::Workspace,
     busy: bool,
     /// The latest goal; kept after it ends so a browser that connects later still sees it.
     goal: Option<Goal>,
@@ -231,6 +234,7 @@ impl App {
             next_api_operator: 0,
             pending: None,
             audio: None,
+            listening_in: uilab_agent::Workspace::App,
             busy: false,
             goal: None,
             next_goal: 0,
@@ -443,7 +447,7 @@ impl App {
                 if t.text.trim().is_empty() {
                     self.send(Server::refused("speech", "nothing was heard", Some(&by)));
                 } else {
-                    self.propose(&by, t.text, None, None);
+                    self.propose(&by, t.text, None, None, self.listening_in);
                 }
             }
             Cmd::Heard {
@@ -602,7 +606,12 @@ impl App {
     /// would have created it was refused or rejected) is refused here, without a model call.
     fn run_step(&mut self, index: usize, instruction: String, target: NodePath) {
         let Some(goal) = &self.goal else { return };
-        let (id, by, review) = (goal.id.clone(), goal.by.clone(), goal.review);
+        let (id, by, review, workspace) = (
+            goal.id.clone(),
+            goal.by.clone(),
+            goal.review,
+            goal.workspace,
+        );
         if uilab_doc::resolve(&self.doc(), &target).is_err() {
             self.send(Server::refused(
                 "path_resolves",
@@ -612,7 +621,8 @@ impl App {
             self.goal_next(|g| g.not_proposed(index, false));
             return;
         }
-        if !self.start_propose(&by, instruction, Some(target), review, Some((id, index))) {
+        let step = Some((id, index));
+        if !self.start_propose(&by, instruction, Some(target), review, step, workspace) {
             self.goal_next(|g| g.not_proposed(index, false));
         }
     }
@@ -648,6 +658,8 @@ impl App {
             },
             uilab_wire::EssPresence::Absent => self.selected(),
         };
+        let workspace = wire::workspace(&start.workspace);
+        let target = placed(target, workspace);
         let max_steps = match &start.max_steps {
             uilab_wire::EssPresence::Present(n) => {
                 match n.as_u64().and_then(|n| usize::try_from(n).ok()) {
@@ -677,14 +689,16 @@ impl App {
         }
         self.next_goal += 1;
         let goal_id = format!("goal-{}", self.next_goal);
-        self.goal = Some(Goal::new(
+        let mut goal = Goal::new(
             goal_id.clone(),
             by,
             start.text.clone(),
             target.clone(),
             max_steps,
             review,
-        ));
+        );
+        goal.workspace = workspace;
+        self.goal = Some(goal);
         self.send_goal();
 
         let doc = self.doc();
@@ -699,7 +713,7 @@ impl App {
             let result = proposer
                 .lock()
                 .expect("the proposer lock")
-                .plan_goal_with(&doc, &target, &text, max_steps, &fields)
+                .plan_goal_in(&doc, &target, &text, max_steps, &fields, workspace)
                 .map_err(|e| e.to_string());
             let ms = started.elapsed().as_millis() as u64;
             let _ = back.blocking_send(Cmd::Planned {
@@ -801,6 +815,7 @@ impl App {
                     ));
                 } else {
                     self.audio = Some((by.to_owned(), Vec::new()));
+                    self.listening_in = wire::workspace(&mic.workspace);
                 }
             }
             Client::Mic(_) => {
@@ -827,7 +842,8 @@ impl App {
                     uilab_wire::EssPresence::Present(review) => Some(review),
                     uilab_wire::EssPresence::Absent => None,
                 };
-                self.propose(by, say.text, target, review)
+                let workspace = wire::workspace(&say.workspace);
+                self.propose(by, say.text, target, review, workspace)
             }
             Client::Accept(d) => self.accept(by, &d.proposal_id.0, false),
             Client::Settings(settings) => {
@@ -996,6 +1012,7 @@ impl App {
         utterance: String,
         target: Option<NodePath>,
         review: Option<bool>,
+        workspace: uilab_agent::Workspace,
     ) {
         if self.goal.as_ref().is_some_and(Goal::is_active) {
             self.send(Server::refused(
@@ -1006,7 +1023,8 @@ impl App {
             return;
         }
         let review = review.unwrap_or(self.review);
-        self.start_propose(by, utterance, target, review, None);
+        let target = placed(target.unwrap_or_else(|| self.selected()), workspace);
+        self.start_propose(by, utterance, Some(target), review, None, workspace);
     }
 
     /// Asks the agent for one patch off the runtime; the answer comes back as [`Cmd::Proposed`].
@@ -1018,6 +1036,7 @@ impl App {
         target: Option<NodePath>,
         review: bool,
         step: Option<(String, usize)>,
+        workspace: uilab_agent::Workspace,
     ) -> bool {
         if self.busy {
             self.send(Server::failed(
@@ -1046,7 +1065,7 @@ impl App {
             let result = proposer
                 .lock()
                 .expect("the proposer lock")
-                .propose_with(&doc, &target, &utterance, &fields)
+                .propose_in(&doc, &target, &utterance, &fields, workspace)
                 .map_err(|e| match e {
                     uilab_agent::ProposeError::Refused { check, message } => (check, message),
                     uilab_agent::ProposeError::Declined(reason) => ("declined".to_owned(), reason),
@@ -1116,7 +1135,23 @@ impl App {
             ));
             return Err("failed".to_owned());
         };
-        let mut findings = self.findings(&after);
+        // The card names what this proposal brings: a finding the document already had is in the
+        // document's own findings, not repeated on every card. Counted, so a second equal one is new.
+        let mut had: HashMap<Finding, usize> = HashMap::new();
+        for f in self.findings(&before) {
+            *had.entry(f).or_default() += 1;
+        }
+        let mut findings: Vec<Finding> = self
+            .findings(&after)
+            .into_iter()
+            .filter(|f| match had.get_mut(f) {
+                Some(n) if *n > 0 => {
+                    *n -= 1;
+                    false
+                }
+                _ => true,
+            })
+            .collect();
         findings.extend(admitted.into_iter().filter(|f| f.check == "replace_drops"));
         let changed = patch.changed_path();
         self.pending = Some(proposal_id.0.0.clone());
@@ -1145,6 +1180,19 @@ impl App {
 
 fn proposal(id: &str) -> s::ProposalId {
     s::ProposalId(Uuid(id.to_owned()))
+}
+
+/// Where an instruction lands: in the Components workspace, a selection outside the widgets (a
+/// page left selected in the app canvas) gives way to the root, where widgets are declared.
+fn placed(target: NodePath, workspace: uilab_agent::Workspace) -> NodePath {
+    let in_widgets = target
+        .0
+        .first()
+        .is_some_and(|segment| segment.layer == Layer::Component);
+    match workspace {
+        uilab_agent::Workspace::Components if !in_widgets => NodePath::root(),
+        _ => target,
+    }
 }
 
 /// The use sites each component node of the outline carries, in outline order.
@@ -1975,5 +2023,136 @@ pages:
         );
         assert!(sent.iter().any(|m| matches!(m, Server::Changed(_))));
         assert!(!sent.iter().any(|m| matches!(m, Server::Document(_))));
+    }
+
+    /// Where the agent was asked to work, from the `thinking` message.
+    fn thinking_at(messages: &[Server]) -> String {
+        messages
+            .iter()
+            .find_map(|m| match m {
+                Server::Thinking(t) => Some(t.target.0.clone()),
+                _ => None,
+            })
+            .expect("the agent was asked")
+    }
+
+    /// Found on 2026-09-30: "put some basic set of components" given on the Components tab with
+    /// `page:overview` still selected became three sections of that page.
+    #[test]
+    fn an_instruction_from_the_components_workspace_lands_among_the_widgets() {
+        let mut rig = rig_over(false, with_loan_card);
+        rig.client(
+            "api-1",
+            r#"{"type":"select","value":{"path":"page:overview"}}"#,
+        );
+        rig.drain();
+        rig.client(
+            "api-1",
+            r#"{"type":"say","value":{"text":"put some basic set of components now","workspace":"components"}}"#,
+        );
+        assert_eq!(thinking_at(&rig.drain()), "/");
+        rig.app.busy = false;
+
+        rig.client(
+            "api-1",
+            r#"{"type":"select","value":{"path":"component:loan_card/node:title"}}"#,
+        );
+        rig.drain();
+        rig.client(
+            "api-1",
+            r#"{"type":"say","value":{"text":"make the title smaller","workspace":"components"}}"#,
+        );
+        assert_eq!(
+            thinking_at(&rig.drain()),
+            "component:loan_card/node:title",
+            "a selection inside the widgets stays"
+        );
+        rig.app.busy = false;
+
+        rig.client(
+            "api-1",
+            r#"{"type":"select","value":{"path":"page:overview"}}"#,
+        );
+        rig.drain();
+        rig.client("api-1", r#"{"type":"say","value":{"text":"add a chart"}}"#);
+        assert_eq!(
+            thinking_at(&rig.drain()),
+            "page:overview",
+            "the app canvas keeps the selection"
+        );
+    }
+
+    #[test]
+    fn a_goal_from_the_components_workspace_is_planned_among_the_widgets() {
+        let mut rig = rig_over(false, with_loan_card);
+        rig.client(
+            "api-1",
+            r#"{"type":"select","value":{"path":"page:overview"}}"#,
+        );
+        rig.client(
+            "api-1",
+            r#"{"type":"goal","value":{"text":"build a basic component set","workspace":"components"}}"#,
+        );
+        assert_eq!(rig.goal().target.to_string(), "/");
+        assert_eq!(rig.goal().workspace, uilab_agent::Workspace::Components);
+    }
+
+    /// Found on 2026-09-30: every card repeated the document's five `draft_read` warnings.
+    #[test]
+    fn a_proposal_card_names_only_the_findings_the_proposal_brings() {
+        let mut rig = rig_over(true, |text| {
+            assert!(text.contains("    sections:\n      on_loan:\n"));
+            text.replacen(
+                "    sections:\n      on_loan:\n",
+                "    sections:\n      trend: {component: chart, reads: {view: draft.LoansPerMonth}}\n      on_loan:\n",
+                1,
+            )
+        });
+        let sent = accept_patch_reviewed(
+            &mut rig,
+            Patch::Insert {
+                target: "page:overview".parse().unwrap(),
+                child: uilab_doc::Child {
+                    layer: Layer::Section,
+                    name: "by_state".into(),
+                    node: json!({"component": "chart", "reads": {"view": "draft.LoansByState"}}),
+                    nav_section: None,
+                },
+            },
+        );
+        let proposal = sent
+            .iter()
+            .find_map(|m| match m {
+                Server::Proposal(p) => Some(p),
+                _ => None,
+            })
+            .expect("a proposal is shown");
+        let findings = serde_json::to_value(&proposal.findings).unwrap();
+        let paths: Vec<&str> = findings
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|f| f["path"].as_str())
+            .collect();
+        assert_eq!(paths, ["page:overview/section:by_state"]);
+    }
+
+    /// Shows `patch` as the API operator's proposal, waiting for review.
+    fn accept_patch_reviewed(rig: &mut Rig, patch: Patch) -> Vec<Server> {
+        rig.app.handle_cmd(Cmd::Proposed {
+            by: "api-1".into(),
+            target: patch.target().clone(),
+            utterance: "u".into(),
+            result: Box::new(Ok(uilab_agent::Proposal {
+                patch,
+                turns: 1,
+                cost_micro_usd: None,
+                attempts: 1,
+            })),
+            ms: 1,
+            review: true,
+            step: None,
+        });
+        rig.drain()
     }
 }
