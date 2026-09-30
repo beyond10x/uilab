@@ -297,3 +297,93 @@ fn the_instructions_explain_widgets_params_args_and_every_primitive() {
         );
     }
 }
+
+/// The live check replaced all of `page:members` to add one item and dropped the table's columns.
+#[test]
+fn the_instructions_say_to_insert_an_item_and_never_rewrite_a_page_to_add_one_child() {
+    for needle in [
+        "insert an `item` node (layer `item`)",
+        "page:<p>/section:<s>",
+        "never replace a page or a collection to add one child",
+        "must repeat every existing prop, column and child",
+        "drops columns, sections or overlays",
+    ] {
+        assert!(
+            INSTRUCTIONS.contains(needle),
+            "INSTRUCTIONS lack `{needle}`"
+        );
+    }
+    assert!(
+        !INSTRUCTIONS.contains("tone_by"),
+        "the doc crate does not type `tone_by`; the prompt does not describe a shape for it"
+    );
+}
+
+#[test]
+fn a_request_at_the_root_naming_a_page_lists_its_sections_with_their_columns() {
+    let doc = library();
+    let (mut proposer, seen) = proposer(vec![member_card_batch()]);
+    proposer
+        .propose(
+            &doc,
+            &NodePath::root(),
+            "make a reusable card for a member with name and standing, and use it on the members page",
+        )
+        .unwrap();
+    let user = texts(&seen.lock().unwrap()[0]);
+    assert!(user.contains("page:members/section:list"), "{user}");
+    assert!(
+        user.contains("columns name, joined, loans, standing (as tag)"),
+        "{user}"
+    );
+    assert!(
+        !user.contains("page:loans/section:list"),
+        "a page the instruction does not name is not listed: {user}"
+    );
+}
+
+#[test]
+fn a_request_at_a_page_lists_its_own_sections_and_their_children() {
+    let doc = library_with_member_card();
+    let use_it = json!({
+        "op": "insert",
+        "target": "page:members",
+        "child": {
+            "layer": "section",
+            "name": "featured",
+            "node": {"component": "member_card", "args": {"member": "rows.first"}}
+        }
+    });
+    let (mut proposer, seen) = proposer(vec![use_it]);
+    proposer
+        .propose(
+            &doc,
+            &"page:members".parse().unwrap(),
+            "show the first one as a card",
+        )
+        .unwrap();
+    let user = texts(&seen.lock().unwrap()[0]);
+    assert!(user.contains("page:members/section:list"), "{user}");
+    assert!(user.contains("children item:card"), "{user}");
+}
+
+#[test]
+fn a_request_at_a_section_lists_no_other_places() {
+    let doc = library();
+    let (mut proposer, seen) = proposer(vec![json!({
+        "op": "replace",
+        "target": "page:members/section:list",
+        "node": {"component": "collection", "reads": {"view": "members.All"},
+                 "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"}, {"field": "standing", "as": "tag"}],
+                 "title": "Members"}
+    })]);
+    proposer
+        .propose(
+            &doc,
+            &"page:members/section:list".parse().unwrap(),
+            "title this members",
+        )
+        .unwrap();
+    let user = texts(&seen.lock().unwrap()[0]);
+    assert!(!user.contains("Existing nodes of"), "{user}");
+}

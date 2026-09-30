@@ -24,7 +24,7 @@ use harness_wire::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uilab_doc::{Document, NodeContext, NodePath, Patch, PathError, Refusal};
+use uilab_doc::{Document, Layer, NodeContext, NodePath, Patch, PathError, Refusal};
 
 /// The subscription route's base URL: the Messages API.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
@@ -414,7 +414,7 @@ impl Proposer {
         let config = self.loop_config(INSTRUCTIONS, schema)?;
         let answered = self.attempts(
             config,
-            request(doc, &context, utterance, fields),
+            request(doc, &context, target, utterance, fields),
             Retry::PATCH,
             |structured| {
                 let patch =
@@ -698,7 +698,7 @@ node has `summary` (one line, required), `params` (each `{type: …, required: t
 constructor map), optional `arrange` (`row`, `column` or `grid`) and a `body`: a list of named \
 nodes, each with `name`. A body node is a built-in composite, an instance of another widget, or a \
 primitive `{name: …, primitive: <kind>, …}`. The primitive kinds are `text` (`text` or `field`, \
-optional `style: heading`), `badge` (`text`, `tone` or `tone_by`), `icon` (`label`), `button` \
+optional `style: heading`), `badge` (`text`), `icon` (`label`), `button` \
 (`label`, `action`), `link` (`to` or `href`), `input` (`binds`), `toggle`, `image` (`src`, \
 required `alt`) and `divider`. In a body, `args.<param>` refers to a param: `text: \
 args.member.name`. Add a body node with layer `node` under `component:<widget>`; change a widget \
@@ -709,7 +709,10 @@ row is `row` (`args: {member: row}`). The widgets the document declares are list
 instruction; use one that fits. Make a new widget when the operator asks for something reusable, \
 a \"component\", a \"card for each …\", or the same structure would repeat; declare it and use it \
 in one `batch` (the insert at `/` first, then the uses, each with its own target). Otherwise keep \
-using built-in composites.
+using built-in composites. To use a widget inside an existing table, target that collection and \
+insert an `item` node (layer `item`) holding the instance; when the batch starts at `/`, its \
+second patch is an `insert` at `page:<p>/section:<s>` of layer `item`. The existing sections of \
+the pages the instruction names are listed with their columns and children: target them there.
 
 Data comes from ESS views: `reads: {view: <domain>.<View>}`, with `params` for fixed filters \
 (for example `params: {state: overdue}`). Prefer a view the document already reads when it holds \
@@ -723,7 +726,10 @@ add a child under the target, `replace` to change the target node itself (give t
 node, keeping what the operator did not ask to change), and `remove` to delete it. When the \
 instruction changes the pointed-at node itself (its columns, title, fields, actions or props: \
 \"also show X\", \"rename this\", \"add a column\"), use `replace` on that node; use `insert` only \
-for a new child, and never replace a parent to add one child. When one instruction needs more \
+for a new child, and never replace a parent to add one child: never replace a page or a \
+collection to add one child. A `replace` must repeat every existing prop, column and child it \
+does not mean to change; a replace that drops columns, sections or overlays the operator did not \
+ask about is wrong. When one instruction needs more \
 than one node changed, use `batch` with `patches` in order, each with its own `target`: for \
 example a row action that opens a drawer is an `insert` of the drawer overlay on the page \
 followed by a `replace` of the collection adding `row_actions: [{opens: <drawer>}]`. \
@@ -893,13 +899,112 @@ fn outline_lines(node: &uilab_doc::OutlineNode, depth: usize, out: &mut String) 
     }
 }
 
+/// The pages a request at `target` is about: the target page, then every other page whose name
+/// or title the utterance names (a trailing `s` optional). None below a page.
+fn named_pages<'a>(doc: &'a Document, target: &NodePath, utterance: &str) -> Vec<&'a str> {
+    let own = match target.layer() {
+        Layer::Root => None,
+        Layer::Page => target.0.first().map(|segment| segment.name.as_str()),
+        _ => return Vec::new(),
+    };
+    let said = utterance.to_lowercase();
+    let names = |needle: &str| {
+        let needle = needle.to_lowercase().replace('_', " ");
+        let stem = needle.strip_suffix('s').unwrap_or(&needle);
+        stem.len() >= 3 && said.contains(stem)
+    };
+    doc.pages
+        .iter()
+        .filter(|(name, page)| {
+            own == Some(name.as_str()) || names(name) || page.title.as_deref().is_some_and(names)
+        })
+        .map(|(name, _)| name.as_str())
+        .collect()
+}
+
+/// A section's columns, as `name, standing (as tag)`.
+fn columns(composite: &uilab_doc::model::Composite) -> Option<String> {
+    let columns = composite.props.get("columns")?.as_array()?;
+    Some(
+        columns
+            .iter()
+            .map(
+                |column| match (column["field"].as_str(), column["as"].as_str()) {
+                    (Some(field), Some(shown)) => format!("{field} (as {shown})"),
+                    (Some(field), None) => field.to_owned(),
+                    _ => column.to_string(),
+                },
+            )
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
+}
+
+/// One line per section and overlay of each page in `pages`: path, kind, view, columns and
+/// children, so a patch can target them in place rather than rewrite the page.
+fn page_nodes(doc: &Document, pages: &[&str]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for &name in pages {
+        let page_path = NodePath::root().child(Layer::Page, name);
+        let Some(page) = doc.pages.get(name) else {
+            continue;
+        };
+        for (section, composite) in &page.sections {
+            let Some(composite) = composite else { continue };
+            let path = page_path.child(Layer::Section, section);
+            let _ = write!(out, "\n- {path}: {}", composite.component.as_str());
+            if let Some(reads) = &composite.reads {
+                let _ = write!(out, " reads {}", reads.view);
+            }
+            if let Some(columns) = columns(composite) {
+                let _ = write!(out, "; columns {columns}");
+            }
+            let children = uilab_doc::path::children(doc, &path)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(layer, child)| format!("{layer}:{child}"))
+                .collect();
+            let _ = write!(out, "; children {}", join(children));
+        }
+        for (overlay, body) in &page.overlays {
+            let Some(body) = body else { continue };
+            let path = page_path.child(Layer::Overlay, overlay);
+            let _ = write!(
+                out,
+                "\n- {path}: {} {}",
+                serde_json::to_value(body.kind)
+                    .ok()
+                    .and_then(|kind| kind.as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+                body.body.component.as_str()
+            );
+        }
+    }
+    if out.is_empty() {
+        "none".to_owned()
+    } else {
+        out
+    }
+}
+
 /// The first message of a run: the utterance and the node's context.
 fn request(
     doc: &Document,
     context: &NodeContext,
+    target: &NodePath,
     utterance: &str,
     fields: &[(String, Vec<String>)],
 ) -> String {
+    let pages = named_pages(doc, target, utterance);
+    let places = if matches!(target.layer(), Layer::Root | Layer::Page) {
+        format!(
+            "Existing nodes of the pages the instruction is about (patch them in place): {}\n",
+            page_nodes(doc, &pages)
+        )
+    } else {
+        String::new()
+    };
     let layers = context
         .allowed_children
         .iter()
@@ -919,7 +1024,8 @@ fn request(
          Existing children: {children}\n\
          Views the document already reads: {views}\n\
          Fields of each view's rows: {fields}\n\
-         Widgets the document declares: {widgets}\n\n\
+         Widgets the document declares: {widgets}\n\
+         {places}\n\
          The target node as YAML:\n```yaml\n{yaml}```",
         path = context.path,
         kind = context.kind,
