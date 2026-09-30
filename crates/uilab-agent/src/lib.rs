@@ -657,7 +657,8 @@ fit the page and read views the document has. Decline only when there is nothing
 The instruction comes from speech-to-text. Ignore filler words (um, uh, like, so, please, can \
 you), false starts and repetitions. Kind names may be mis-heard: \"table\", \"list\", \"grid\" or \
 \"collections\" mean `collection`; \"filter bar\" or \"filters\" mean `filter_bar`; \"graph\" or \
-\"plot\" mean `chart`; \"card\", \"details\" or \"detail view\" mean `record`; \"number\", \"KPI\" \
+\"plot\" mean `chart`; \"card\", \"details\" or \"detail view\" mean `record`, but a reusable card \
+or a \"card for each …\" is a widget (below); \"component\" means a widget; \"number\", \"KPI\" \
 or \"stat\" mean `metric`; \"text\" or \"markdown\" mean `rich_text`; \"dashboard\" means `board`; \
 \"drawer\", \"dialog\", \"modal\" or \"popup\" mean an overlay. Read a word by what it most \
 plausibly means in a UI editor, never literally when that makes no sense.
@@ -688,6 +689,27 @@ The 14 composite kinds, and when to use each:
 - graph_editor: nodes and edges edited as a whole.
 - rich_text: formatted text.
 - references: what uses a record.
+
+Widgets are app-defined, reusable components (not a board's `widgets`, which are ordinary \
+composites). A widget is declared under `widgets:` at the document root: insert it at `/` with \
+layer `component` and a short lower-case name that is not a composite kind (`member_card`). Its \
+node has `summary` (one line, required), `params` (each `{type: …, required: true}` or with a \
+`default`; a type is `string`, `number`, `boolean`, a named type such as `Member`, or a \
+constructor map), optional `arrange` (`row`, `column` or `grid`) and a `body`: a list of named \
+nodes, each with `name`. A body node is a built-in composite, an instance of another widget, or a \
+primitive `{name: …, primitive: <kind>, …}`. The primitive kinds are `text` (`text` or `field`, \
+optional `style: heading`), `badge` (`text`, `tone` or `tone_by`), `icon` (`label`), `button` \
+(`label`, `action`), `link` (`to` or `href`), `input` (`binds`), `toggle`, `image` (`src`, \
+required `alt`) and `divider`. In a body, `args.<param>` refers to a param: `text: \
+args.member.name`. Add a body node with layer `node` under `component:<widget>`; change a widget \
+with `replace` on it. An instance is `{component: <widget>, args: {<param>: <value>}}` and goes \
+wherever a composite goes: a section, an overlay, a board's widget, a collection's item. It \
+supplies every required param and none the widget does not declare; in a collection item the \
+row is `row` (`args: {member: row}`). The widgets the document declares are listed with the \
+instruction; use one that fits. Make a new widget when the operator asks for something reusable, \
+a \"component\", a \"card for each …\", or the same structure would repeat; declare it and use it \
+in one `batch` (the insert at `/` first, then the uses, each with its own target). Otherwise keep \
+using built-in composites.
 
 Data comes from ESS views: `reads: {view: <domain>.<View>}`, with `params` for fixed filters \
 (for example `params: {state: overdue}`). Prefer a view the document already reads when it holds \
@@ -744,7 +766,13 @@ layout order) and overlays (drawers, dialogs, fullscreen panes, popovers); a boa
 widgets; a collection holds items. Composite kinds: collection (rows as a table or list), record \
 (one row as fields: a details card), form (input bound to a command), choice, filter_bar \
 (search and filters above a collection), header, overlay, confirm, metric, chart, board, \
-graph_editor, rich_text, references. Data comes from ESS views: prefer a view the document \
+graph_editor, rich_text, references. A step can also declare a widget, an app-defined reusable \
+component under `widgets:` at the root (target `/`, layer `component`, a `summary`, typed \
+`params` and a `body` of named composites, widget instances and primitives), and use it as \
+`{component: <widget>, args: {…}}` wherever a composite goes; declare a widget and its first use \
+in one step. Plan a widget when the goal asks for something reusable, a component, a card for \
+each row, or repeats a structure; use a widget the document already declares when one fits. \
+Declared widgets are `component:<name>` in the outline. Data comes from ESS views: prefer a view the document \
 already reads; when none fits, read a placeholder `draft.<Name>` view. Names of new nodes are \
 short, lower-case, with underscores, and unique among their siblings. If your plan is refused, \
 the refusal names the check it failed; fix exactly that and answer again.";
@@ -768,6 +796,39 @@ fn view_fields(fields: &[(String, Vec<String>)]) -> String {
     )
 }
 
+/// Every widget the document declares, one `- name: summary Params: p (type, required), …` line
+/// each, or `none`.
+fn declared_widgets(doc: &Document) -> String {
+    if doc.widgets.is_empty() {
+        return "none".to_owned();
+    }
+    doc.widgets
+        .iter()
+        .map(|(name, widget)| {
+            let params: Vec<String> = widget
+                .params
+                .iter()
+                .map(|(param, declared)| {
+                    let ty = match &declared.ty {
+                        Value::String(ty) => ty.clone(),
+                        other => other.to_string(),
+                    };
+                    if declared.is_required() {
+                        format!("{param} ({ty}, required)")
+                    } else {
+                        format!("{param} ({ty})")
+                    }
+                })
+                .collect();
+            format!(
+                "\n- {name}: {summary} Params: {params}",
+                summary = widget.summary,
+                params = join(params)
+            )
+        })
+        .collect()
+}
+
 /// The first message of a plan run: the goal, the cap, the node's context and the whole outline.
 fn plan_request(
     doc: &Document,
@@ -786,7 +847,8 @@ fn plan_request(
          Child layers it can take: {layers}\n\
          Existing children: {children}\n\
          Views the document already reads: {views}\n\
-         Fields of each view's rows: {fields}\n\n\
+         Fields of each view's rows: {fields}\n\
+         Widgets the document declares: {widgets}\n\n\
          The document outline, one node per line (path, kind, title, view it reads):\n\
          {outline}\n\
          The target node as YAML:\n```yaml\n{yaml}```",
@@ -803,6 +865,7 @@ fn plan_request(
         children = join(context.children.clone()),
         views = join(known_views(doc)),
         fields = view_fields(fields),
+        widgets = declared_widgets(doc),
         yaml = context.yaml,
     )
 }
@@ -855,7 +918,8 @@ fn request(
          Composite kinds a new composite child can be: {kinds}\n\
          Existing children: {children}\n\
          Views the document already reads: {views}\n\
-         Fields of each view's rows: {fields}\n\n\
+         Fields of each view's rows: {fields}\n\
+         Widgets the document declares: {widgets}\n\n\
          The target node as YAML:\n```yaml\n{yaml}```",
         path = context.path,
         kind = context.kind,
@@ -865,6 +929,7 @@ fn request(
         children = join(context.children.clone()),
         views = join(known_views(doc)),
         fields = view_fields(fields),
+        widgets = declared_widgets(doc),
         yaml = context.yaml,
     )
 }
