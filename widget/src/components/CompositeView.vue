@@ -2,29 +2,56 @@
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
+import { entityViews, fixtureRowOf, viewsRead } from '../lib/components.ts';
+import { compositeKind, drawsAsPrimitive, instanceBody, itemScopes, missingReference, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
 import { columnsOf, fieldsOf, isDraftView, propsOf } from '../lib/outline.ts';
-import { marks, requestRows, select, state, tint } from '../store.ts';
+import { marks, requestRows, select, shownOutline, state, tint } from '../store.ts';
+import PrimitiveView from './PrimitiveView.vue';
 
-const props = defineProps<{ node: OutlineNode }>();
+/** `scope`: what a widget instance's `row` and `rows.…` args read here, given by the composite
+ *  this one sits in. `within`: the widgets it is drawn inside, which are not expanded again. */
+const props = defineProps<{ node: OutlineNode; scope?: Scope; within?: string[] }>();
 
-/** The composite kind: an overlay's kind reads `<presentation> <composite>`. */
-const kind = computed(() => (props.node.layer === 'overlay' ? props.node.kind.split(' ').at(-1)! : props.node.kind));
+const kind = computed(() => compositeKind(props.node));
 const p = computed(() => propsOf(props.node));
 const view = computed(() => props.node.view);
 const draft = computed(() => isDraftView(view.value));
 /** Preview drops the `name · kind · view` label; the sample-data tag stays in both modes. */
 const preview = computed(() => canvasMode.mode.value === 'preview');
-const needsRows = computed(() => ['collection', 'metric', 'record', 'chart'].includes(kind.value));
+const root = computed(() => shownOutline.value);
+const within = computed(() => props.within ?? []);
+/** The widget this node instantiates, drawn as its body with the node's args bound. */
+const instance = computed(() => (root.value ? widgetOfInstance(root.value, props.node, within.value) : null));
+const needsRows = computed(() => ['collection', 'metric', 'record', 'chart'].includes(kind.value) || !!instance.value);
 const rows = computed(() => (view.value ? state.rows[view.value] : undefined));
 const rowObjects = computed<Record<string, unknown>[]>(() => {
   const all: unknown[] = rows.value?.rows ?? [];
   return all.filter((r) => !!r && typeof r === 'object' && !Array.isArray(r)) as Record<string, unknown>[];
 });
+/** The rows `rows.…` reads here: this composite's own when it reads a view, else those it sits in. */
+const scopeRows = computed(() => (view.value ? rowObjects.value : props.scope?.rows));
+const childScope = computed<Scope>(() => ({ rows: scopeRows.value }));
+const items = computed(() => props.node.children.filter((c) => c.layer === 'item'));
+const others = computed(() => props.node.children.filter((c) => c.layer !== 'item'));
+const scopes = computed(() => itemScopes(kind.value, scopeRows.value ?? []));
+
+const views = computed(() => (root.value ? viewsRead(root.value) : []));
+const body = computed(() => {
+  if (!instance.value) return [];
+  const scope: Scope = { row: props.scope?.row, rows: scopeRows.value };
+  return instanceBody(instance.value, props.node, scope, fixtureRowOf(views.value, state.rows));
+});
+const bodyWithin = computed(() => (instance.value ? [...within.value, instance.value.name] : within.value));
+/** An instance whose `row`/`rows` args have nothing to read here: shown as the empty line, not as
+ *  a body of sample args that would read as real data. */
+const unbound = computed(() => !!instance.value && missingReference(props.node, { row: props.scope?.row, rows: scopeRows.value }));
+const unboundLine = computed(() => (view.value && !rows.value ? (preview.value ? 'loading…' : `loading ${view.value}…`) : 'no data yet'));
 
 const sampled = computed(() => draft.value && rowObjects.value.length > 0);
 
 watchEffect(() => {
   if (needsRows.value) requestRows(view.value);
+  if (instance.value) for (const v of entityViews(instance.value.params, views.value)) requestRows(v);
 });
 
 const emptyLine = computed(() =>
@@ -170,12 +197,80 @@ function display(v: unknown): string {
       <p v-else class="empty">{{ emptyLine }}</p>
     </template>
 
+    <template v-else-if="instance">
+      <p v-if="unbound" class="empty">{{ unboundLine }}</p>
+      <div v-else class="instance-body" :class="`arrange-${instance.arrange}`" :data-widget="instance.name">
+        <template v-for="b in body" :key="b.path">
+          <PrimitiveView v-if="drawsAsPrimitive(b)" :node="b" />
+          <CompositeView v-else :node="b" :scope="{ row: scope?.row, rows: scopeRows }" :within="bodyWithin" />
+        </template>
+        <p v-if="!body.length" class="empty">empty body</p>
+      </div>
+    </template>
+
     <template v-else-if="kind !== 'board'">
       <div class="placeholder">{{ kind }}<span v-if="view && !preview"> · {{ view }}</span></div>
     </template>
 
-    <div v-if="node.children.length" class="children" :class="{ grid: kind === 'board' }">
-      <CompositeView v-for="c in node.children" :key="c.path" :node="c" />
+    <div v-if="items.length" class="item-rows">
+      <div v-for="(s, i) in scopes" :key="i" class="item-row">
+        <template v-for="c in items" :key="c.path">
+          <PrimitiveView v-if="drawsAsPrimitive(c)" :node="s.row ? rowNode(c, s.row, s.rows) : c" />
+          <CompositeView v-else :node="s.row ? rowNode(c, s.row, s.rows) : c" :scope="s" :within="within" />
+        </template>
+      </div>
+    </div>
+    <div v-if="others.length" class="children" :class="{ grid: kind === 'board' }">
+      <CompositeView v-for="c in others" :key="c.path" :node="c" :scope="childScope" :within="within" />
     </div>
   </div>
 </template>
+
+<style scoped>
+.instance-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.instance-body.arrange-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.instance-body.arrange-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.instance-body > .card {
+  margin-bottom: 0;
+}
+
+.item-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.item-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.item-row:first-child {
+  border-top: 0;
+}
+
+.item-row > .card {
+  margin-bottom: 0;
+  flex: 1 1 220px;
+}
+</style>
