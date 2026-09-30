@@ -7,6 +7,10 @@
 //! validates locally before it counts as an answer. The answer is then read as a
 //! [`uilab_doc::Patch`] and admitted. A refusal is fed back to the model once, on the same
 //! conversation; a second refusal is [`ProposeError::Refused`].
+//!
+//! [`Proposer::plan_goal`] runs the same way for a goal: one run whose answer is an ordered
+//! [`Plan`] of at most N [`Step`]s, each an instruction `propose` can carry out at its target,
+//! held to [`check_plan`] with the same one retry.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,7 +22,8 @@ use harness_loop::{
 use harness_wire::{
     Bearer, BearerSource, ModelPort, ToolCall, ToolOutcome, ToolPort, ToolSpec, WireError,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uilab_doc::{Document, NodeContext, NodePath, Patch, PathError, Refusal};
 
 /// The subscription route's base URL: the Messages API.
@@ -90,6 +95,161 @@ pub struct Proposal {
     pub attempts: u32,
 }
 
+/// A goal broken into ordered steps, and what planning it took.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Plan {
+    /// The steps, in the order they are to be proposed; [`check_plan`] accepted them.
+    pub steps: Vec<Step>,
+    /// Turns across every attempt.
+    pub turns: u64,
+    /// What every attempt cost, in millionths of a US dollar; `None` when no rate card priced it.
+    pub cost_micro_usd: Option<u64>,
+}
+
+/// One instruction of a plan, for one [`Proposer::propose`] at its target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Step {
+    /// What to change, as the operator would say it.
+    pub instruction: String,
+    /// The node the instruction is about: one that exists, or one under an earlier step's target.
+    pub target: NodePath,
+    /// What the step contributes to the goal.
+    pub why: String,
+}
+
+/// A plan answer as the model gives it; `op` and `reason` are read before this.
+#[derive(Deserialize)]
+struct PlanAnswer {
+    #[serde(default)]
+    steps: Vec<Step>,
+}
+
+/// An accepted answer and what the attempts took.
+struct Answered<T> {
+    value: T,
+    turns: u64,
+    cost_micro_usd: Option<u64>,
+    attempts: u32,
+}
+
+/// What a refusal fed back asks to be corrected.
+#[derive(Clone, Copy)]
+struct Retry {
+    answer: &'static str,
+    request: &'static str,
+}
+
+impl Retry {
+    const PATCH: Retry = Retry {
+        answer: "patch",
+        request: "instruction",
+    };
+    const PLAN: Retry = Retry {
+        answer: "plan",
+        request: "goal",
+    };
+
+    /// The message that feeds a refusal back for the next attempt.
+    fn message(self, refusal: &Refusal) -> String {
+        format!(
+            "The document refused that {answer}. {check}: {message}\n\
+             Propose a corrected {answer} for the same {request} by calling `answer` again.",
+            answer = self.answer,
+            request = self.request,
+            check = refusal.check,
+            message = refusal.message,
+        )
+    }
+}
+
+/// Whether `steps` is a plan the runner can carry out on `doc`, one proposal at a time: at least
+/// one step, at most `max_steps`, and every target either a node of `doc` or a node under an
+/// earlier step's target, which that step may create.
+///
+/// # Errors
+///
+/// The [`Refusal`] `plan_empty`, `plan_too_long` or `plan_target`, naming the step.
+pub fn check_plan(doc: &Document, steps: &[Step], max_steps: usize) -> Result<(), Refusal> {
+    if steps.is_empty() {
+        return Err(Refusal {
+            check: "plan_empty".to_owned(),
+            message: "the plan has no steps; give at least one, or decline".to_owned(),
+        });
+    }
+    if steps.len() > max_steps {
+        return Err(Refusal {
+            check: "plan_too_long".to_owned(),
+            message: format!(
+                "the plan has {} steps and the cap is {max_steps}; merge or drop steps",
+                steps.len()
+            ),
+        });
+    }
+    for (index, step) in steps.iter().enumerate() {
+        let under_earlier = steps[..index].iter().any(|earlier| {
+            earlier.target.0.len() < step.target.0.len()
+                && step.target.0.starts_with(&earlier.target.0)
+        });
+        if !under_earlier && uilab_doc::resolve(doc, &step.target).is_err() {
+            return Err(Refusal {
+                check: "plan_target".to_owned(),
+                message: format!(
+                    "step {} targets `{}`, which is no node of the document and not under any \
+                     earlier step's target; put the step that creates it first, or target a node \
+                     that exists",
+                    index + 1,
+                    step.target
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The answer schema of a plan: `op: plan` with at most `max_steps` steps, or `op: decline`.
+fn plan_schema(max_steps: usize) -> Value {
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": ["op"],
+        "additionalProperties": false,
+        "properties": {
+            "op": {
+                "enum": ["plan", "decline"],
+                "description": "plan gives `steps`; decline changes nothing, with a `reason`, when the goal is not a request to change the UI"
+            },
+            "reason": {
+                "type": "string",
+                "description": "for decline only: why nothing is planned, or the answer to a question"
+            },
+            "steps": {
+                "description": "for plan only: the steps in the order they run",
+                "type": "array",
+                "maxItems": max_steps,
+                "items": {
+                    "type": "object",
+                    "required": ["instruction", "target", "why"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "instruction": {
+                            "type": "string",
+                            "description": "one instruction, complete on its own, that one patch at `target` carries out"
+                        },
+                        "target": {
+                            "type": "string",
+                            "description": "the node path the instruction is about: an existing node, or one under an earlier step's target"
+                        },
+                        "why": {
+                            "type": "string",
+                            "description": "one line: what this step contributes to the goal"
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
 /// Why no patch came back.
 #[derive(Debug, thiserror::Error)]
 pub enum ProposeError {
@@ -103,10 +263,10 @@ pub enum ProposeError {
     #[error("the agent run failed: {0}")]
     Run(#[from] LoopError),
     /// The agent run ended without an answer: a budget bound, or it answered in prose.
-    #[error("the agent run ended without a patch: {0}")]
+    #[error("the agent run ended without an answer: {0}")]
     Stopped(String),
     /// Every attempt was refused; this is the last refusal.
-    #[error("the patch was refused on every attempt; last refusal {check}: {message}")]
+    #[error("the answer was refused on every attempt; last refusal {check}: {message}")]
     Refused { check: String, message: String },
     /// The words were not a request to change the UI (thanks, a greeting, a question, noise);
     /// nothing is proposed, and this says why or answers the question.
@@ -192,21 +352,119 @@ impl Proposer {
     ) -> Result<Proposal, ProposeError> {
         let context = uilab_doc::node_context(doc, target)?;
         let schema = uilab_doc::patch_schema(doc, target)?;
+        let config = self.loop_config(INSTRUCTIONS, schema)?;
+        let answered = self.attempts(
+            config,
+            request(doc, &context, utterance, fields),
+            Retry::PATCH,
+            |structured| {
+                let patch =
+                    serde_json::from_value::<Patch>(structured).map_err(|error| Refusal {
+                        check: "patch_shape".to_owned(),
+                        message: error.to_string(),
+                    })?;
+                uilab_doc::admit(doc, &patch)?;
+                Ok(patch)
+            },
+        )?;
+        Ok(Proposal {
+            patch: answered.value,
+            turns: answered.turns,
+            cost_micro_usd: answered.cost_micro_usd,
+            attempts: answered.attempts,
+        })
+    }
+
+    /// Blocking. One goal at one node → an ordered list of at most `max_steps` instructions,
+    /// each one [`propose`](Self::propose) can carry out at its target. One harness run, on the
+    /// same port and credential as `propose`.
+    ///
+    /// # Errors
+    ///
+    /// [`ProposeError::Target`] for a path that names no node, [`ProposeError::Config`] for a
+    /// `max_steps` of 0, [`ProposeError::Declined`] for a goal that is not a UI change,
+    /// [`ProposeError::Run`] and [`ProposeError::Stopped`] for a run that gave no answer, and
+    /// [`ProposeError::Refused`] when [`MAX_ATTEMPTS`] plans were all refused by [`check_plan`].
+    pub fn plan_goal(
+        &mut self,
+        doc: &Document,
+        target: &NodePath,
+        goal: &str,
+        max_steps: usize,
+    ) -> Result<Plan, ProposeError> {
+        self.plan_goal_with(doc, target, goal, max_steps, &[])
+    }
+
+    /// [`plan_goal`](Self::plan_goal), telling the model which fields each view's rows carry, as
+    /// [`propose_with`](Self::propose_with) does.
+    ///
+    /// # Errors
+    ///
+    /// As [`plan_goal`](Self::plan_goal).
+    pub fn plan_goal_with(
+        &mut self,
+        doc: &Document,
+        target: &NodePath,
+        goal: &str,
+        max_steps: usize,
+        fields: &[(String, Vec<String>)],
+    ) -> Result<Plan, ProposeError> {
+        let context = uilab_doc::node_context(doc, target)?;
+        if max_steps == 0 {
+            return Err(ProposeError::Config(
+                "a plan needs a cap of at least one step".to_owned(),
+            ));
+        }
+        let config = self.loop_config(PLAN_INSTRUCTIONS, plan_schema(max_steps))?;
+        let answered = self.attempts(
+            config,
+            plan_request(doc, &context, goal, max_steps, fields),
+            Retry::PLAN,
+            |structured| {
+                let answer =
+                    serde_json::from_value::<PlanAnswer>(structured).map_err(|error| Refusal {
+                        check: "plan_shape".to_owned(),
+                        message: error.to_string(),
+                    })?;
+                check_plan(doc, &answer.steps, max_steps)?;
+                Ok(answer.steps)
+            },
+        )?;
+        Ok(Plan {
+            steps: answered.value,
+            turns: answered.turns,
+            cost_micro_usd: answered.cost_micro_usd,
+        })
+    }
+
+    /// One run's configuration: these instructions, this answer schema, this proposer's bounds.
+    fn loop_config(&self, instructions: &str, schema: Value) -> Result<LoopConfig, ProposeError> {
         let answer =
             OutputSchema::new(schema).map_err(|error| ProposeError::Config(error.to_string()))?;
-        let config = LoopConfig::new(self.model.clone(), INSTRUCTIONS)
+        Ok(LoopConfig::new(self.model.clone(), instructions)
             .with_budget(Budget {
                 max_turns: Some(u64::from(self.max_turns)),
                 ..Budget::default()
             })
             .with_context_window(Some(self.context_window))
             .with_prices(self.prices.clone())
-            .with_output_schema(Some(answer));
+            .with_output_schema(Some(answer)))
+    }
 
+    /// Up to [`MAX_ATTEMPTS`] runs on one conversation: `accept` reads each structured answer,
+    /// and its refusal is fed back for the next attempt. `op: decline` ends it as
+    /// [`ProposeError::Declined`].
+    fn attempts<T>(
+        &mut self,
+        config: LoopConfig,
+        first: String,
+        retry: Retry,
+        mut accept: impl FnMut(Value) -> Result<T, Refusal>,
+    ) -> Result<Answered<T>, ProposeError> {
         let mut items = Vec::new();
         let mut turns = 0;
         let mut costs = Vec::new();
-        let mut input = request(doc, &context, utterance, fields);
+        let mut input = first;
         let mut refusal = None;
         for attempt in 1..=MAX_ATTEMPTS {
             let mut tools = NoTools;
@@ -232,25 +490,20 @@ impl Proposer {
                     .unwrap_or("not an instruction to change the UI");
                 return Err(ProposeError::Declined(reason.to_owned()));
             }
-            let refused = match serde_json::from_value::<Patch>(structured) {
-                Ok(patch) => match uilab_doc::admit(doc, &patch) {
-                    Ok(_) => {
-                        return Ok(Proposal {
-                            patch,
-                            turns,
-                            cost_micro_usd: total(&costs),
-                            attempts: attempt,
-                        });
-                    }
-                    Err(refused) => refused,
-                },
-                Err(error) => Refusal {
-                    check: "patch_shape".to_owned(),
-                    message: error.to_string(),
-                },
-            };
-            input = retry(&refused);
-            refusal = Some(refused);
+            match accept(structured) {
+                Ok(value) => {
+                    return Ok(Answered {
+                        value,
+                        turns,
+                        cost_micro_usd: total(&costs),
+                        attempts: attempt,
+                    });
+                }
+                Err(refused) => {
+                    input = retry.message(&refused);
+                    refusal = Some(refused);
+                }
+            }
         }
         let refused = refusal.expect("every attempt that did not return was refused");
         Err(ProposeError::Refused {
@@ -398,6 +651,124 @@ asked for is not among them. An `opens` \
 value must name an overlay of the page or its shell. If a patch you proposed is refused, the \
 refusal names the check it failed; fix exactly that and answer again.";
 
+/// What the planner is told about `ui-spec/1` and its job.
+pub const PLAN_INSTRUCTIONS: &str = "\
+You plan changes to one user-interface document in the `ui-spec/1` format. The operator states a \
+goal while pointing at one node; you break it into an ordered list of steps and answer by calling \
+the `answer` tool once with `op: plan` and `steps`. Do not explain; call `answer`.
+
+Each step is one instruction that another agent, the proposer, will carry out on its own as \
+exactly one patch at the step's `target`: one insert of a child under the target, one replace of \
+the target, one remove of it, or one batch of those. The proposer sees only the step's \
+instruction, its target and the document, so write each `instruction` complete on its own, as \
+the operator would say it: name the composite kind, the view it reads, its fields and its title, \
+and the name of any node it creates. `why` says in one line what the step adds to the goal.
+
+Steps run in order, each on the document the earlier steps left. A later step may target a node \
+an earlier step creates: name that node by the path it will have, for example \
+`page:members/section:details` after a step at `page:members` that inserts the section \
+`details`, and give that name in the earlier step's instruction. Every target is either a node \
+of the outline below or lies under an earlier step's target. Use as few steps as the goal needs \
+and never more than the cap; one step that adds several related nodes as a batch is better than \
+several tiny steps. A drawer or dialog and the row action that opens it belong in one step.
+
+When the goal is not a request to change the UI (thanks, a greeting, small talk, a question \
+about what you can do, noise), answer `op: decline` with a one-line `reason`; for a question, \
+the reason is the short answer. An open request (\"be creative\", \"build out this page\") is a \
+goal, not a reason to decline.
+
+Paths are `layer:name` segments joined by `/`: `page:loans`, `page:loans/section:list`, \
+`page:loans/overlay:edit`, `shell:app/region:nav`, `nav`. A page holds sections (composites, in \
+layout order) and overlays (drawers, dialogs, fullscreen panes, popovers); a board holds \
+widgets; a collection holds items. Composite kinds: collection (rows as a table or list), record \
+(one row as fields: a details card), form (input bound to a command), choice, filter_bar \
+(search and filters above a collection), header, overlay, confirm, metric, chart, board, \
+graph_editor, rich_text, references. Data comes from ESS views: prefer a view the document \
+already reads; when none fits, read a placeholder `draft.<Name>` view. Names of new nodes are \
+short, lower-case, with underscores, and unique among their siblings. If your plan is refused, \
+the refusal names the check it failed; fix exactly that and answer again.";
+
+/// `none` for nothing, else the items joined by commas.
+fn join(items: Vec<String>) -> String {
+    if items.is_empty() {
+        "none".to_owned()
+    } else {
+        items.join(", ")
+    }
+}
+
+/// Each view with the fields its rows carry, as `view (a, b)`.
+fn view_fields(fields: &[(String, Vec<String>)]) -> String {
+    join(
+        fields
+            .iter()
+            .map(|(view, names)| format!("{view} ({})", names.join(", ")))
+            .collect(),
+    )
+}
+
+/// The first message of a plan run: the goal, the cap, the node's context and the whole outline.
+fn plan_request(
+    doc: &Document,
+    context: &NodeContext,
+    goal: &str,
+    max_steps: usize,
+    fields: &[(String, Vec<String>)],
+) -> String {
+    let mut outline = String::new();
+    outline_lines(&uilab_doc::outline(doc), 0, &mut outline);
+    format!(
+        "Goal: \"{goal}\"\n\
+         At most {max_steps} steps.\n\n\
+         Target node: {path} ({kind})\n\
+         Ancestors: {ancestors}\n\
+         Child layers it can take: {layers}\n\
+         Existing children: {children}\n\
+         Views the document already reads: {views}\n\
+         Fields of each view's rows: {fields}\n\n\
+         The document outline, one node per line (path, kind, title, view it reads):\n\
+         {outline}\n\
+         The target node as YAML:\n```yaml\n{yaml}```",
+        path = context.path,
+        kind = context.kind,
+        ancestors = join(context.ancestors.clone()),
+        layers = join(
+            context
+                .allowed_children
+                .iter()
+                .map(|layer| layer.as_str().to_owned())
+                .collect()
+        ),
+        children = join(context.children.clone()),
+        views = join(known_views(doc)),
+        fields = view_fields(fields),
+        yaml = context.yaml,
+    )
+}
+
+/// The outline below `node`, one indented line per node.
+fn outline_lines(node: &uilab_doc::OutlineNode, depth: usize, out: &mut String) {
+    use std::fmt::Write as _;
+    let _ = write!(
+        out,
+        "{:indent$}{} ({})",
+        "",
+        node.path,
+        node.kind,
+        indent = depth * 2
+    );
+    if let Some(title) = &node.title {
+        let _ = write!(out, " \"{title}\"");
+    }
+    if let Some(view) = &node.view {
+        let _ = write!(out, " reads {view}");
+    }
+    out.push('\n');
+    for child in &node.children {
+        outline_lines(child, depth + 1, out);
+    }
+}
+
 /// The first message of a run: the utterance and the node's context.
 fn request(
     doc: &Document,
@@ -405,13 +776,6 @@ fn request(
     utterance: &str,
     fields: &[(String, Vec<String>)],
 ) -> String {
-    let join = |items: Vec<String>| {
-        if items.is_empty() {
-            "none".to_owned()
-        } else {
-            items.join(", ")
-        }
-    };
     let layers = context
         .allowed_children
         .iter()
@@ -439,12 +803,7 @@ fn request(
         kinds = join(kinds),
         children = join(context.children.clone()),
         views = join(known_views(doc)),
-        fields = join(
-            fields
-                .iter()
-                .map(|(view, names)| format!("{view} ({})", names.join(", ")))
-                .collect(),
-        ),
+        fields = view_fields(fields),
         yaml = context.yaml,
     )
 }
@@ -465,16 +824,6 @@ fn known_views(doc: &Document) -> Vec<String> {
     views
 }
 
-/// The message that feeds a refusal back for the second attempt.
-fn retry(refusal: &Refusal) -> String {
-    format!(
-        "The document refused that patch. {check}: {message}\n\
-         Propose a corrected patch for the same instruction by calling `answer` again.",
-        check = refusal.check,
-        message = refusal.message,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,6 +839,42 @@ mod tests {
         assert_eq!(total(&[Some(3), Some(4)]), Some(7));
         assert_eq!(total(&[Some(3), None]), None);
         assert_eq!(total(&[]), Some(0));
+    }
+
+    fn library() -> Document {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/library/library.ui.yaml");
+        Document::from_yaml(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    fn steps(targets: &[&str]) -> Vec<Step> {
+        targets
+            .iter()
+            .map(|target| Step {
+                instruction: format!("change {target}"),
+                target: target.parse().unwrap(),
+                why: "a test".to_owned(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_plan_check_refuses_over_the_cap_empty_and_unreachable_targets() {
+        let doc = library();
+        let refused = check_plan(&doc, &steps(&["page:members", "page:loans"]), 1).unwrap_err();
+        assert_eq!(refused.check, "plan_too_long");
+        assert!(refused.message.contains('1'), "{}", refused.message);
+        assert_eq!(check_plan(&doc, &[], 8).unwrap_err().check, "plan_empty");
+        let refused = check_plan(&doc, &steps(&["page:members/section:details"]), 8).unwrap_err();
+        assert_eq!(refused.check, "plan_target");
+        check_plan(
+            &doc,
+            &steps(&["page:members", "page:members/section:details"]),
+            8,
+        )
+        .expect("a target under an earlier step's target");
+        check_plan(&doc, &steps(&["page:members/section:list"]), 8)
+            .expect("a target that resolves");
     }
 
     #[test]

@@ -9,7 +9,7 @@ use harness_wire::{
     Usage, WireError, WireId,
 };
 use serde_json::{Value, json};
-use uilab_agent::{ProposeError, Proposer, ProposerConfig};
+use uilab_agent::{ProposeError, Proposer, ProposerConfig, Step};
 use uilab_doc::{Document, NodePath, Patch};
 
 fn library() -> Document {
@@ -242,4 +242,274 @@ fn a_decline_proposes_nothing_and_says_why() {
         Err(uilab_agent::ProposeError::Declined(reason)) => assert!(reason.contains("thanks")),
         other => panic!("expected a decline, got {other:?}"),
     }
+}
+
+const MEMBER_AREA: &str =
+    "build out the member area: a list with search, a details card and an edit drawer";
+
+fn members() -> NodePath {
+    "page:members".parse().unwrap()
+}
+
+fn step(instruction: &str, target: &str) -> Value {
+    json!({"instruction": instruction, "target": target, "why": format!("so that {instruction}")})
+}
+
+fn plan_of(steps: Vec<Value>) -> Value {
+    json!({"op": "plan", "steps": steps})
+}
+
+/// Three steps at `page:members`; the second targets the section the first creates.
+fn member_area_plan() -> Value {
+    plan_of(vec![
+        step("add a details card for the selected member", "page:members"),
+        step(
+            "add the member's loans to the details card",
+            "page:members/section:details",
+        ),
+        step("add a search bar above the member list", "page:members"),
+    ])
+}
+
+fn schema_of(request: &TurnRequest) -> &Value {
+    &request.tools[0].input_schema
+}
+
+#[test]
+fn a_goal_yields_ordered_steps_whose_targets_resolve_or_are_created_earlier() {
+    let doc = library();
+    let (mut proposer, seen) = proposer(vec![member_area_plan()]);
+    let plan = proposer
+        .plan_goal(&doc, &members(), MEMBER_AREA, 8)
+        .unwrap();
+
+    assert_eq!(plan.turns, 1);
+    assert_eq!(plan.cost_micro_usd, None, "no rate card, no price");
+    let targets: Vec<String> = plan.steps.iter().map(|s| s.target.to_string()).collect();
+    assert_eq!(
+        targets,
+        [
+            "page:members",
+            "page:members/section:details",
+            "page:members"
+        ],
+        "the steps come back in the order the model gave them"
+    );
+    assert_eq!(
+        plan.steps[0].instruction,
+        "add a details card for the selected member"
+    );
+    assert!(plan.steps[1].why.contains("loans"), "{:?}", plan.steps[1]);
+    let last: &Step = &plan.steps[2];
+    assert_eq!(last.instruction, "add a search bar above the member list");
+
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    let request = &seen[0];
+    assert_eq!(request.tools.len(), 1, "{:?}", request.tools);
+    assert_eq!(request.tools[0].name.as_str(), "answer");
+    let schema = schema_of(request);
+    assert_eq!(schema["properties"]["steps"]["maxItems"], json!(8));
+    assert_eq!(
+        schema["properties"]["op"]["enum"],
+        json!(["plan", "decline"])
+    );
+    for field in ["instruction", "target", "why"] {
+        assert!(
+            schema["properties"]["steps"]["items"]["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(field)),
+            "{schema}"
+        );
+    }
+    assert!(
+        request.instructions.contains("propose"),
+        "{}",
+        request.instructions
+    );
+    let user = texts(request);
+    assert!(user.contains(MEMBER_AREA), "{user}");
+    assert!(user.contains("Target node: page:members"), "{user}");
+    assert!(
+        user.contains("page:members/section:list"),
+        "the outline: {user}"
+    );
+    assert!(
+        user.contains("page:loans/overlay:edit"),
+        "the outline: {user}"
+    );
+    assert!(user.contains("members.All"), "{user}");
+}
+
+#[test]
+fn view_fields_reach_the_planner() {
+    let doc = library();
+    let (mut proposer, seen) = proposer(vec![member_area_plan()]);
+    let fields = vec![(
+        "members.All".to_owned(),
+        vec![
+            "name".to_owned(),
+            "joined".to_owned(),
+            "standing".to_owned(),
+        ],
+    )];
+    proposer
+        .plan_goal_with(&doc, &members(), MEMBER_AREA, 8, &fields)
+        .unwrap();
+    let user = texts(&seen.lock().unwrap()[0]);
+    assert!(
+        user.contains("members.All (name, joined, standing)"),
+        "{user}"
+    );
+}
+
+#[test]
+fn a_target_nothing_earlier_creates_is_refused_and_retried_with_the_refusal() {
+    let doc = library();
+    let premature = plan_of(vec![
+        step(
+            "add the member's loans to the details card",
+            "page:members/section:details",
+        ),
+        step("add a details card for the selected member", "page:members"),
+    ]);
+    let (mut proposer, seen) = proposer(vec![premature, member_area_plan()]);
+    let plan = proposer
+        .plan_goal(&doc, &members(), MEMBER_AREA, 8)
+        .unwrap();
+
+    assert_eq!(plan.turns, 2);
+    assert_eq!(plan.steps.len(), 3);
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    assert!(!texts(&seen[0]).contains("plan_target"));
+    let second = texts(&seen[1]);
+    assert!(second.contains("plan_target: "), "{second}");
+    assert!(second.contains("page:members/section:details"), "{second}");
+}
+
+#[test]
+fn two_refused_plans_are_refused() {
+    let doc = library();
+    let dangling = plan_of(vec![step("add a card", "page:nowhere/section:card")]);
+    let (mut proposer, seen) = proposer(vec![dangling.clone(), dangling, member_area_plan()]);
+    let error = proposer
+        .plan_goal(&doc, &members(), MEMBER_AREA, 8)
+        .unwrap_err();
+    let ProposeError::Refused { check, message } = error else {
+        panic!("refused: {error}");
+    };
+    assert_eq!(check, "plan_target");
+    assert!(message.contains("page:nowhere/section:card"), "{message}");
+    assert_eq!(seen.lock().unwrap().len(), 2, "no third attempt");
+}
+
+#[test]
+fn a_step_under_an_earlier_steps_target_is_accepted_at_any_depth() {
+    let doc = library();
+    let deep = plan_of(vec![
+        step("add a details card with a loans list", "page:members"),
+        step("show each loan's due date", "page:members/section:details"),
+        step(
+            "tag overdue loans in the details list",
+            "page:members/section:details/item:loan",
+        ),
+    ]);
+    let (mut proposer, _) = proposer(vec![deep]);
+    let plan = proposer
+        .plan_goal(&doc, &members(), MEMBER_AREA, 8)
+        .unwrap();
+    assert_eq!(plan.steps.len(), 3);
+}
+
+#[test]
+fn more_steps_than_the_cap_are_refused() {
+    let doc = library();
+    let three = member_area_plan();
+    let two = plan_of(vec![
+        step("add a details card for the selected member", "page:members"),
+        step("add a search bar above the member list", "page:members"),
+    ]);
+
+    let (mut planner, seen) = proposer(vec![three.clone(), two]);
+    let plan = planner.plan_goal(&doc, &members(), MEMBER_AREA, 2).unwrap();
+    assert_eq!(plan.steps.len(), 2, "the over-cap answer is not the plan");
+    assert_eq!(plan.turns, 2, "the over-cap answer cost a turn");
+    let seen = seen.lock().unwrap();
+    assert_eq!(
+        schema_of(&seen[0])["properties"]["steps"]["maxItems"],
+        json!(2)
+    );
+    let refused_in_loop = seen[1].items.iter().any(|item| {
+        matches!(item, Item::ToolResult { output, failed: true, .. }
+            if output.to_string().contains("published schema"))
+    });
+    assert!(
+        refused_in_loop,
+        "the over-cap answer was refused against the published cap: {:?}",
+        seen[1].items
+    );
+    drop(seen);
+
+    let (mut proposer, _) = proposer(vec![three; 8]);
+    let error = proposer
+        .plan_goal(&doc, &members(), MEMBER_AREA, 2)
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ProposeError::Stopped(_) | ProposeError::Refused { .. }
+        ),
+        "an over-cap plan never comes back: {error}"
+    );
+}
+
+#[test]
+fn an_empty_plan_is_refused_and_retried() {
+    let doc = library();
+    let (mut planner, seen) = proposer(vec![plan_of(vec![]), member_area_plan()]);
+    let plan = planner.plan_goal(&doc, &members(), MEMBER_AREA, 8).unwrap();
+    assert_eq!(plan.steps.len(), 3);
+    assert!(texts(&seen.lock().unwrap()[1]).contains("plan_empty: "));
+
+    let (mut proposer, _) = proposer(vec![
+        json!({"op": "plan"}),
+        json!({"op": "plan", "steps": []}),
+    ]);
+    let error = proposer
+        .plan_goal(&doc, &members(), MEMBER_AREA, 8)
+        .unwrap_err();
+    let ProposeError::Refused { check, .. } = error else {
+        panic!("refused: {error}");
+    };
+    assert_eq!(check, "plan_empty");
+}
+
+#[test]
+fn a_goal_that_is_not_a_ui_change_is_declined() {
+    let doc = library();
+    let (mut proposer, seen) = proposer(vec![
+        json!({"op": "decline", "reason": "that asks what time it is, not for a UI change"}),
+    ]);
+    match proposer.plan_goal(&doc, &members(), "what time is it", 8) {
+        Err(ProposeError::Declined(reason)) => assert!(reason.contains("time"), "{reason}"),
+        other => panic!("expected a decline, got {other:?}"),
+    }
+    assert_eq!(seen.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn a_planner_target_that_names_no_node_or_a_zero_cap_is_refused_before_any_turn() {
+    let doc = library();
+    let (mut proposer, seen) = proposer(vec![member_area_plan()]);
+    let error = proposer
+        .plan_goal(&doc, &"page:nowhere".parse().unwrap(), MEMBER_AREA, 8)
+        .unwrap_err();
+    assert!(matches!(error, ProposeError::Target(_)), "{error}");
+    let error = proposer
+        .plan_goal(&doc, &members(), MEMBER_AREA, 0)
+        .unwrap_err();
+    assert!(matches!(error, ProposeError::Config(_)), "{error}");
+    assert!(seen.lock().unwrap().is_empty());
 }
