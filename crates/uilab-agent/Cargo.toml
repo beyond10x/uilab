@@ -1,0 +1,26 @@
+[package]
+name = "uilab-agent"
+description = "Turns one spoken instruction into one admitted patch of a ui-spec/1 document, through one harness agent run."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "uilab-propose"
+path = "src/bin/uilab-propose.rs"
+
+[dependencies]
+uilab-doc = { workspace = true }
+harness-loop = { package = "b10x-harness-loop", git = "https://github.com/beyond10x/harness", rev = "798325f03cf5a18df8fadb346d31b314826136ec" }
+harness-messages = { package = "b10x-harness-messages", git = "https://github.com/beyond10x/harness", rev = "798325f03cf5a18df8fadb346d31b314826136ec" }
+harness-wire = { package = "b10x-harness-wire", git = "https://github.com/beyond10x/harness", rev = "798325f03cf5a18df8fadb346d31b314826136ec" }
+harness-credential = { package = "b10x-harness-credential", git = "https://github.com/beyond10x/harness", rev = "798325f03cf5a18df8fadb346d31b314826136ec" }
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
