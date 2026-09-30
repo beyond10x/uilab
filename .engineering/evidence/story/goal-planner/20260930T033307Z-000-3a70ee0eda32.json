@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T03:33:07Z",
+  "actor": "human:timo",
+  "artifact": "story:goal-planner",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "VERIFIED (new behaviour): cargo test -p uilab-agent --no-fail-fast on unit/goal-planner f90fb2c exit 0, 33 ok; baseline wave/2026-09-30-w1 has 0 definitions of plan_goal; live uilab-plan on examples/library returned 3 ordered steps",
+    "reference": "~/.cache/uilab-wave-w1/goal-planner/baseline.log vs ~/.cache/uilab-wave-w1/goal-planner/treatment.log"
+  }
+}

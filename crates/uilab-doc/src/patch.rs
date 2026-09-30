@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::check::{Finding, Severity, check};
-use crate::model::{Composite, Document, NavPages, NavSection, Overlay, Page, Region, Shell};
+use crate::model::{
+    Composite, Document, NavPages, NavSection, Node, NodeBody, Overlay, Page, Region, Shell, Widget,
+};
 use crate::path::{Layer, NodePath, allowed_children, children, resolve};
 
 /// One change at one node.
@@ -164,6 +166,50 @@ fn parse<T: serde::de::DeserializeOwned>(layer: Layer, node: &Value) -> Result<T
         .map_err(|e| Refusal::new("node_shape", format!("not a valid {layer}: {e}")))
 }
 
+/// A body node as a patch carries it: the name is the child's name or the target's.
+fn parse_node(doc: &Document, name: &str, fields: &Value, own: &str) -> Result<Node, Refusal> {
+    let node = Node::named(name, fields)
+        .map_err(|e| Refusal::new("node_shape", format!("not a valid node: {e}")))?;
+    components_resolve(doc, Some(own), node.composite())?;
+    Ok(node)
+}
+
+/// Refuses a composite, or one nested in it, whose `component` is neither a composite kind nor a
+/// widget of the document. `own` is the widget being written, which its own body may name: the
+/// `widget_recursion` check refuses that, with its own id.
+fn components_resolve<'a>(
+    doc: &Document,
+    own: Option<&str>,
+    composites: impl IntoIterator<Item = &'a Composite>,
+) -> Result<(), Refusal> {
+    let mut stack: Vec<&Composite> = composites.into_iter().collect();
+    while let Some(composite) = stack.pop() {
+        if let Some(name) = composite.component.widget()
+            && !doc.widgets.contains_key(name)
+            && own != Some(name)
+        {
+            return Err(Refusal::new(
+                "node_shape",
+                format!("`{name}` is neither a composite kind nor a declared widget"),
+            ));
+        }
+        stack.extend(composite.widgets.values());
+        stack.extend(composite.item.values());
+    }
+    Ok(())
+}
+
+fn page_composites(page: &Page) -> impl Iterator<Item = &Composite> {
+    page.sections
+        .values()
+        .flatten()
+        .chain(page.overlays.values().flatten().map(|o| &o.body))
+}
+
+fn widget_composites(widget: &Widget) -> impl Iterator<Item = &Composite> {
+    widget.body.iter().filter_map(Node::composite)
+}
+
 /// A menu section as a patch carries it: the name is the child's name or the target's.
 #[derive(Deserialize)]
 struct NavSectionBody {
@@ -255,11 +301,22 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
     let name = child.name.clone();
     match child.layer {
         Layer::Shell => {
-            doc.shells
-                .insert(name, parse::<Shell>(child.layer, &child.node)?);
+            let shell: Shell = parse(child.layer, &child.node)?;
+            components_resolve(doc, None, shell.overlays.values().map(|o| &o.body))?;
+            doc.shells.insert(name, shell);
+        }
+        Layer::Component => {
+            let widget: Widget = parse(child.layer, &child.node)?;
+            components_resolve(doc, Some(&name), widget_composites(&widget))?;
+            doc.widgets.insert(name, widget);
+        }
+        Layer::Node => {
+            let node = parse_node(doc, &name, &child.node, target.name())?;
+            widget_mut(doc, target)?.body.push(node);
         }
         Layer::Page => {
             let page: Page = parse(child.layer, &child.node)?;
+            components_resolve(doc, None, page_composites(&page))?;
             match &child.nav_section {
                 Some(section) => {
                     let entry = doc
@@ -304,6 +361,7 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
         }
         Layer::Overlay => {
             let overlay: Overlay = parse(child.layer, &child.node)?;
+            components_resolve(doc, None, [&overlay.body])?;
             match target.layer() {
                 Layer::Shell => {
                     shell_mut(doc, target)?.overlays.insert(name, overlay);
@@ -315,14 +373,17 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
         }
         Layer::Section => {
             let section: Composite = parse(child.layer, &child.node)?;
+            components_resolve(doc, None, [&section])?;
             page_mut(doc, target)?.sections.insert(name, Some(section));
         }
         Layer::Widget => {
             let widget: Composite = parse(child.layer, &child.node)?;
+            components_resolve(doc, None, [&widget])?;
             composite_mut(doc, target)?.widgets.insert(name, widget);
         }
         Layer::Item => {
             let item: Composite = parse(child.layer, &child.node)?;
+            components_resolve(doc, None, [&item])?;
             composite_mut(doc, target)?.item.insert(name, item);
         }
         Layer::Root | Layer::Nav => unreachable!("never an allowed child"),
@@ -340,8 +401,31 @@ fn replace(doc: &mut Document, target: &NodePath, node: &Value) -> Result<(), Re
                 format!("`{target}` cannot be replaced, only edited below"),
             ));
         }
-        Layer::Shell => *doc.shells.get_mut(&name).expect("resolved") = parse(layer, node)?,
-        Layer::Page => *doc.pages.get_mut(&name).expect("resolved") = parse(layer, node)?,
+        Layer::Shell => {
+            let shell: Shell = parse(layer, node)?;
+            components_resolve(doc, None, shell.overlays.values().map(|o| &o.body))?;
+            *doc.shells.get_mut(&name).expect("resolved") = shell;
+        }
+        Layer::Page => {
+            let page: Page = parse(layer, node)?;
+            components_resolve(doc, None, page_composites(&page))?;
+            *doc.pages.get_mut(&name).expect("resolved") = page;
+        }
+        Layer::Component => {
+            let widget: Widget = parse(layer, node)?;
+            components_resolve(doc, Some(&name), widget_composites(&widget))?;
+            *doc.widgets.get_mut(&name).expect("resolved") = widget;
+        }
+        Layer::Node => {
+            let parent = target.parent().expect("a node has a widget");
+            let replacement = parse_node(doc, &name, node, parent.name())?;
+            let slot = widget_mut(doc, &parent)?
+                .body
+                .iter_mut()
+                .find(|n| n.name == name)
+                .expect("resolved");
+            *slot = replacement;
+        }
         Layer::NavSection => {
             let body: NavSectionBody = parse(layer, node)?;
             let entry = doc
@@ -368,6 +452,7 @@ fn replace(doc: &mut Document, target: &NodePath, node: &Value) -> Result<(), Re
         Layer::Overlay => {
             let parent = target.parent().expect("an overlay has a parent");
             let overlay: Overlay = parse(layer, node)?;
+            components_resolve(doc, None, [&overlay.body])?;
             match parent.layer() {
                 Layer::Shell => {
                     *shell_mut(doc, &parent)?
@@ -385,7 +470,8 @@ fn replace(doc: &mut Document, target: &NodePath, node: &Value) -> Result<(), Re
         }
         Layer::Section => {
             let parent = target.parent().expect("a section has a page");
-            let section = parse(layer, node)?;
+            let section: Composite = parse(layer, node)?;
+            components_resolve(doc, None, [&section])?;
             *page_mut(doc, &parent)?
                 .sections
                 .get_mut(&name)
@@ -393,7 +479,8 @@ fn replace(doc: &mut Document, target: &NodePath, node: &Value) -> Result<(), Re
         }
         Layer::Widget | Layer::Item => {
             let parent = target.parent().expect("a nested composite has a parent");
-            let composite = parse(layer, node)?;
+            let composite: Composite = parse(layer, node)?;
+            components_resolve(doc, None, [&composite])?;
             let holder = composite_mut(doc, &parent)?;
             let map = if layer == Layer::Widget {
                 &mut holder.widgets
@@ -418,6 +505,13 @@ fn remove(doc: &mut Document, target: &NodePath) -> Result<(), Refusal> {
         }
         Layer::Shell => {
             doc.shells.shift_remove(&name);
+        }
+        Layer::Component => {
+            doc.widgets.shift_remove(&name);
+        }
+        Layer::Node => {
+            let parent = target.parent().expect("a node has a widget");
+            widget_mut(doc, &parent)?.body.retain(|n| n.name != name);
         }
         Layer::Page => {
             doc.pages.shift_remove(&name);
@@ -477,7 +571,13 @@ fn page_mut<'a>(doc: &'a mut Document, path: &NodePath) -> Result<&'a mut Page, 
     doc.pages.get_mut(path.name()).ok_or_else(|| missing(path))
 }
 
-/// The composite at a section, overlay, widget or item path.
+fn widget_mut<'a>(doc: &'a mut Document, path: &NodePath) -> Result<&'a mut Widget, Refusal> {
+    doc.widgets
+        .get_mut(path.name())
+        .ok_or_else(|| missing(path))
+}
+
+/// The composite at a section, overlay, board widget, item or composite body-node path.
 fn composite_mut<'a>(doc: &'a mut Document, path: &NodePath) -> Result<&'a mut Composite, Refusal> {
     let mut segments = path.0.iter();
     let first = segments.next().ok_or_else(|| missing(path))?;
@@ -501,6 +601,15 @@ fn composite_mut<'a>(doc: &'a mut Document, path: &NodePath) -> Result<&'a mut C
             .get_mut(&first.name)
             .and_then(|s| s.overlays.get_mut(&second.name))
             .map(|o| &mut o.body)
+            .ok_or_else(|| missing(path))?,
+        (Layer::Component, Layer::Node) => doc
+            .widgets
+            .get_mut(&first.name)
+            .and_then(|w| w.body.iter_mut().find(|n| n.name == second.name))
+            .and_then(|n| match &mut n.body {
+                NodeBody::Composite(c) => Some(c.as_mut()),
+                NodeBody::Primitive(_) => None,
+            })
             .ok_or_else(|| missing(path))?,
         _ => return Err(missing(path)),
     };

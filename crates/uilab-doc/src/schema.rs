@@ -4,7 +4,9 @@
 
 use serde_json::{Value, json};
 
-use crate::model::{BUILTIN_PAGE_KINDS, CompositeKind, Document, OverlayKind, RegionKind};
+use crate::model::{
+    BUILTIN_PAGE_KINDS, CompositeKind, Document, OverlayKind, PrimitiveKind, RegionKind,
+};
 use crate::path::{Layer, NodePath, PathError, allowed_children};
 
 /// The schema of a patch whose target is `path`.
@@ -67,6 +69,7 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
 fn def_ref(layer: Layer) -> String {
     let name = match layer {
         Layer::Section | Layer::Widget | Layer::Item => "composite",
+        Layer::Component => "widget_declaration",
         other => other.as_str(),
     };
     format!("#/$defs/{name}")
@@ -101,6 +104,9 @@ fn child_variant(doc: &Document, layer: Layer) -> Value {
 
 fn defs(doc: &Document) -> Value {
     let composite_kinds: Vec<&str> = CompositeKind::ALL.iter().map(|k| k.as_str()).collect();
+    let mut components = composite_kinds.clone();
+    components.extend(doc.widgets.keys().map(String::as_str));
+    let primitive_kinds: Vec<&str> = PrimitiveKind::ALL.iter().map(|k| k.as_str()).collect();
     let region_kinds: Vec<&str> = RegionKind::ALL.iter().map(|k| k.as_str()).collect();
     let overlay_kinds = [
         OverlayKind::Drawer,
@@ -135,7 +141,7 @@ fn defs(doc: &Document) -> Value {
                     "type": "object",
                     "required": ["layer", "name", "node"],
                     "properties": {
-                        "layer": {"enum": ["shell", "region", "nav_section", "page", "section", "overlay", "widget", "item"]},
+                        "layer": {"enum": ["shell", "region", "nav_section", "page", "section", "overlay", "widget", "item", "component", "node"]},
                         "name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"},
                         "node": {"type": "object"},
                         "nav_section": {"type": "string"}
@@ -155,10 +161,56 @@ fn defs(doc: &Document) -> Value {
             "type": "object",
             "required": ["component"],
             "properties": {
-                "component": {"enum": composite_kinds},
+                "component": {"enum": components, "description": "a built-in composite kind, or a widget the document declares"},
+                "args": {"type": "object", "description": "widget instances only: one value per param of the widget"},
                 "reads": {"$ref": "#/$defs/reads"},
                 "widgets": {"type": "object", "description": "board only: composite per widget kind", "additionalProperties": {"$ref": "#/$defs/composite"}},
                 "item": {"type": "object", "description": "collection only: composites nested per row", "additionalProperties": {"$ref": "#/$defs/composite"}}
+            }
+        },
+        "primitive": {
+            "type": "object",
+            "required": ["primitive"],
+            "properties": {
+                "primitive": {"enum": primitive_kinds},
+                "visible": {"type": "string", "description": "shows the primitive only when true"}
+            }
+        },
+        "node": {
+            "description": "one node of a widget body: a composite, a widget instance, or a primitive",
+            "oneOf": [{"$ref": "#/$defs/composite"}, {"$ref": "#/$defs/primitive"}]
+        },
+        "widget_declaration": {
+            "type": "object",
+            "required": ["summary", "body"],
+            "properties": {
+                "summary": {"type": "string", "description": "one line shown in pickers and docs"},
+                "doc": {"type": "string"},
+                "params": {
+                    "type": "object",
+                    "description": "typed parameters, read in the body as `args.<param>`",
+                    "additionalProperties": {
+                        "type": "object",
+                        "required": ["type"],
+                        "properties": {
+                            "type": {"description": "a primitive name, a constructor map or a named type"},
+                            "required": {"type": "boolean"},
+                            "default": {},
+                            "note": {"type": "string"}
+                        }
+                    }
+                },
+                "arrange": {"enum": ["row", "column", "grid"]},
+                "body": {
+                    "type": "array",
+                    "description": "named nodes, in order",
+                    "items": {
+                        "allOf": [
+                            {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"}}},
+                            {"$ref": "#/$defs/node"}
+                        ]
+                    }
+                }
             }
         },
         "overlay": {
@@ -166,7 +218,8 @@ fn defs(doc: &Document) -> Value {
             "required": ["kind", "component"],
             "properties": {
                 "kind": {"enum": overlay_kinds},
-                "component": {"enum": composite_kinds},
+                "component": {"enum": components},
+                "args": {"type": "object", "description": "widget instances only: one value per param of the widget"},
                 "title": {"type": "string"},
                 "reads": {"$ref": "#/$defs/reads"}
             }
