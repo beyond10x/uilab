@@ -129,6 +129,9 @@ pub struct App {
     review: bool,
     next_api_operator: u64,
     pending: Option<String>,
+    /// The document a proposal would make, by its id; what sample rows are built from while that
+    /// proposal is the one in `pending`.
+    preview: Option<(String, Document)>,
     audio: Option<(String, Vec<f32>)>,
     /// Where the microphone was opened; the transcription is proposed there.
     listening_in: uilab_agent::Workspace,
@@ -233,6 +236,7 @@ impl App {
             review,
             next_api_operator: 0,
             pending: None,
+            preview: None,
             audio: None,
             listening_in: uilab_agent::Workspace::App,
             busy: false,
@@ -889,10 +893,14 @@ impl App {
                 let rows = if self.fixtures.has(&read.view) {
                     self.fixtures.rows(&read.view)
                 } else {
-                    uilab_doc::ViewRows {
-                        total: None,
-                        rows: uilab_doc::sample_rows(&self.doc(), &read.view),
-                    }
+                    // A waiting proposal is what the canvas shows, so its composites shape the rows.
+                    let rows = match (&self.preview, &self.pending) {
+                        (Some((id, after)), Some(pending)) if id == pending => {
+                            uilab_doc::sample_rows(after, &read.view)
+                        }
+                        _ => uilab_doc::sample_rows(&self.doc(), &read.view),
+                    };
+                    uilab_doc::ViewRows { total: None, rows }
                 };
                 self.send(wire::rows(&read.view, rows.total, rows.rows));
             }
@@ -1173,6 +1181,7 @@ impl App {
             utterance,
         });
         self.shown = Some(shown.clone());
+        self.preview = Some((proposal_id.0.0.clone(), after));
         self.send(shown);
         Ok(proposal_id.0.0)
     }
@@ -2154,5 +2163,61 @@ pages:
             step: None,
         });
         rig.drain()
+    }
+
+    /// The rows the session answers a `rows` request for `view` with.
+    fn rows_of(rig: &mut Rig, view: &str) -> Vec<serde_json::Value> {
+        rig.drain();
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"rows","value":{{"view":"{view}"}}}}"#),
+        );
+        rig.drain()
+            .into_iter()
+            .find_map(|m| match m {
+                Server::Rows(r) if r.view == view => Some(r.rows),
+                _ => None,
+            })
+            .expect("the rows are answered")
+    }
+
+    /// A proposal preview reads a draft view the document does not: its sample rows carry the
+    /// fields the preview's composites name while the proposal waits, and the document's again
+    /// once it is rejected.
+    #[test]
+    fn sample_rows_follow_the_waiting_proposal_and_not_the_document_it_would_change() {
+        let mut rig = rig(true);
+        let view = "draft.MembersWithOverdue";
+        let sent = accept_patch_reviewed(
+            &mut rig,
+            Patch::Replace {
+                target: "page:overview/section:on_loan".parse().unwrap(),
+                node: json!({
+                    "component": "metric",
+                    "title": "Members with overdue loans",
+                    "reads": {"view": view},
+                    "from": "members",
+                }),
+            },
+        );
+        let id = proposals(&sent)
+            .pop()
+            .expect("the replace waits as a proposal");
+        let previewed = rows_of(&mut rig, view);
+        assert!(!previewed.is_empty());
+        assert!(
+            previewed.iter().all(|r| r["members"].is_i64()),
+            "the preview's metric reads `members`: {previewed:?}"
+        );
+
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"reject","value":{{"proposal_id":"{id}"}}}}"#),
+        );
+        let after = rows_of(&mut rig, view);
+        assert!(
+            after.iter().all(|r| r.get("members").is_none()),
+            "nothing in the document reads the view once the proposal is rejected: {after:?}"
+        );
     }
 }

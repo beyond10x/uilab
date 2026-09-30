@@ -30,7 +30,8 @@ import { settleCard } from './lib/card.ts';
 import { bannerLabel, goalEnded, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
 import { targetIn, workspaceOf } from './lib/workspace.ts';
 import { markClasses, outlineMarks, previewBase, withRemoved, type Mark } from './lib/marks.ts';
-import { findNode, homePage, isDraftView, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf } from './lib/outline.ts';
+import { findNode, homePage, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf } from './lib/outline.ts';
+import { rowsDue, unanswered, viewsOf } from './lib/rows.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
 
@@ -110,8 +111,18 @@ let feedSeq = 0;
 let flashSeq = 0;
 
 let transport: Transport | null = null;
-const rowsRequested = new Set<string>();
-/** Views the canvas wants rows for; asked again on reconnect. */
+/** View → the stamp (`rowsStamp`) its rows were last asked for at. */
+const rowsAsked = new Map<string, string>();
+/** View → the stamp the browser was at when its rows last arrived. The server builds them from
+ *  the document at the revision it last sent, with the proposal it holds applied, so this is what
+ *  the rows are for. */
+const rowsAnswered = new Map<string, string>();
+
+/** What sample rows are built from: the document revision and the proposal shown, if any. */
+function rowsStamp(): string {
+  return `${state.revision}|${state.proposal?.proposal_id ?? ''}`;
+}
+/** Views the canvas wants rows for; asked again on reconnect while the shown outline reads them. */
 const pendingViews = new Set<string>();
 let micHeld = false;
 
@@ -355,6 +366,7 @@ function onMessage(msg: ServerMessage): void {
       break;
     case 'rows':
       state.rows = { ...state.rows, [msg.value.view]: msg.value };
+      rowsAnswered.set(msg.value.view, rowsStamp());
       break;
     case 'goal': {
       // Only the moment a goal ends: a stopped goal's thinking step never answers, so its
@@ -390,8 +402,11 @@ function onState(conn: ConnState, retryInMs?: number): void {
     // The server sends the goal it holds, if any, on every connection; a goal from before the
     // connection dropped may no longer exist.
     state.goal = null;
-    // Requests that were never answered are asked again on the new connection.
-    for (const view of rowsRequested) if (!state.rows[view]) rowsRequested.delete(view);
+    // A request whose answer did not arrive at the revision it was asked at is asked again on the
+    // new connection, if the outline shown (document or proposal preview) still reads its view.
+    for (const view of unanswered(rowsAsked, rowsAnswered)) rowsAsked.delete(view);
+    const read = viewsOf(shownOutline.value);
+    for (const view of pendingViews) if (!read.has(view)) pendingViews.delete(view);
     for (const view of pendingViews) requestRows(view);
   } else if (conn === 'closed') {
     if (state.phase === 'listening') mic.end();
@@ -418,11 +433,13 @@ export function showPage(path: string): void {
   state.openOverlay = null;
 }
 
+/** Asks for `view`'s rows when they are due (`rowsDue`); a `draft.` view gets sample rows. */
 export function requestRows(view: string | undefined): void {
-  if (!view || isDraftView(view)) return;
+  if (!view) return;
   pendingViews.add(view);
-  if (state.rows[view] || rowsRequested.has(view)) return;
-  if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsRequested.add(view);
+  const stamp = rowsStamp();
+  if (!rowsDue(view, !!state.rows[view], rowsAsked.get(view), stamp)) return;
+  if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsAsked.set(view, stamp);
 }
 
 /** Where an instruction goes, in the view on screen (`targetIn`); selects the page it names. */
