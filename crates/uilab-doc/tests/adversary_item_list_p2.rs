@@ -316,8 +316,8 @@ fn an_args_opens_is_held_to_the_bound_literal_or_the_default_and_skipped_otherwi
 }
 
 /// A widget in another widget's body is expanded with the args that body binds: a literal is held
-/// to the overlays of the outer use site; a pass-through of the outer widget's own `args.<param>`
-/// reports nothing.
+/// to the overlays of the outer use site, and so is a pass-through of the outer widget's own
+/// `args.<param>`, bound at the outer use.
 #[test]
 fn a_nested_instance_is_expanded_with_the_args_its_holder_binds() {
     let holders = "  holds_literal:\n    summary: Opens nowhere through an opener.\n    body:\n      - {name: inner, component: opener, args: {target: nowhere}}\n  passes_through:\n    summary: Hands its target to an opener.\n    params:\n      target: {type: {ref: overlay}}\n    body:\n      - {name: inner, component: opener, args: {target: args.target}}\n";
@@ -332,10 +332,16 @@ fn a_nested_instance_is_expanded_with_the_args_its_holder_binds() {
     let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
     assert_opens(
         &doc,
-        &[(
-            "page:members/section:list/item:l",
-            "body `body/inner/body/go`, opens `nowhere`,",
-        )],
+        &[
+            (
+                "page:members/section:list/item:l",
+                "body `body/inner/body/go`, opens `nowhere`,",
+            ),
+            (
+                "page:members/section:list/item:p",
+                "body `body/inner/body/go`, opens `nowhere`,",
+            ),
+        ],
     );
 }
 

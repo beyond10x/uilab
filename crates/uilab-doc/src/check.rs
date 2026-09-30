@@ -589,13 +589,23 @@ impl Opened {
         }
     }
 
-    /// The overlay it names at an instance of `widget` with `args`: `args.<param>` is the value the
-    /// instance binds, else the param's `default`. `None` when that cannot be judged statically:
-    /// the param is unbound with no default, or bound to a non-string or a runtime reference
-    /// (`row`, `rows`, `args`, or a path under one).
+    /// The overlay it names at a use of `widget` on a page or shell: [`Opened::bind`], where an
+    /// `args.<param>` still left has no holder to bind it.
     fn at(&self, widget: Option<&Widget>, args: Option<&Value>) -> Option<String> {
+        match self.bind(widget, args)? {
+            Opened::Overlay(name) => Some(name),
+            Opened::Arg(_) => None,
+        }
+    }
+
+    /// What it names at an instance of `widget` with `args`: `args.<param>` is the value the
+    /// instance binds, else the param's `default`. A bound `args.<param>` passes the holder's own
+    /// param through, for the holder's instance to bind. `None` when that cannot be judged
+    /// statically: the param is unbound with no default, or bound to a non-string, a field of an
+    /// arg, or a runtime reference (`row`, `rows`, or a path under one).
+    fn bind(&self, widget: Option<&Widget>, args: Option<&Value>) -> Option<Opened> {
         let param = match self {
-            Opened::Overlay(name) => return Some(name.clone()),
+            Opened::Overlay(name) => return Some(Opened::Overlay(name.clone())),
             Opened::Arg(param) => param,
         };
         let bound = args
@@ -603,9 +613,18 @@ impl Opened {
             .and_then(|a| a.get(param))
             .or_else(|| widget?.params.get(param)?.default.as_ref())?;
         match bound {
-            Value::String(name) if !is_reference(name) => Some(name.clone()),
+            Value::String(text) if text.starts_with("args.") => Opened::written(text.clone()),
+            Value::String(name) if !is_reference(name) => Some(Opened::Overlay(name.clone())),
             _ => None,
         }
+    }
+}
+
+/// The shallower of two places on the expansion stack, either of which may be absent.
+fn shallowest(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
     }
 }
 
@@ -649,15 +668,16 @@ type BodyOpens = Rc<Vec<(String, Opened)>>;
 /// Expands widget bodies for [`widget_opens`]: every `opens` a widget's body holds, through the
 /// widgets it uses, each nested instance's `args` substituted. A widget already being expanded is
 /// not expanded again, so a body that recurs (a `widget_recursion` error) stops where it recurs.
-/// An expansion is kept for reuse only when nothing in it stopped that way: where a recursion stops
-/// depends on which widgets were being expanded around it, so a stopped expansion reused under
-/// another use would make the findings depend on the order of the uses.
+/// An expansion is kept for reuse unless it stopped at a widget expanded around it: where such a
+/// recursion stops depends on the widgets being expanded outside it, so reusing it under another
+/// use would make the findings depend on the order of the uses. A recursion that closes inside the
+/// expansion (at the widget itself or one below it) stops the same way wherever it is expanded.
 struct Expander<'a> {
     doc: &'a Document,
     done: HashMap<&'a str, BodyOpens>,
     expanding: Vec<&'a str>,
-    /// Whether an expansion under way stopped at a recursion.
-    stopped: bool,
+    /// The shallowest place on `expanding` at which an expansion under way stopped at a recursion.
+    stopped_at: Option<usize>,
 }
 
 impl<'a> Expander<'a> {
@@ -666,7 +686,7 @@ impl<'a> Expander<'a> {
             doc,
             done: HashMap::new(),
             expanding: Vec::new(),
-            stopped: false,
+            stopped_at: None,
         }
     }
 
@@ -679,10 +699,12 @@ impl<'a> Expander<'a> {
             return Rc::default();
         };
         if self.expanding.contains(&name) {
-            self.stopped = true;
+            let depth = self.expanding.iter().position(|w| *w == name);
+            self.stopped_at = shallowest(self.stopped_at, depth);
             return Rc::default();
         }
-        let outer = std::mem::replace(&mut self.stopped, false);
+        let outer = self.stopped_at.take();
+        let depth = self.expanding.len();
         self.expanding.push(name);
         let mut found = Vec::new();
         for node in &widget.body {
@@ -690,10 +712,11 @@ impl<'a> Expander<'a> {
         }
         self.expanding.pop();
         let found = Rc::new(found);
-        if !self.stopped {
+        let inner = self.stopped_at.filter(|at| *at < depth);
+        if inner.is_none() {
             self.done.insert(name, Rc::clone(&found));
         }
-        self.stopped |= outer;
+        self.stopped_at = shallowest(outer, inner);
         found
     }
 
@@ -747,8 +770,8 @@ impl<'a> Expander<'a> {
             };
             let widget = self.doc.widgets.get(instance.widget);
             for (inner, opened) in self.body(instance.widget).iter() {
-                if let Some(overlay) = opened.at(widget, instance.args) {
-                    found.push((format!("{used}/body/{inner}"), Opened::Overlay(overlay)));
+                if let Some(bound) = opened.bind(widget, instance.args) {
+                    found.push((format!("{used}/body/{inner}"), bound));
                 }
             }
         }

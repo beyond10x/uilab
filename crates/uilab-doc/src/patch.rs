@@ -1,6 +1,6 @@
 //! Patches: one insert, replace or remove at one node, and whether the result is admissible.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -140,7 +140,10 @@ pub fn apply(doc: &mut Document, patch: &Patch) -> Result<(), Refusal> {
 /// for what each replace, alone or in a batch, removes.
 pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), Refusal> {
     let stored = check(doc);
-    let before: HashSet<&Finding> = stored.iter().collect();
+    let mut before: HashMap<&Finding, usize> = HashMap::new();
+    for f in &stored {
+        *before.entry(f).or_default() += 1;
+    }
     let mut next = doc.clone();
     apply_unchecked(&mut next, patch)?;
     if next == *doc {
@@ -153,10 +156,18 @@ pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), 
         ));
     }
     let after = check(&next);
-    if let Some(new) = after
-        .iter()
-        .find(|f| f.severity == Severity::Error && !before.contains(f))
-    {
+    // Counted, so a second error equal to one the document had is new.
+    let new = after.iter().find(|f| {
+        let seen = match before.get_mut(f) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                true
+            }
+            _ => false,
+        };
+        f.severity == Severity::Error && !seen
+    });
+    if let Some(new) = new {
         return Err(Refusal::new(
             new.check,
             format!("{}: {}", new.path, new.message),
