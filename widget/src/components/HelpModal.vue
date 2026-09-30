@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
+import { MODE_HELP } from '../lib/canvasmode.ts';
 import { renderMarkdown } from '../lib/markdown.ts';
 import { helpText } from '../remote.ts';
 import { state } from '../store.ts';
@@ -15,6 +16,7 @@ const SHORTCUTS: [string[], string][] = [
   [['2'], 'show the document as YAML'],
   [['3'], 'show the generated docs'],
   [['4'], 'show the components (widgets) with previews'],
+  MODE_HELP,
 ];
 
 // renderMarkdown escapes every piece of input, so its output is safe to insert as HTML.

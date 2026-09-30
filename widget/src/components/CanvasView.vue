@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
+import { accountName, canvasMode } from '../lib/canvasmode.ts';
 import { childrenOf, findNode, labelOf, navLayout, shellOf } from '../lib/outline.ts';
-import { activePage, marks, select, shownOutline, showPage, state, tint } from '../store.ts';
+import { activePage, marks, requestRows, select, shownOutline, showPage, state, tint } from '../store.ts';
 import CompositeView from './CompositeView.vue';
+
+/** Preview draws the shell as app chrome and drops the structure labels. */
+const preview = computed(() => canvasMode.mode.value === 'preview');
 
 const root = computed(() => shownOutline.value);
 const page = computed(() => activePage.value);
@@ -20,6 +24,21 @@ const sections = computed(() => childrenOf(page.value, 'section'));
 const pageOverlays = computed(() => childrenOf(page.value, 'overlay'));
 const shellOverlays = computed(() => childrenOf(shell.value, 'overlay'));
 const overlay = computed(() => (state.openOverlay && root.value ? findNode(root.value, state.openOverlay) : null));
+
+watchEffect(() => {
+  if (!preview.value) return;
+  for (const r of barRegions.value) if (r.kind === 'account_menu') requestRows(r.view);
+});
+
+/** The account menu's label: the staff member's name from the rows its view reads, when loaded. */
+function accountLabel(r: OutlineNode): string {
+  return accountName(r.view ? state.rows[r.view]?.rows : undefined) ?? (r.title || 'Account');
+}
+
+/** Whether a node carries a mark worth seeing: selected, part of the proposal, or being worked on. */
+function marked(path: string): boolean {
+  return Object.values(marks(path)).some(Boolean);
+}
 
 /** Where the pending change is, when it is not on the page shown. */
 const changeElsewhere = computed(() => {
@@ -43,28 +62,56 @@ function openOverlay(o: OutlineNode): void {
   <div v-if="!root" class="canvas-empty">
     <p>{{ state.conn === 'open' ? 'waiting for the document…' : 'connecting to the server…' }}</p>
   </div>
-  <div v-else class="frame node" :class="marks(root.path)" :style="tint(root.path)" :data-path="root.path" @click="select(root.path)">
+  <div v-else class="frame node" :class="[marks(root.path), { preview }]" :style="tint(root.path)" :data-path="root.path" @click="select(root.path)">
     <header class="frame-bar node" :class="shell ? marks(shell.path) : {}" :style="tint(shell?.path)" @click.stop="shell && select(shell.path)">
       <strong>{{ labelOf(root) }}</strong>
-      <span class="muted small">{{ shell ? shell.name : 'no shell' }}</span>
+      <span v-if="!preview" class="muted small">{{ shell ? shell.name : 'no shell' }}</span>
       <span class="spacer"></span>
-      <button
-        v-for="r in barRegions"
-        :key="r.path"
-        class="chip node"
-        :class="marks(r.path)" :style="tint(r.path)"
-        @click.stop="select(r.path)"
-      >
-        {{ r.name }} <span class="muted">{{ r.kind }}</span>
-      </button>
+      <template v-for="r in barRegions" :key="r.path">
+        <button
+          v-if="!preview || (r.kind === 'overlay_outlet' && marked(r.path))"
+          class="chip node"
+          :class="marks(r.path)" :style="tint(r.path)"
+          @click.stop="select(r.path)"
+        >
+          {{ r.name }} <span class="muted">{{ r.kind }}</span>
+        </button>
+        <button
+          v-else-if="r.kind === 'account_menu'"
+          class="chrome-account node"
+          :class="marks(r.path)" :style="tint(r.path)"
+          :title="r.name"
+          @click.stop="select(r.path)"
+        >
+          <span class="avatar">{{ accountLabel(r).charAt(0).toUpperCase() }}</span>
+          {{ accountLabel(r) }} <span class="caret">▾</span>
+        </button>
+        <button
+          v-else-if="r.kind === 'notifications'"
+          class="chrome-bell node"
+          :class="marks(r.path)" :style="tint(r.path)"
+          :title="r.title || 'notifications'"
+          aria-label="notifications"
+          @click.stop="select(r.path)"
+        >
+          🔔
+        </button>
+        <button
+          v-else-if="r.kind !== 'overlay_outlet'"
+          class="chrome-region node"
+          :class="marks(r.path)" :style="tint(r.path)"
+          @click.stop="select(r.path)"
+        >
+          {{ r.title || r.name }}
+        </button>
+      </template>
       <button
         v-for="o in shellOverlays"
         :key="o.path"
-        class="chip node"
-        :class="marks(o.path)" :style="tint(o.path)"
+        :class="[preview ? 'chrome-region' : 'chip', 'node', marks(o.path)]" :style="tint(o.path)"
         @click.stop="openOverlay(o)"
       >
-        ▢ {{ o.title || o.name }}
+        <template v-if="!preview">▢ </template>{{ o.title || o.name }}
       </button>
     </header>
     <div class="frame-body">
@@ -74,7 +121,7 @@ function openOverlay(o: OutlineNode): void {
         :class="[navRegion ? marks(navRegion.path) : {}, nav ? marks(nav.path) : {}]" :style="tint(nav?.path) ?? tint(navRegion?.path)"
         @click.stop="nav ? select(nav.path) : navRegion && select(navRegion.path)"
       >
-        <div class="card-label">nav{{ navRegion ? ` · ${navRegion.kind}` : '' }}</div>
+        <div v-if="!preview" class="card-label">nav{{ navRegion ? ` · ${navRegion.kind}` : '' }}</div>
         <div v-for="(g, gi) in navGroups" :key="g.section?.path ?? `rest-${gi}`" class="nav-group">
           <div
             v-if="g.section"
@@ -107,17 +154,17 @@ function openOverlay(o: OutlineNode): void {
           :data-path="page.path"
           @click.stop="select(page.path)"
         >
-          <div class="card-label">{{ page.name }} · {{ page.kind }}</div>
+          <div v-if="!preview" class="card-label">{{ page.name }} · {{ page.kind }}</div>
           <h1 class="page-title">{{ page.title || page.name }}</h1>
           <div v-if="pageOverlays.length" class="overlay-buttons">
             <button
               v-for="o in pageOverlays"
               :key="o.path"
-              class="chip node"
-              :class="marks(o.path)" :style="tint(o.path)"
+              :class="[preview ? 'chrome-region' : 'chip', 'node', marks(o.path)]" :style="tint(o.path)"
               @click.stop="openOverlay(o)"
             >
-              ▢ {{ o.title || o.name }} <span class="muted">{{ o.kind }}</span>
+              <template v-if="preview">{{ o.title || o.name }}</template>
+              <template v-else>▢ {{ o.title || o.name }} <span class="muted">{{ o.kind }}</span></template>
             </button>
           </div>
           <CompositeView v-for="s in sections" :key="s.path" :node="s" />
@@ -129,7 +176,8 @@ function openOverlay(o: OutlineNode): void {
     <div v-if="overlay" class="modal-backdrop" @click.stop="state.openOverlay = null">
       <div class="modal" @click.stop>
         <div class="modal-bar">
-          <span class="muted small">{{ overlay.kind }}</span>
+          <span v-if="preview" class="small">{{ overlay.title || overlay.name }}</span>
+          <span v-else class="muted small">{{ overlay.kind }}</span>
           <button class="link" @click="state.openOverlay = null">close ✕</button>
         </div>
         <CompositeView :node="overlay" />
@@ -137,3 +185,50 @@ function openOverlay(o: OutlineNode): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+.chrome-account,
+.chrome-bell,
+.chrome-region {
+  border-color: transparent;
+  background: transparent;
+  font-size: 13px;
+  padding: 3px 8px;
+  border-radius: 16px;
+}
+
+.chrome-account:hover,
+.chrome-bell:hover,
+.chrome-region:hover {
+  background: #f1f3f6;
+}
+
+.chrome-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.caret {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.chrome-bell {
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 6px;
+}
+</style>
