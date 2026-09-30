@@ -1,7 +1,8 @@
 //! The document checks: the `checks` of `ui-spec/1` that apply to this subset, plus the ones the
 //! subset adds. Ids that exist in `ui-spec/1` keep its spelling.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -434,6 +435,7 @@ pub fn check(doc: &Document) -> Vec<Finding> {
     }
 
     check_widgets(&mut out, doc);
+    widget_opens(&mut out, doc);
 
     // Item lists: a node is addressed by its name, so two siblings cannot share one.
     for (path, composite) in composites(doc) {
@@ -524,6 +526,154 @@ fn check_widgets(out: &mut Findings, doc: &Document) {
                     &path,
                     format!("{at}widget `{within}` contains itself through `{name}`"),
                 );
+            }
+        }
+    }
+}
+
+/// `opens_resolves` inside widget bodies, as ess WidgetInstance expansion says: at each use site
+/// [`widget_uses`] finds on a page or in a shell overlay, every `opens` of the used widget's body,
+/// through nested widgets, against the overlays of that page and its shell (or of that shell),
+/// at `<instance path>/body/<node>`. An instance held in untyped data has its trail in the
+/// instance path. A use in another widget's body counts only through that widget's own uses, and
+/// a use in `page_kinds` sits on no page, so neither reports by itself.
+fn widget_opens(out: &mut Findings, doc: &Document) {
+    let mut expander = Expander::new(doc);
+    for (path, instance) in widget_uses(doc) {
+        let Some((reachable, declarer)) = overlays_at(doc, &path) else {
+            continue;
+        };
+        let expanded = expander.body(instance.widget);
+        let at = match &instance.trail {
+            Some(trail) => format!("{path}/{trail}"),
+            None => path.to_string(),
+        };
+        for (node, opened) in expanded.iter() {
+            if !reachable.contains(&opened.as_str()) {
+                out.push(
+                    "opens_resolves",
+                    format!("{at}/body/{node}"),
+                    format!(
+                        "widget `{}` body node `{node}` opens `{opened}`, which {declarer}",
+                        instance.widget
+                    ),
+                );
+            }
+        }
+    }
+}
+
+/// The overlays an `opens` in a node at `path` may name, with the end of the message that says
+/// who does not declare one: a page's and its shell's, or a shell's own. `None` off every page
+/// and shell.
+fn overlays_at<'a>(doc: &'a Document, path: &NodePath) -> Option<(Vec<&'a str>, String)> {
+    let first = path.0.first()?;
+    match first.layer {
+        Layer::Page => {
+            let page = doc.pages.get(&first.name)?;
+            let mut reachable: Vec<&str> = page.overlays.keys().map(String::as_str).collect();
+            if let Some(shell) = doc.shell_of(page).and_then(|s| doc.shells.get(s)) {
+                reachable.extend(shell.overlays.keys().map(String::as_str));
+            }
+            Some((reachable, "neither the page nor its shell declares".into()))
+        }
+        Layer::Shell => {
+            let shell = doc.shells.get(&first.name)?;
+            Some((
+                shell.overlays.keys().map(String::as_str).collect(),
+                format!("shell `{}` does not declare", first.name),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Each `opens` of a body node: the node's path relative to the body, and the overlay it names.
+type BodyOpens = Rc<Vec<(String, String)>>;
+
+/// Expands widget bodies for [`widget_opens`]: every `opens` a widget's body holds, through the
+/// widgets it uses, computed once per widget. A widget already being expanded is not expanded
+/// again, so a body that recurs (a `widget_recursion` error) stops where it recurs.
+struct Expander<'a> {
+    doc: &'a Document,
+    done: HashMap<&'a str, BodyOpens>,
+    expanding: Vec<&'a str>,
+}
+
+impl<'a> Expander<'a> {
+    fn new(doc: &'a Document) -> Self {
+        Expander {
+            doc,
+            done: HashMap::new(),
+            expanding: Vec::new(),
+        }
+    }
+
+    /// The expanded `opens` of widget `name`'s body; nothing for an undeclared widget.
+    fn body(&mut self, name: &'a str) -> BodyOpens {
+        if let Some(done) = self.done.get(name) {
+            return Rc::clone(done);
+        }
+        let Some(widget) = self.doc.widgets.get(name) else {
+            return Rc::default();
+        };
+        if self.expanding.contains(&name) {
+            return Rc::default();
+        }
+        self.expanding.push(name);
+        let mut found = Vec::new();
+        for node in &widget.body {
+            self.node(node.name.clone(), node, &mut found);
+        }
+        self.expanding.pop();
+        let found = Rc::new(found);
+        self.done.insert(name, Rc::clone(&found));
+        found
+    }
+
+    fn node(&mut self, at: String, node: &'a Node, found: &mut Vec<(String, String)>) {
+        match &node.body {
+            NodeBody::Composite(c) => self.composite(at, c, found),
+            NodeBody::Primitive(p) => {
+                self.props(&at, &p.props, instances_in_props(&p.props), found)
+            }
+        }
+    }
+
+    /// A composite of a body: its props and the widget it may be, then its board widgets and
+    /// items, however deep.
+    fn composite(
+        &mut self,
+        at: String,
+        composite: &'a Composite,
+        found: &mut Vec<(String, String)>,
+    ) {
+        self.props(&at, &composite.props, instances_in(composite), found);
+        for (name, widget) in &composite.widgets {
+            self.composite(format!("{at}/{}:{name}", Layer::Widget), widget, found);
+        }
+        for node in &composite.item {
+            self.node(format!("{at}/{}:{}", Layer::Item, node.name), node, found);
+        }
+    }
+
+    /// The `opens` in one node's props, and the expanded bodies of the widgets it instantiates.
+    fn props(
+        &mut self,
+        at: &str,
+        props: &IndexMap<String, Value>,
+        instances: Vec<Instance<'a>>,
+        found: &mut Vec<(String, String)>,
+    ) {
+        let value = Value::Object(props.clone().into_iter().collect());
+        found.extend(opens(&value).into_iter().map(|o| (at.to_owned(), o)));
+        for instance in instances {
+            let used = match &instance.trail {
+                Some(trail) => format!("{at}/{trail}"),
+                None => at.to_owned(),
+            };
+            for (inner, opened) in self.body(instance.widget).iter() {
+                found.push((format!("{used}/body/{inner}"), opened.clone()));
             }
         }
     }

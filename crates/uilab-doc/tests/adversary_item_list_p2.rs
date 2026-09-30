@@ -71,15 +71,11 @@ fn path(text: &str) -> NodePath {
 /// `overview` declares and page `members` does not. Used on `overview` it is fine; used in the
 /// `members` item list, its button opens an overlay that page and its shell do not declare.
 #[test]
-fn an_opens_in_a_widget_body_is_not_yet_checked_at_its_use_site() {
+fn an_opens_in_a_widget_body_is_checked_at_each_use_site() {
     let clean = doc();
-    let on_overview: Vec<_> = check(&clean)
-        .into_iter()
-        .filter(|f| f.check == "opens_resolves")
-        .collect();
     assert_eq!(
-        on_overview,
-        [],
+        opens_at(&clean),
+        Vec::<String>::new(),
         "used where `extend` is declared, the body's button resolves"
     );
 
@@ -92,24 +88,146 @@ fn an_opens_in_a_widget_body_is_not_yet_checked_at_its_use_site() {
             nav_section: None,
         },
     };
-    // Pinned to today's behaviour: the gap is pre-existing (8b337a1) and open as
-    // story:widget-opens-at-use. When that story lands this case must flip to asserting a
-    // refusal or an opens_resolves finding at the instance.
-    let (used_on_members, _) = admit(&clean, &insert).unwrap_or_else(|refused| {
-        panic!(
-            "the insert is now refused ({refused}): story:widget-opens-at-use has landed, flip \
-             this case to assert the refusal"
-        )
-    });
-    let found: Vec<_> = check(&used_on_members)
+    let refused = match admit(&clean, &insert) {
+        Ok(_) => panic!(
+            "an instance whose body opens `extend` is admitted onto `members`, which declares \
+             no `extend` overlay"
+        ),
+        Err(refused) => refused,
+    };
+    assert_eq!(refused.check, "opens_resolves", "{refused}");
+    assert!(
+        refused
+            .message
+            .starts_with("page:members/section:list/item:card/body/extend: "),
+        "{refused}"
+    );
+}
+
+/// The paths of every `opens_resolves` finding, in order.
+fn opens_at(doc: &Document) -> Vec<String> {
+    check(doc)
         .into_iter()
         .filter(|f| f.check == "opens_resolves")
-        .map(|f| (f.path, f.message))
+        .map(|f| f.path)
+        .collect()
+}
+
+fn with_widgets(text: &str, widgets: &str) -> String {
+    text.replace("widgets:\n", &format!("widgets:\n{widgets}"))
+}
+
+fn with_member_item(text: &str, item: &str) -> String {
+    text.replace(
+        "          - {name: tag, primitive: badge, text: row.state}\n",
+        &format!(
+            "          - {{name: tag, primitive: badge, text: row.state}}\n          - {item}\n"
+        ),
+    )
+}
+
+/// One widget used on two pages: `overview` declares the overlay its body opens and `members`
+/// does not. Exactly one finding, an error at the use on `members`, naming the widget and node.
+#[test]
+fn a_widget_used_on_two_pages_is_reported_only_where_its_opens_does_not_resolve() {
+    let text = with_member_item(DOC, "{name: card, component: loan_card, args: {loan: row}}");
+    let doc = Document::from_yaml(&text).unwrap();
+    let found: Vec<_> = check(&doc)
+        .into_iter()
+        .filter(|f| f.check == "opens_resolves")
         .collect();
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert_eq!(
+        found[0].path,
+        "page:members/section:list/item:card/body/extend"
+    );
+    assert_eq!(found[0].severity, uilab_doc::Severity::Error);
     assert!(
-        found.is_empty(),
-        "an opens_resolves finding now appears for the widget body on `members` ({found:?}): \
-         story:widget-opens-at-use has landed, flip this case to assert it"
+        found[0].message.contains("`loan_card`") && found[0].message.contains("`extend`"),
+        "{}",
+        found[0].message
+    );
+}
+
+/// A page's header, a board widget and a shell overlay are use sites too: each is checked against
+/// the overlays of the page and its shell, or of the shell alone.
+#[test]
+fn a_widget_in_a_header_a_board_or_a_shell_overlay_is_checked_where_it_sits() {
+    let text = DOC
+        .replace(
+            "      main: {kind: page_outlet}\n",
+            "      main: {kind: page_outlet}\n    overlays:\n      quick: {kind: drawer, component: loan_card, args: {loan: rows.first}}\n",
+        )
+        .replace(
+            "    kind: list_page\n    title: Members\n",
+            "    kind: list_page\n    title: Members\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}]}\n",
+        )
+        .replace(
+            "    sections:\n      list:\n",
+            "    sections:\n      board:\n        component: board\n        widgets:\n          top: {component: loan_card, args: {loan: rows.first}}\n      list:\n",
+        );
+    let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        opens_at(&doc),
+        [
+            "shell:app/overlay:quick/body/extend",
+            "page:members/section:board/widget:top/body/extend",
+            "page:members/header/metrics/due/body/extend",
+        ]
+    );
+}
+
+/// A widget inside a widget's body, as a typed item and in a button's `choice`, is expanded at the
+/// outer widget's use site, and only there.
+#[test]
+fn a_nested_widget_body_is_checked_at_the_outer_use_site() {
+    let shelf = "  shelf:\n    summary: Loans on a shelf.\n    body:\n      - name: rows\n        component: collection\n        reads: {view: loans.All}\n        item:\n          - {name: card, component: loan_card, args: {loan: row}}\n      - {name: pick, primitive: button, label: Pick, action: {name: pick, does: loans.Pick, choice: {component: loan_card, args: {loan: rows.first}}}}\n";
+    let text = with_widgets(DOC, shelf).replace(
+        "      latest: {component: loan_card, args: {loan: rows.first}}\n",
+        "      latest: {component: loan_card, args: {loan: rows.first}}\n      shelf: {component: shelf}\n",
+    );
+    let on_overview = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(opens_at(&on_overview), Vec::<String>::new());
+
+    let on_members =
+        Document::from_yaml(&with_member_item(&text, "{name: shelf, component: shelf}")).unwrap();
+    assert_eq!(
+        opens_at(&on_members),
+        [
+            "page:members/section:list/item:shelf/body/rows/item:card/body/extend",
+            "page:members/section:list/item:shelf/body/pick/action/choice/body/extend",
+        ]
+    );
+}
+
+/// An `opens` in a body that no page or shell uses reports nothing: a widget used nowhere, one
+/// used only in the body of another unused widget, and one used only in `page_kinds`, which is
+/// data no page is checked through.
+#[test]
+fn an_opens_in_a_widget_body_with_no_use_reports_nothing() {
+    let widgets = "  orphan:\n    summary: Used nowhere.\n    body:\n      - {name: go, primitive: button, label: Go, action: {name: go, opens: nowhere}}\n  holder:\n    summary: Holds orphan, used nowhere.\n    body:\n      - {name: inner, component: orphan}\n";
+    let text = with_widgets(DOC, widgets).replace(
+        "widgets:\n",
+        "page_kinds:\n  gallery: {sections: {main: {component: orphan}}}\nwidgets:\n",
+    );
+    let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(opens_at(&doc), Vec::<String>::new());
+}
+
+/// Two widgets that contain each other: the expansion stops where a widget recurs, the recursion
+/// is reported, and the `opens` of the outer body is reported once.
+#[test]
+fn a_recursive_widget_body_is_expanded_once() {
+    let widgets = "  loop_a:\n    summary: Holds loop_b.\n    body:\n      - {name: go, primitive: button, label: Go, action: {name: go, opens: nowhere}}\n      - {name: b, component: loop_b}\n  loop_b:\n    summary: Holds loop_a.\n    body:\n      - {name: a, component: loop_a}\n";
+    let text = with_member_item(
+        &with_widgets(DOC, widgets),
+        "{name: loop, component: loop_a}",
+    );
+    let doc = Document::from_yaml(&text).unwrap();
+    assert!(check(&doc).iter().any(|f| f.check == "widget_recursion"));
+    assert_eq!(
+        opens_at(&doc),
+        ["page:members/section:list/item:loop/body/go"]
     );
 }
 
