@@ -9,12 +9,14 @@ relations:
 - serves: vision:website-harness
 scope:
 - confidence: cited
+  path: widget/src/App.vue
+- confidence: cited
   path: widget/src/components/CanvasView.vue
 - confidence: cited
   path: widget/src/components/CompositeView.vue
 - confidence: cited
-  path: widget/src/store.ts
-revision: 4
+  path: widget/src/lib/canvasmode.ts
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T12:08:58Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T12:08:58Z", actor: "human:timo", revision: 4}

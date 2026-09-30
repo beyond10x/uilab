@@ -8,6 +8,8 @@ relations:
 - serves: vision:website-harness
 scope:
 - confidence: inferred
+  path: crates/uilab-agent
+- confidence: inferred
   path: crates/uilab-agent/src/lib.rs
 - confidence: inferred
   path: crates/uilab-app/src/app.rs
@@ -16,8 +18,14 @@ scope:
 - confidence: inferred
   path: evals/library.yaml
 - confidence: inferred
+  path: generated
+- confidence: inferred
   path: widget/src/components/ActivityFeed.vue
-revision: 4
+- confidence: inferred
+  path: widget/src/generated
+- confidence: inferred
+  path: widget/src/store.ts
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:11:15Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T13:11:16Z", actor: "human:timo", revision: 4}
