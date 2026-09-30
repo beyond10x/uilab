@@ -50,7 +50,8 @@ function compileSfc(file: URL, vueImports: Record<string, string> = {}): string 
   return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
 }
 
-const compositeUrl = compileSfc(new URL('../components/CompositeView.vue', import.meta.url));
+const primitiveUrl = compileSfc(new URL('../components/PrimitiveView.vue', import.meta.url));
+const compositeUrl = compileSfc(new URL('../components/CompositeView.vue', import.meta.url), { './PrimitiveView.vue': primitiveUrl });
 const canvasUrl = compileSfc(new URL('../components/CanvasView.vue', import.meta.url), { './CompositeView.vue': compositeUrl });
 const CompositeView = ((await import(compositeUrl)) as { default: unknown }).default;
 const CanvasView = ((await import(canvasUrl)) as { default: unknown }).default;
