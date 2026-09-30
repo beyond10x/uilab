@@ -35,6 +35,14 @@ test('a proposal opens the card; a new one replaces it and resets deciding', () 
   assert.deepEqual(settleCard({ pending: p1, deciding: true }, msg.proposal(p2)), { pending: p2, deciding: false });
 });
 
+test('the same proposal again keeps the card as it is, decision sent or not', () => {
+  const p = proposal('p1', 'a1');
+  const deciding: Card = { pending: p, deciding: true };
+  assert.equal(settleCard(deciding, msg.proposal({ ...p })), deciding);
+  const card = open(p);
+  assert.equal(settleCard(card, msg.proposal({ ...p })), card);
+});
+
 test('an undecided card survives unrelated documents, changes and refusals', () => {
   const p = proposal('p1', 'a1');
   const card = open(p);

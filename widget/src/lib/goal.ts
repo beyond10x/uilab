@@ -34,6 +34,14 @@ export function settleGoal(goal: Goal | null, msg: ServerMessage): Goal | null {
   return msg.type === 'goal' ? msg.value : goal;
 }
 
+/**
+ * Whether `after` is the moment `before` ended: the same goal, planning or running before and
+ * over now. A goal sent again, or first seen already over, ended nothing just now.
+ */
+export function goalEnded(before: Goal | null, after: Goal): boolean {
+  return !!before && before.goal_id === after.goal_id && isActive(before) && !isActive(after);
+}
+
 /** Planning or running: the goal still acts. */
 export function isActive(goal: Goal | null): boolean {
   return goal?.state === 'planning' || goal?.state === 'running';

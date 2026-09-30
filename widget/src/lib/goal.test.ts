@@ -6,7 +6,7 @@ import type {
   UilabWireServerMessage as ServerMessage,
   UilabWireStepStatus as StepStatus,
 } from '../generated/types.ts';
-import { bannerLabel, canStop, goalMessage, isActive, settleGoal, stateLabel, stepViews, STEP_ICONS, stopMessage } from './goal.ts';
+import { bannerLabel, canStop, goalEnded, goalMessage, isActive, settleGoal, stateLabel, stepViews, STEP_ICONS, stopMessage } from './goal.ts';
 
 function step(status: StepStatus, instruction = `do ${status}`, proposal_id?: string): GoalStep {
   return { instruction, target: 'page:members', why: `why ${instruction}`, status, proposal_id };
@@ -89,6 +89,19 @@ test('the state label says what the goal is doing, and why it failed', () => {
   assert.equal(stateLabel(goal({ state: 'stopped' })), 'stopped');
   assert.equal(stateLabel(goal({ state: 'failed', message: 'declined: a greeting' })), 'failed: declined: a greeting');
   assert.equal(stateLabel(goal({ state: 'failed' })), 'failed');
+});
+
+test('a goal ends only on the move from planning or running to over, for the same goal', () => {
+  const at = (state: Goal['state'], goal_id = 'goal-1') => goal({ state, goal_id });
+  for (const from of ['planning', 'running'] as const) {
+    for (const to of ['done', 'stopped', 'failed'] as const) assert.equal(goalEnded(at(from), at(to)), true, `${from} → ${to}`);
+    for (const to of ['planning', 'running'] as const) assert.equal(goalEnded(at(from), at(to)), false, `${from} → ${to}`);
+  }
+  for (const over of ['done', 'stopped', 'failed'] as const) {
+    assert.equal(goalEnded(at(over), at(over)), false, `${over} sent again`);
+    assert.equal(goalEnded(null, at(over)), false, `${over} with no goal before (a snapshot)`);
+  }
+  assert.equal(goalEnded(at('running', 'goal-1'), at('done', 'goal-2')), false, 'another goal');
 });
 
 test('the goal and stop messages carry what was typed and the goal id', () => {

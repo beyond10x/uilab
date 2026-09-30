@@ -283,6 +283,7 @@ pub async fn run(op: Op) -> Result<(), String> {
         other => other?,
     };
     let acted = watched.acted;
+    let mut progress = watched.progress;
     let mut last_goal = watched.seen;
     for message in &acted.messages {
         if let Server::Proposal(p) = message {
@@ -293,7 +294,7 @@ pub async fn run(op: Op) -> Result<(), String> {
             // why steps were refused.
             match message {
                 Server::Goal(g) if Some(&g.goal_id) != watched.prior.as_ref() => {
-                    goal_progress(last_goal.as_ref(), g);
+                    progress.show(g);
                     last_goal = Some(g.clone());
                 }
                 Server::Refused(_) | Server::Failed(_) => print(message, false),
@@ -321,8 +322,10 @@ struct Watched {
     acted: Acted,
     /// The goal the server held before the act; not this act's.
     prior: Option<String>,
-    /// This act's goal as last printed.
+    /// This act's goal as last polled.
     seen: Option<uilab_wire::UilabWireGoal>,
+    /// What was printed of it.
+    progress: Progress,
 }
 
 /// The goal the server holds, if any.
@@ -371,10 +374,12 @@ async fn act_watching(
             acted: act(http, cached, message).await?,
             prior: None,
             seen: None,
+            progress: Progress::default(),
         });
     }
     let prior = current_goal(http, cached).await?.map(|g| g.goal_id);
     let mut seen: Option<uilab_wire::UilabWireGoal> = None;
+    let mut progress = Progress::default();
     let mut acting = std::pin::pin!(act(http, cached, message));
     let acted = loop {
         tokio::select! {
@@ -383,13 +388,18 @@ async fn act_watching(
                 if let Ok(Some(g)) = current_goal(http, cached).await
                     && Some(&g.goal_id) != prior.as_ref()
                 {
-                    goal_progress(seen.as_ref(), &g);
+                    progress.show(&g);
                     seen = Some(g);
                 }
             }
         }
     };
-    Ok(Watched { acted, prior, seen })
+    Ok(Watched {
+        acted,
+        prior,
+        seen,
+        progress,
+    })
 }
 
 fn goal_message(text: String, target: Option<String>, max_steps: Option<u64>, auto: bool) -> Value {
@@ -414,30 +424,78 @@ fn name<T: Serialize>(value: &T) -> String {
         .unwrap_or_default()
 }
 
-/// What changed since the previous goal message: its state, and each step whose status moved.
-fn goal_progress(before: Option<&uilab_wire::UilabWireGoal>, goal: &uilab_wire::UilabWireGoal) {
-    let state = name(&goal.state);
-    if before.is_none_or(|b| name(&b.state) != state) {
-        match &goal.message {
-            uilab_wire::EssPresence::Present(m) => println!("goal {} {state}: {m}", goal.goal_id),
-            uilab_wire::EssPresence::Absent => println!("goal {} {state}", goal.goal_id),
-        }
+/// What has been printed of a goal run: the goal's state and each step's status, as far as they
+/// got. A goal message arrives more than once (the 2 s poll, then the act's own messages), and
+/// older ones after newer; each prints only where it moves something further.
+#[derive(Default)]
+struct Progress {
+    /// How far the goal's state got in print: planning, running, then over.
+    state: Option<u8>,
+    /// Per step, how far its status got in print.
+    steps: Vec<u8>,
+}
+
+/// A goal state's place in the run.
+fn state_rank(state: &str) -> u8 {
+    match state {
+        "planning" => 0,
+        "running" => 1,
+        _ => 2,
     }
-    let n = goal.steps.len();
-    for (i, step) in goal.steps.iter().enumerate() {
-        let status = name(&step.status);
-        let was = before.and_then(|b| b.steps.get(i)).map(|s| name(&s.status));
-        if was.as_deref() != Some(status.as_str()) && status != "pending" {
+}
+
+/// A step status's place in the run; a stop sends a thinking step back to pending, which is
+/// not printed as a move.
+fn status_rank(status: &str) -> u8 {
+    match status {
+        "pending" => 0,
+        "thinking" => 1,
+        "proposed" => 2,
+        _ => 3,
+    }
+}
+
+impl Progress {
+    /// The lines `goal` adds to what was printed, and records them as printed.
+    fn lines(&mut self, goal: &uilab_wire::UilabWireGoal) -> Vec<String> {
+        let mut lines = Vec::new();
+        let state = name(&goal.state);
+        let rank = state_rank(&state);
+        if self.state.is_none_or(|printed| rank > printed) {
+            self.state = Some(rank);
+            lines.push(match &goal.message {
+                uilab_wire::EssPresence::Present(m) => {
+                    format!("goal {} {state}: {m}", goal.goal_id)
+                }
+                uilab_wire::EssPresence::Absent => format!("goal {} {state}", goal.goal_id),
+            });
+        }
+        let n = goal.steps.len();
+        self.steps.resize(self.steps.len().max(n), 0);
+        for (i, step) in goal.steps.iter().enumerate() {
+            let status = name(&step.status);
+            let rank = status_rank(&status);
+            if rank <= self.steps[i] {
+                continue;
+            }
+            self.steps[i] = rank;
             let proposal = match (status.as_str(), present(&step.proposal_id)) {
                 ("proposed", Some(id)) => format!(" [proposal {}: accept or reject it]", id.0),
                 _ => String::new(),
             };
-            println!(
+            lines.push(format!(
                 "  step {}/{n} {status:<9} {}: {}{proposal}",
                 i + 1,
                 step.target.0,
                 step.instruction
-            );
+            ));
+        }
+        lines
+    }
+
+    fn show(&mut self, goal: &uilab_wire::UilabWireGoal) {
+        for line in self.lines(goal) {
+            println!("{line}");
         }
     }
 }
@@ -651,6 +709,86 @@ mod tests {
                 why: "w".into(),
             })
             .collect()
+    }
+
+    #[test]
+    fn a_goal_message_seen_again_prints_nothing() {
+        let running = wire_goal(|g| {
+            g.planned(steps(2));
+        });
+        let mut progress = Progress::default();
+        assert_eq!(
+            progress.lines(&running),
+            [
+                "goal goal-1 running",
+                "  step 1/2 thinking  page:members: step 0"
+            ]
+        );
+        assert!(
+            progress.lines(&running).is_empty(),
+            "polled, then in the act's messages"
+        );
+    }
+
+    #[test]
+    fn an_older_goal_message_after_a_newer_one_prints_nothing() {
+        let planning = wire_goal(|_| {});
+        let running = wire_goal(|g| {
+            g.planned(steps(2));
+        });
+        let proposed = wire_goal(|g| {
+            g.planned(steps(2));
+            g.proposed(0, "p1");
+        });
+        let mut progress = Progress::default();
+        progress.lines(&proposed);
+        for older in [&planning, &running, &proposed] {
+            assert!(progress.lines(older).is_empty());
+        }
+    }
+
+    #[test]
+    fn a_newer_goal_message_prints_only_what_moved() {
+        let mut progress = Progress::default();
+        progress.lines(&wire_goal(|g| {
+            g.planned(steps(2));
+        }));
+        let moved = wire_goal(|g| {
+            g.planned(steps(2));
+            g.proposed(0, "p1");
+            g.decided("p1", true);
+        });
+        assert_eq!(
+            progress.lines(&moved),
+            [
+                "  step 1/2 accepted  page:members: step 0",
+                "  step 2/2 thinking  page:members: step 1"
+            ]
+        );
+        let waiting = wire_goal(|g| {
+            g.planned(steps(2));
+            g.proposed(0, "p1");
+            g.decided("p1", true);
+            g.proposed(1, "p2");
+        });
+        assert_eq!(
+            progress.lines(&waiting),
+            ["  step 2/2 proposed  page:members: step 1 [proposal p2: accept or reject it]"]
+        );
+        let done = wire_goal(|g| {
+            g.planned(steps(2));
+            g.proposed(0, "p1");
+            g.decided("p1", true);
+            g.proposed(1, "p2");
+            g.decided("p2", false);
+        });
+        assert_eq!(
+            progress.lines(&done),
+            [
+                "goal goal-1 done",
+                "  step 2/2 rejected  page:members: step 1"
+            ]
+        );
     }
 
     #[test]

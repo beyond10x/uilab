@@ -181,13 +181,12 @@ test('thinking starts an action; that operator\'s proposal clears it', () => {
   assert.deepEqual(f, {});
 });
 
-test('a goal that ended clears its operator; a goal still planning or running leaves it', () => {
+test('a goal message alone leaves actions in flight; whether it ended one takes the goal before it', () => {
   const thinking = trackInFlight({}, { type: 'thinking', value: { by: 'a1', target: 'page:loans' } });
-  const goal = (by: string, state: 'planning' | 'running' | 'done' | 'stopped' | 'failed') =>
-    trackInFlight(thinking, { type: 'goal', value: { goal_id: 'goal-1', by, text: 't', state, steps: [] } });
-  for (const state of ['planning', 'running'] as const) assert.equal(goal('a1', state), thinking, state);
-  for (const state of ['done', 'stopped', 'failed'] as const) assert.deepEqual(goal('a1', state), {}, state);
-  assert.equal(goal('h1', 'stopped'), thinking, 'another operator’s goal');
+  for (const state of ['planning', 'running', 'done', 'stopped', 'failed'] as const) {
+    const after = trackInFlight(thinking, { type: 'goal', value: { goal_id: 'goal-1', by: 'a1', text: 't', state, steps: [] } });
+    assert.equal(after, thinking, state);
+  }
 });
 
 test('each outcome clears only its own operator', () => {

@@ -197,26 +197,33 @@ async fn connection(socket: WebSocket, shared: Shared) {
     let operator = format!("ws-{}", CONNECTIONS.fetch_add(1, Ordering::Relaxed) + 1);
     let (mut sink, mut stream) = socket.split();
     let mut out = shared.out.subscribe();
+    // What only this connection is sent: the snapshot it starts from.
+    let (direct, mut own) = mpsc::unbounded_channel::<Server>();
     let _ = shared
         .inbox
         .send(Cmd::Connected {
             operator: operator.clone(),
+            direct,
         })
         .await;
     let writer = tokio::spawn(async move {
         loop {
-            match out.recv().await {
-                Ok(message) => {
-                    if sink
-                        .send(Message::Text(message.to_text().into()))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(broadcast::error::RecvError::Closed) => break,
+            let message = tokio::select! {
+                // The snapshot first: later broadcasts build on it.
+                biased;
+                Some(message) = own.recv() => message,
+                received = out.recv() => match received {
+                    Ok(message) => message,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                },
+            };
+            if sink
+                .send(Message::Text(message.to_text().into()))
+                .await
+                .is_err()
+            {
+                break;
             }
         }
     });

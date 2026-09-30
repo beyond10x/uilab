@@ -21,6 +21,8 @@ export function settleCard(card: Card, msg: ServerMessage): Card {
   const p = card.pending;
   switch (msg.type) {
     case 'proposal':
+      // The same proposal again is no new proposal: a decision already sent stands.
+      if (p && p.proposal_id === msg.value.proposal_id) return card;
       return { pending: msg.value, deciding: false };
     case 'document':
       return p && (card.deciding || msg.value.undoable === p.proposal_id) ? NO_CARD : card;

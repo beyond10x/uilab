@@ -32,7 +32,11 @@ pub const API_OPERATOR_TTL: Duration = Duration::from_secs(60);
 /// What the session task is told.
 pub enum Cmd {
     /// A browser connected; it is an anonymous human until it says hello.
-    Connected { operator: String },
+    Connected {
+        operator: String,
+        /// This connection alone: the snapshot it starts from goes here, not to everybody.
+        direct: mpsc::UnboundedSender<Server>,
+    },
     /// A browser went away.
     Disconnected { operator: String },
     /// An operator did something.
@@ -327,7 +331,7 @@ impl App {
 
     fn handle_cmd(&mut self, cmd: Cmd) {
         match cmd {
-            Cmd::Connected { operator } => {
+            Cmd::Connected { operator, direct } => {
                 self.operators.insert(
                     operator,
                     Operator {
@@ -337,17 +341,19 @@ impl App {
                         api: false,
                     },
                 );
-                self.send_document();
-                self.send_presence();
+                // The snapshot goes to the new connection alone; everybody else already has it,
+                // and a re-send would read as a new event there. Presence did change for all.
+                let _ = direct.send(self.document_message());
                 if let Some(goal) = &self.goal {
-                    self.send(wire::goal(goal));
+                    let _ = direct.send(wire::goal(goal));
                 }
                 // The card of a proposal still waiting, which a goal step may be blocked on.
                 if let Some(Server::Proposal(p)) = &self.shown
                     && self.pending.as_deref() == Some(p.proposal_id.0.as_str())
                 {
-                    self.send(Server::Proposal(p.clone()));
+                    let _ = direct.send(Server::Proposal(p.clone()));
                 }
+                self.send_presence();
             }
             Cmd::Disconnected { operator } => {
                 if let Some((owner, _)) = &self.audio
@@ -742,9 +748,7 @@ impl App {
             let _ = self.port.reject_proposal(s::RejectProposal {
                 proposal_id: proposal(&waiting),
             });
-            if self.pending.as_deref() == Some(waiting.as_str()) {
-                self.pending = None;
-            }
+            self.settle_pending(&waiting);
             self.send_document();
         }
     }
@@ -836,7 +840,7 @@ impl App {
                 let _ = self.port.reject_proposal(s::RejectProposal {
                     proposal_id: proposal(&d.proposal_id.0),
                 });
-                self.pending = None;
+                self.settle_pending(&d.proposal_id.0);
                 self.send_document();
                 self.goal_next(|g| g.decided(&d.proposal_id.0, false));
             }
@@ -940,13 +944,21 @@ impl App {
         });
     }
 
+    /// A decision on `proposal_id` ends the wait only when it is the proposal waiting; a stale
+    /// card or command deciding an earlier one leaves it.
+    fn settle_pending(&mut self, proposal_id: &str) {
+        if self.pending.as_deref() == Some(proposal_id) {
+            self.pending = None;
+        }
+    }
+
     /// Applies a waiting proposal. `automatic` when review is off and nobody pressed accept.
     fn accept(&mut self, by: &str, proposal_id: &str, automatic: bool) {
         let id = proposal(proposal_id);
         let outcome = self.port.accept_proposal(s::AcceptProposal {
             proposal_id: id.clone(),
         });
-        self.pending = None;
+        self.settle_pending(proposal_id);
         let applied = matches!(outcome, Ok(s::AcceptProposalOutcome::Accepted { .. }));
         match outcome {
             Ok(s::AcceptProposalOutcome::Accepted { .. }) => {
@@ -1143,6 +1155,9 @@ mod tests {
     struct Rig {
         app: App,
         rx: broadcast::Receiver<Server>,
+        /// What the actor sent to the connections the rig connected, and to nobody else.
+        direct: mpsc::UnboundedReceiver<Server>,
+        direct_tx: mpsc::UnboundedSender<Server>,
         _back: mpsc::Receiver<Cmd>,
         root: PathBuf,
     }
@@ -1185,9 +1200,12 @@ mod tests {
             back,
         )
         .unwrap();
+        let (direct_tx, direct) = mpsc::unbounded_channel();
         let mut rig = Rig {
             app,
             rx,
+            direct,
+            direct_tx,
             _back: back_rx,
             root,
         };
@@ -1210,12 +1228,35 @@ mod tests {
             });
         }
 
+        /// Everything sent since the last drain: broadcast, then direct.
         fn drain(&mut self) -> Vec<Server> {
+            let mut messages = self.drain_broadcast();
+            messages.extend(self.drain_direct());
+            messages
+        }
+
+        fn drain_broadcast(&mut self) -> Vec<Server> {
             let mut messages = Vec::new();
             while let Ok(m) = self.rx.try_recv() {
                 messages.push(m);
             }
             messages
+        }
+
+        fn drain_direct(&mut self) -> Vec<Server> {
+            let mut messages = Vec::new();
+            while let Ok(m) = self.direct.try_recv() {
+                messages.push(m);
+            }
+            messages
+        }
+
+        /// A browser connects on its own connection.
+        fn connect(&mut self, operator: &str) {
+            self.app.handle_cmd(Cmd::Connected {
+                operator: operator.into(),
+                direct: self.direct_tx.clone(),
+            });
         }
 
         fn goal(&self) -> &Goal {
@@ -1546,12 +1587,54 @@ mod tests {
         rig.answer(0);
         let id = rig.goal().steps[0].proposal_id.clone().unwrap();
         rig.drain();
-        rig.app.handle_cmd(Cmd::Connected {
-            operator: "ws-9".into(),
-        });
+        rig.connect("ws-9");
         let messages = rig.drain();
         assert_eq!(goal_states(&messages), ["running"]);
         assert_eq!(proposals(&messages), [id]);
+    }
+
+    #[test]
+    fn the_connect_snapshot_goes_to_the_connecting_browser_and_nobody_else() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.planned(&["page:members"]);
+        rig.answer(0);
+        let id = rig.goal().steps[0].proposal_id.clone().unwrap();
+        rig.drain();
+        rig.connect("ws-9");
+        let everybody = rig.drain_broadcast();
+        assert!(
+            everybody.iter().all(|m| matches!(m, Server::Presence(_))),
+            "browsers already connected get only the new presence: {everybody:?}"
+        );
+        assert!(!everybody.is_empty());
+        let direct = rig.drain_direct();
+        let kinds: Vec<&str> = direct
+            .iter()
+            .map(|m| match m {
+                Server::Document(_) => "document",
+                Server::Goal(_) => "goal",
+                Server::Proposal(_) => "proposal",
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(kinds, ["document", "goal", "proposal"]);
+        assert_eq!(proposals(&direct), [id]);
+    }
+
+    #[test]
+    fn a_reject_of_another_proposal_keeps_the_waiting_one() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.planned(&["page:members"]);
+        rig.answer(0);
+        let id = rig.goal().steps[0].proposal_id.clone().unwrap();
+        rig.client(
+            "ws-7",
+            r#"{"type":"reject","value":{"proposal_id":"an-earlier-proposal"}}"#,
+        );
+        assert_eq!(rig.app.pending.as_deref(), Some(id.as_str()));
+        assert_eq!(rig.statuses(), [StepStatus::Proposed]);
     }
 
     #[test]
@@ -1566,9 +1649,7 @@ mod tests {
             &format!(r#"{{"type":"reject","value":{{"proposal_id":"{id}"}}}}"#),
         );
         rig.drain();
-        rig.app.handle_cmd(Cmd::Connected {
-            operator: "ws-9".into(),
-        });
+        rig.connect("ws-9");
         assert!(proposals(&rig.drain()).is_empty());
     }
 
@@ -1590,9 +1671,7 @@ mod tests {
             "precondition: the step still waits on its proposal"
         );
         rig.drain();
-        rig.app.handle_cmd(Cmd::Connected {
-            operator: "ws-9".into(),
-        });
+        rig.connect("ws-9");
         assert_eq!(
             proposals(&rig.drain()),
             [id],

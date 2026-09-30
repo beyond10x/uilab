@@ -27,7 +27,7 @@ import {
   type InFlight,
 } from './lib/collab.ts';
 import { settleCard } from './lib/card.ts';
-import { bannerLabel, goalMessage, isActive, settleGoal, stopMessage } from './lib/goal.ts';
+import { bannerLabel, goalEnded, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
 import { findNode, homePage, isDraftView, isWithin, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf, segments } from './lib/outline.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
@@ -277,6 +277,9 @@ function onChanged(c: Changed): void {
 }
 
 function onMessage(msg: ServerMessage): void {
+  // The proposal on the card, sent again: nothing new happened.
+  if (msg.type === 'proposal' && state.proposal?.proposal_id === msg.value.proposal_id) return;
+  const ended = msg.type === 'goal' && goalEnded(state.goal, msg.value);
   const goal = settleGoal(state.goal, msg);
   if (goal !== state.goal) state.goal = goal;
   const card = settleCard({ pending: state.proposal, deciding: state.deciding }, msg);
@@ -342,10 +345,19 @@ function onMessage(msg: ServerMessage): void {
     case 'rows':
       state.rows = { ...state.rows, [msg.value.view]: msg.value };
       break;
-    case 'goal':
-      // A stopped goal's thinking step never answers; this browser stops waiting on it.
-      if (local && !isActive(msg.value) && state.phase === 'thinking') state.phase = 'idle';
+    case 'goal': {
+      // Only the moment a goal ends: a stopped goal's thinking step never answers, so its
+      // operator's action and this browser's wait end with it.
+      if (!ended) break;
+      const by = msg.value.by;
+      if (by in state.inFlight) {
+        const next = { ...state.inFlight };
+        delete next[by];
+        state.inFlight = next;
+      }
+      if (local && state.phase === 'thinking') state.phase = 'idle';
       break;
+    }
   }
 }
 
