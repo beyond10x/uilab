@@ -74,6 +74,26 @@ types:
     fields:
       - name: text
         type: String
+      - name: target
+        type: Optional<uilab.session.NodePath>
+
+  - name: uilab.wire.OperatorKind
+    kind: enum
+    variants: [human, agent]
+
+  - name: uilab.wire.Hello
+    kind: struct
+    fields:
+      - name: name
+        type: String
+      - name: kind
+        type: uilab.wire.OperatorKind
+
+  - name: uilab.wire.Resync
+    kind: struct
+    fields:
+      - name: revision
+        type: Integer
 
   - name: uilab.wire.Decide
     kind: struct
@@ -98,8 +118,48 @@ types:
       reject: uilab.wire.Decide
       undo: uilab.wire.Decide
       rows: uilab.wire.ReadRows
+      hello: uilab.wire.Hello
+      resync: uilab.wire.Resync
 
   # Server to client.
+  - name: uilab.wire.Operator
+    kind: struct
+    fields:
+      - name: id
+        type: String
+      - name: name
+        type: String
+      - name: kind
+        type: uilab.wire.OperatorKind
+      - name: last_seen_ms
+        type: Integer
+
+  - name: uilab.wire.Presence
+    kind: struct
+    fields:
+      - name: operators
+        type: List<uilab.wire.Operator>
+      - name: selected_by
+        type: Optional<String>
+
+  - name: uilab.wire.Changed
+    kind: struct
+    fields:
+      - name: revision
+        type: Integer
+      - name: by
+        type: String
+      - name: op
+        type: uilab.session.PatchOp
+      - name: changed
+        type: uilab.session.NodePath
+      - name: parent
+        type: uilab.session.NodePath
+      - name: node
+        type: Optional<uilab.wire.OutlineNode>
+      - name: findings
+        type: List<uilab.wire.Finding>
+
   - name: uilab.wire.DocumentState
     kind: struct
     fields:
@@ -117,10 +177,14 @@ types:
         type: List<uilab.wire.Finding>
       - name: undoable
         type: Optional<uilab.session.ProposalId>
+      - name: revision
+        type: Integer
 
   - name: uilab.wire.Transcript
     kind: struct
     fields:
+      - name: by
+        type: Optional<String>
       - name: text
         type: String
       - name: audio_ms
@@ -131,12 +195,16 @@ types:
   - name: uilab.wire.Thinking
     kind: struct
     fields:
+      - name: by
+        type: Optional<String>
       - name: target
         type: uilab.session.NodePath
 
   - name: uilab.wire.ProposalShown
     kind: struct
     fields:
+      - name: by
+        type: Optional<String>
       - name: proposal_id
         type: uilab.session.ProposalId
       - name: target
@@ -159,6 +227,8 @@ types:
   - name: uilab.wire.Refused
     kind: struct
     fields:
+      - name: by
+        type: Optional<String>
       - name: check
         type: String
       - name: message
@@ -167,6 +237,8 @@ types:
   - name: uilab.wire.Failed
     kind: struct
     fields:
+      - name: by
+        type: Optional<String>
       - name: message
         type: String
 
@@ -181,3 +253,5 @@ types:
       refused: uilab.wire.Refused
       failed: uilab.wire.Failed
       rows: uilab.wire.Rows
+      presence: uilab.wire.Presence
+      changed: uilab.wire.Changed

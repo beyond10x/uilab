@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 55369e6e2fd022d062872af44b9c252bf6b80b0b82da849d828e32c4bf780a9f
-// contract digest c7e76b5222a53b2b047350c46d9086d71ebcc13314a0ee6ce79ea111afb83928
+// model digest 1a75f0421d837e2ee884066ba29e42b368e91a0d2fb46630399bf48ac98fa437
+// contract digest 1419f72b14d91b0b3ee89f6e567db8160920e8728d07d1772d1e9b0cc5848690
 // do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
@@ -133,6 +133,89 @@ pub fn decode_uilab_session_proposal_id(value: &json::Value, at: &str) -> Result
     Ok(uilab_types::session::ProposalId(uilab_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
 }
 
+/// Writes `uilab.wire.Changed` as JSON.
+pub fn encode_uilab_wire_changed(value: &uilab_types::wire::Changed, out: &mut String) {
+    out.push('{');
+    json::member(out, "revision");
+    json::push_integer(out, value.revision);
+    json::member(out, "by");
+    json::push_text(out, &value.by);
+    json::member(out, "op");
+    encode_uilab_session_patch_op(&value.op, out);
+    json::member(out, "changed");
+    encode_uilab_session_node_path(&value.changed, out);
+    json::member(out, "parent");
+    encode_uilab_session_node_path(&value.parent, out);
+    if let Some(held0) = &value.node {
+        json::member(out, "node");
+        encode_uilab_wire_outline_node(&*held0, out);
+    }
+    json::member(out, "findings");
+    out.push('[');
+    for (index0, item0) in value.findings.iter().enumerate() {
+        if index0 > 0 {
+            out.push(',');
+        }
+        encode_uilab_wire_finding(&*item0, out);
+    }
+    out.push(']');
+    out.push('}');
+}
+
+/// Reads `uilab.wire.Changed` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_changed(value: &json::Value, at: &str) -> Result<uilab_types::wire::Changed, json::DecodeError> {
+    Ok(uilab_types::wire::Changed {
+        revision: {
+            let at0 = json::nested(at, "revision");
+            let member0 = json::member_at(value, at, "revision")?;
+            json::integer_at(member0, &at0, "an integer")?
+        },
+        by: {
+            let at1 = json::nested(at, "by");
+            let member1 = json::member_at(value, at, "by")?;
+            json::text_at(member1, &at1, "a string")?.to_owned()
+        },
+        op: {
+            let at2 = json::nested(at, "op");
+            let member2 = json::member_at(value, at, "op")?;
+            decode_uilab_session_patch_op(member2, &at2)?
+        },
+        changed: {
+            let at3 = json::nested(at, "changed");
+            let member3 = json::member_at(value, at, "changed")?;
+            decode_uilab_session_node_path(member3, &at3)?
+        },
+        parent: {
+            let at4 = json::nested(at, "parent");
+            let member4 = json::member_at(value, at, "parent")?;
+            decode_uilab_session_node_path(member4, &at4)?
+        },
+        node: match value.member("node") {
+            None | Some(json::Value::Null) => None,
+            Some(member5) => {
+                let at5 = json::nested(at, "node");
+                Some(decode_uilab_wire_outline_node(member5, &at5)?)
+            }
+        },
+        findings: {
+            let at6 = json::nested(at, "findings");
+            let member6 = json::member_at(value, at, "findings")?;
+            {
+                let mut items6 = Vec::new();
+                for (index6, element6) in json::items_at(member6, &at6, "an array")?.iter().enumerate() {
+                    let nested6 = json::nested(&at6, &index6.to_string());
+                    items6.push(decode_uilab_wire_finding(element6, &nested6)?);
+                }
+                items6
+            }
+        },
+    })
+}
+
 /// Writes `uilab.wire.ClientMessage` as JSON.
 pub fn encode_uilab_wire_client_message(value: &uilab_types::wire::ClientMessage, out: &mut String) {
     match value {
@@ -142,6 +225,14 @@ pub fn encode_uilab_wire_client_message(value: &uilab_types::wire::ClientMessage
             json::push_text(out, "accept");
             json::member(out, "value");
             encode_uilab_wire_decide(&*held, out);
+            out.push('}');
+        }
+        uilab_types::wire::ClientMessage::Hello(held) => {
+            out.push('{');
+            json::member(out, "type");
+            json::push_text(out, "hello");
+            json::member(out, "value");
+            encode_uilab_wire_hello(&*held, out);
             out.push('}');
         }
         uilab_types::wire::ClientMessage::Mic(held) => {
@@ -158,6 +249,14 @@ pub fn encode_uilab_wire_client_message(value: &uilab_types::wire::ClientMessage
             json::push_text(out, "reject");
             json::member(out, "value");
             encode_uilab_wire_decide(&*held, out);
+            out.push('}');
+        }
+        uilab_types::wire::ClientMessage::Resync(held) => {
+            out.push('{');
+            json::member(out, "type");
+            json::push_text(out, "resync");
+            json::member(out, "value");
+            encode_uilab_wire_resync(&*held, out);
             out.push('}');
         }
         uilab_types::wire::ClientMessage::Rows(held) => {
@@ -203,43 +302,53 @@ pub fn encode_uilab_wire_client_message(value: &uilab_types::wire::ClientMessage
 pub fn decode_uilab_wire_client_message(value: &json::Value, at: &str) -> Result<uilab_types::wire::ClientMessage, json::DecodeError> {
     let tag = json::member_at(value, at, "type")?;
     let at_tag = json::nested(at, "type");
-    Ok(match json::text_at(tag, &at_tag, "one of `accept`, `mic`, `reject`, `rows`, `say`, `select`, `undo`")? {
+    Ok(match json::text_at(tag, &at_tag, "one of `accept`, `hello`, `mic`, `reject`, `resync`, `rows`, `say`, `select`, `undo`")? {
         "accept" => uilab_types::wire::ClientMessage::Accept({
             let at0 = json::nested(at, "value");
             let member0 = json::member_at(value, at, "value")?;
             decode_uilab_wire_decide(member0, &at0)?
         }),
-        "mic" => uilab_types::wire::ClientMessage::Mic({
+        "hello" => uilab_types::wire::ClientMessage::Hello({
             let at1 = json::nested(at, "value");
             let member1 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_mic(member1, &at1)?
+            decode_uilab_wire_hello(member1, &at1)?
         }),
-        "reject" => uilab_types::wire::ClientMessage::Reject({
+        "mic" => uilab_types::wire::ClientMessage::Mic({
             let at2 = json::nested(at, "value");
             let member2 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_decide(member2, &at2)?
+            decode_uilab_wire_mic(member2, &at2)?
         }),
-        "rows" => uilab_types::wire::ClientMessage::Rows({
+        "reject" => uilab_types::wire::ClientMessage::Reject({
             let at3 = json::nested(at, "value");
             let member3 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_read_rows(member3, &at3)?
+            decode_uilab_wire_decide(member3, &at3)?
         }),
-        "say" => uilab_types::wire::ClientMessage::Say({
+        "resync" => uilab_types::wire::ClientMessage::Resync({
             let at4 = json::nested(at, "value");
             let member4 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_say(member4, &at4)?
+            decode_uilab_wire_resync(member4, &at4)?
         }),
-        "select" => uilab_types::wire::ClientMessage::Select({
+        "rows" => uilab_types::wire::ClientMessage::Rows({
             let at5 = json::nested(at, "value");
             let member5 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_select(member5, &at5)?
+            decode_uilab_wire_read_rows(member5, &at5)?
         }),
-        "undo" => uilab_types::wire::ClientMessage::Undo({
+        "say" => uilab_types::wire::ClientMessage::Say({
             let at6 = json::nested(at, "value");
             let member6 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_decide(member6, &at6)?
+            decode_uilab_wire_say(member6, &at6)?
         }),
-        other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `accept`, `mic`, `reject`, `rows`, `say`, `select`, `undo`".to_owned(), found: format!("`{other}`") }),
+        "select" => uilab_types::wire::ClientMessage::Select({
+            let at7 = json::nested(at, "value");
+            let member7 = json::member_at(value, at, "value")?;
+            decode_uilab_wire_select(member7, &at7)?
+        }),
+        "undo" => uilab_types::wire::ClientMessage::Undo({
+            let at8 = json::nested(at, "value");
+            let member8 = json::member_at(value, at, "value")?;
+            decode_uilab_wire_decide(member8, &at8)?
+        }),
+        other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `accept`, `hello`, `mic`, `reject`, `resync`, `rows`, `say`, `select`, `undo`".to_owned(), found: format!("`{other}`") }),
     })
 }
 
@@ -294,6 +403,8 @@ pub fn encode_uilab_wire_document_state(value: &uilab_types::wire::DocumentState
         json::member(out, "undoable");
         encode_uilab_session_proposal_id(&*held0, out);
     }
+    json::member(out, "revision");
+    json::push_integer(out, value.revision);
     out.push('}');
 }
 
@@ -350,12 +461,21 @@ pub fn decode_uilab_wire_document_state(value: &json::Value, at: &str) -> Result
                 Some(decode_uilab_session_proposal_id(member6, &at6)?)
             }
         },
+        revision: {
+            let at7 = json::nested(at, "revision");
+            let member7 = json::member_at(value, at, "revision")?;
+            json::integer_at(member7, &at7, "an integer")?
+        },
     })
 }
 
 /// Writes `uilab.wire.Failed` as JSON.
 pub fn encode_uilab_wire_failed(value: &uilab_types::wire::Failed, out: &mut String) {
     out.push('{');
+    if let Some(held0) = &value.by {
+        json::member(out, "by");
+        json::push_text(out, &*held0);
+    }
     json::member(out, "message");
     json::push_text(out, &value.message);
     out.push('}');
@@ -368,10 +488,17 @@ pub fn encode_uilab_wire_failed(value: &uilab_types::wire::Failed, out: &mut Str
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_uilab_wire_failed(value: &json::Value, at: &str) -> Result<uilab_types::wire::Failed, json::DecodeError> {
     Ok(uilab_types::wire::Failed {
+        by: match value.member("by") {
+            None | Some(json::Value::Null) => None,
+            Some(member0) => {
+                let at0 = json::nested(at, "by");
+                Some(json::text_at(member0, &at0, "a string")?.to_owned())
+            }
+        },
         message: {
-            let at0 = json::nested(at, "message");
-            let member0 = json::member_at(value, at, "message")?;
-            json::text_at(member0, &at0, "a string")?.to_owned()
+            let at1 = json::nested(at, "message");
+            let member1 = json::member_at(value, at, "message")?;
+            json::text_at(member1, &at1, "a string")?.to_owned()
         },
     })
 }
@@ -420,6 +547,36 @@ pub fn decode_uilab_wire_finding(value: &json::Value, at: &str) -> Result<uilab_
     })
 }
 
+/// Writes `uilab.wire.Hello` as JSON.
+pub fn encode_uilab_wire_hello(value: &uilab_types::wire::Hello, out: &mut String) {
+    out.push('{');
+    json::member(out, "name");
+    json::push_text(out, &value.name);
+    json::member(out, "kind");
+    encode_uilab_wire_operator_kind(&value.kind, out);
+    out.push('}');
+}
+
+/// Reads `uilab.wire.Hello` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_hello(value: &json::Value, at: &str) -> Result<uilab_types::wire::Hello, json::DecodeError> {
+    Ok(uilab_types::wire::Hello {
+        name: {
+            let at0 = json::nested(at, "name");
+            let member0 = json::member_at(value, at, "name")?;
+            json::text_at(member0, &at0, "a string")?.to_owned()
+        },
+        kind: {
+            let at1 = json::nested(at, "kind");
+            let member1 = json::member_at(value, at, "kind")?;
+            decode_uilab_wire_operator_kind(member1, &at1)?
+        },
+    })
+}
+
 /// Writes `uilab.wire.Mic` as JSON.
 pub fn encode_uilab_wire_mic(value: &uilab_types::wire::Mic, out: &mut String) {
     out.push('{');
@@ -461,6 +618,71 @@ pub fn decode_uilab_wire_mic_state(value: &json::Value, at: &str) -> Result<uila
         "open" => uilab_types::wire::MicState::Open,
         "closed" => uilab_types::wire::MicState::Closed,
         other => return Err(json::DecodeError { at: at.to_owned(), expected: "one of `open`, `closed`".to_owned(), found: format!("`{other}`") }),
+    })
+}
+
+/// Writes `uilab.wire.Operator` as JSON.
+pub fn encode_uilab_wire_operator(value: &uilab_types::wire::Operator, out: &mut String) {
+    out.push('{');
+    json::member(out, "id");
+    json::push_text(out, &value.id);
+    json::member(out, "name");
+    json::push_text(out, &value.name);
+    json::member(out, "kind");
+    encode_uilab_wire_operator_kind(&value.kind, out);
+    json::member(out, "last_seen_ms");
+    json::push_integer(out, value.last_seen_ms);
+    out.push('}');
+}
+
+/// Reads `uilab.wire.Operator` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_operator(value: &json::Value, at: &str) -> Result<uilab_types::wire::Operator, json::DecodeError> {
+    Ok(uilab_types::wire::Operator {
+        id: {
+            let at0 = json::nested(at, "id");
+            let member0 = json::member_at(value, at, "id")?;
+            json::text_at(member0, &at0, "a string")?.to_owned()
+        },
+        name: {
+            let at1 = json::nested(at, "name");
+            let member1 = json::member_at(value, at, "name")?;
+            json::text_at(member1, &at1, "a string")?.to_owned()
+        },
+        kind: {
+            let at2 = json::nested(at, "kind");
+            let member2 = json::member_at(value, at, "kind")?;
+            decode_uilab_wire_operator_kind(member2, &at2)?
+        },
+        last_seen_ms: {
+            let at3 = json::nested(at, "last_seen_ms");
+            let member3 = json::member_at(value, at, "last_seen_ms")?;
+            json::integer_at(member3, &at3, "an integer")?
+        },
+    })
+}
+
+/// Writes `uilab.wire.OperatorKind` as JSON.
+pub fn encode_uilab_wire_operator_kind(value: &uilab_types::wire::OperatorKind, out: &mut String) {
+    match value {
+        uilab_types::wire::OperatorKind::Human => json::push_text(out, "human"),
+        uilab_types::wire::OperatorKind::Agent => json::push_text(out, "agent"),
+    }
+}
+
+/// Reads `uilab.wire.OperatorKind` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_operator_kind(value: &json::Value, at: &str) -> Result<uilab_types::wire::OperatorKind, json::DecodeError> {
+    Ok(match json::text_at(value, at, "one of `human`, `agent`")? {
+        "human" => uilab_types::wire::OperatorKind::Human,
+        "agent" => uilab_types::wire::OperatorKind::Agent,
+        other => return Err(json::DecodeError { at: at.to_owned(), expected: "one of `human`, `agent`".to_owned(), found: format!("`{other}`") }),
     })
 }
 
@@ -562,9 +784,61 @@ pub fn decode_uilab_wire_outline_node(value: &json::Value, at: &str) -> Result<u
     })
 }
 
+/// Writes `uilab.wire.Presence` as JSON.
+pub fn encode_uilab_wire_presence(value: &uilab_types::wire::Presence, out: &mut String) {
+    out.push('{');
+    json::member(out, "operators");
+    out.push('[');
+    for (index0, item0) in value.operators.iter().enumerate() {
+        if index0 > 0 {
+            out.push(',');
+        }
+        encode_uilab_wire_operator(&*item0, out);
+    }
+    out.push(']');
+    if let Some(held0) = &value.selected_by {
+        json::member(out, "selected_by");
+        json::push_text(out, &*held0);
+    }
+    out.push('}');
+}
+
+/// Reads `uilab.wire.Presence` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_presence(value: &json::Value, at: &str) -> Result<uilab_types::wire::Presence, json::DecodeError> {
+    Ok(uilab_types::wire::Presence {
+        operators: {
+            let at0 = json::nested(at, "operators");
+            let member0 = json::member_at(value, at, "operators")?;
+            {
+                let mut items0 = Vec::new();
+                for (index0, element0) in json::items_at(member0, &at0, "an array")?.iter().enumerate() {
+                    let nested0 = json::nested(&at0, &index0.to_string());
+                    items0.push(decode_uilab_wire_operator(element0, &nested0)?);
+                }
+                items0
+            }
+        },
+        selected_by: match value.member("selected_by") {
+            None | Some(json::Value::Null) => None,
+            Some(member1) => {
+                let at1 = json::nested(at, "selected_by");
+                Some(json::text_at(member1, &at1, "a string")?.to_owned())
+            }
+        },
+    })
+}
+
 /// Writes `uilab.wire.ProposalShown` as JSON.
 pub fn encode_uilab_wire_proposal_shown(value: &uilab_types::wire::ProposalShown, out: &mut String) {
     out.push('{');
+    if let Some(held0) = &value.by {
+        json::member(out, "by");
+        json::push_text(out, &*held0);
+    }
     json::member(out, "proposal_id");
     encode_uilab_session_proposal_id(&value.proposal_id, out);
     json::member(out, "target");
@@ -600,57 +874,64 @@ pub fn encode_uilab_wire_proposal_shown(value: &uilab_types::wire::ProposalShown
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_uilab_wire_proposal_shown(value: &json::Value, at: &str) -> Result<uilab_types::wire::ProposalShown, json::DecodeError> {
     Ok(uilab_types::wire::ProposalShown {
+        by: match value.member("by") {
+            None | Some(json::Value::Null) => None,
+            Some(member0) => {
+                let at0 = json::nested(at, "by");
+                Some(json::text_at(member0, &at0, "a string")?.to_owned())
+            }
+        },
         proposal_id: {
-            let at0 = json::nested(at, "proposal_id");
-            let member0 = json::member_at(value, at, "proposal_id")?;
-            decode_uilab_session_proposal_id(member0, &at0)?
+            let at1 = json::nested(at, "proposal_id");
+            let member1 = json::member_at(value, at, "proposal_id")?;
+            decode_uilab_session_proposal_id(member1, &at1)?
         },
         target: {
-            let at1 = json::nested(at, "target");
-            let member1 = json::member_at(value, at, "target")?;
-            decode_uilab_session_node_path(member1, &at1)?
-        },
-        changed: {
-            let at2 = json::nested(at, "changed");
-            let member2 = json::member_at(value, at, "changed")?;
+            let at2 = json::nested(at, "target");
+            let member2 = json::member_at(value, at, "target")?;
             decode_uilab_session_node_path(member2, &at2)?
         },
+        changed: {
+            let at3 = json::nested(at, "changed");
+            let member3 = json::member_at(value, at, "changed")?;
+            decode_uilab_session_node_path(member3, &at3)?
+        },
         op: {
-            let at3 = json::nested(at, "op");
-            let member3 = json::member_at(value, at, "op")?;
-            decode_uilab_session_patch_op(member3, &at3)?
+            let at4 = json::nested(at, "op");
+            let member4 = json::member_at(value, at, "op")?;
+            decode_uilab_session_patch_op(member4, &at4)?
         },
         utterance: {
-            let at4 = json::nested(at, "utterance");
-            let member4 = json::member_at(value, at, "utterance")?;
-            json::text_at(member4, &at4, "a string")?.to_owned()
-        },
-        before: {
-            let at5 = json::nested(at, "before");
-            let member5 = json::member_at(value, at, "before")?;
+            let at5 = json::nested(at, "utterance");
+            let member5 = json::member_at(value, at, "utterance")?;
             json::text_at(member5, &at5, "a string")?.to_owned()
         },
-        after: {
-            let at6 = json::nested(at, "after");
-            let member6 = json::member_at(value, at, "after")?;
+        before: {
+            let at6 = json::nested(at, "before");
+            let member6 = json::member_at(value, at, "before")?;
             json::text_at(member6, &at6, "a string")?.to_owned()
         },
+        after: {
+            let at7 = json::nested(at, "after");
+            let member7 = json::member_at(value, at, "after")?;
+            json::text_at(member7, &at7, "a string")?.to_owned()
+        },
         findings: {
-            let at7 = json::nested(at, "findings");
-            let member7 = json::member_at(value, at, "findings")?;
+            let at8 = json::nested(at, "findings");
+            let member8 = json::member_at(value, at, "findings")?;
             {
-                let mut items7 = Vec::new();
-                for (index7, element7) in json::items_at(member7, &at7, "an array")?.iter().enumerate() {
-                    let nested7 = json::nested(&at7, &index7.to_string());
-                    items7.push(decode_uilab_wire_finding(element7, &nested7)?);
+                let mut items8 = Vec::new();
+                for (index8, element8) in json::items_at(member8, &at8, "an array")?.iter().enumerate() {
+                    let nested8 = json::nested(&at8, &index8.to_string());
+                    items8.push(decode_uilab_wire_finding(element8, &nested8)?);
                 }
-                items7
+                items8
             }
         },
         outline: {
-            let at8 = json::nested(at, "outline");
-            let member8 = json::member_at(value, at, "outline")?;
-            decode_uilab_wire_outline_node(member8, &at8)?
+            let at9 = json::nested(at, "outline");
+            let member9 = json::member_at(value, at, "outline")?;
+            decode_uilab_wire_outline_node(member9, &at9)?
         },
     })
 }
@@ -681,6 +962,10 @@ pub fn decode_uilab_wire_read_rows(value: &json::Value, at: &str) -> Result<uila
 /// Writes `uilab.wire.Refused` as JSON.
 pub fn encode_uilab_wire_refused(value: &uilab_types::wire::Refused, out: &mut String) {
     out.push('{');
+    if let Some(held0) = &value.by {
+        json::member(out, "by");
+        json::push_text(out, &*held0);
+    }
     json::member(out, "check");
     json::push_text(out, &value.check);
     json::member(out, "message");
@@ -695,15 +980,45 @@ pub fn encode_uilab_wire_refused(value: &uilab_types::wire::Refused, out: &mut S
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_uilab_wire_refused(value: &json::Value, at: &str) -> Result<uilab_types::wire::Refused, json::DecodeError> {
     Ok(uilab_types::wire::Refused {
+        by: match value.member("by") {
+            None | Some(json::Value::Null) => None,
+            Some(member0) => {
+                let at0 = json::nested(at, "by");
+                Some(json::text_at(member0, &at0, "a string")?.to_owned())
+            }
+        },
         check: {
-            let at0 = json::nested(at, "check");
-            let member0 = json::member_at(value, at, "check")?;
-            json::text_at(member0, &at0, "a string")?.to_owned()
+            let at1 = json::nested(at, "check");
+            let member1 = json::member_at(value, at, "check")?;
+            json::text_at(member1, &at1, "a string")?.to_owned()
         },
         message: {
-            let at1 = json::nested(at, "message");
-            let member1 = json::member_at(value, at, "message")?;
-            json::text_at(member1, &at1, "a string")?.to_owned()
+            let at2 = json::nested(at, "message");
+            let member2 = json::member_at(value, at, "message")?;
+            json::text_at(member2, &at2, "a string")?.to_owned()
+        },
+    })
+}
+
+/// Writes `uilab.wire.Resync` as JSON.
+pub fn encode_uilab_wire_resync(value: &uilab_types::wire::Resync, out: &mut String) {
+    out.push('{');
+    json::member(out, "revision");
+    json::push_integer(out, value.revision);
+    out.push('}');
+}
+
+/// Reads `uilab.wire.Resync` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_resync(value: &json::Value, at: &str) -> Result<uilab_types::wire::Resync, json::DecodeError> {
+    Ok(uilab_types::wire::Resync {
+        revision: {
+            let at0 = json::nested(at, "revision");
+            let member0 = json::member_at(value, at, "revision")?;
+            json::integer_at(member0, &at0, "an integer")?
         },
     })
 }
@@ -768,6 +1083,10 @@ pub fn encode_uilab_wire_say(value: &uilab_types::wire::Say, out: &mut String) {
     out.push('{');
     json::member(out, "text");
     json::push_text(out, &value.text);
+    if let Some(held0) = &value.target {
+        json::member(out, "target");
+        encode_uilab_session_node_path(&*held0, out);
+    }
     out.push('}');
 }
 
@@ -782,6 +1101,13 @@ pub fn decode_uilab_wire_say(value: &json::Value, at: &str) -> Result<uilab_type
             let at0 = json::nested(at, "text");
             let member0 = json::member_at(value, at, "text")?;
             json::text_at(member0, &at0, "a string")?.to_owned()
+        },
+        target: match value.member("target") {
+            None | Some(json::Value::Null) => None,
+            Some(member1) => {
+                let at1 = json::nested(at, "target");
+                Some(decode_uilab_session_node_path(member1, &at1)?)
+            }
         },
     })
 }
@@ -812,6 +1138,14 @@ pub fn decode_uilab_wire_select(value: &json::Value, at: &str) -> Result<uilab_t
 /// Writes `uilab.wire.ServerMessage` as JSON.
 pub fn encode_uilab_wire_server_message(value: &uilab_types::wire::ServerMessage, out: &mut String) {
     match value {
+        uilab_types::wire::ServerMessage::Changed(held) => {
+            out.push('{');
+            json::member(out, "type");
+            json::push_text(out, "changed");
+            json::member(out, "value");
+            encode_uilab_wire_changed(&*held, out);
+            out.push('}');
+        }
         uilab_types::wire::ServerMessage::Document(held) => {
             out.push('{');
             json::member(out, "type");
@@ -826,6 +1160,14 @@ pub fn encode_uilab_wire_server_message(value: &uilab_types::wire::ServerMessage
             json::push_text(out, "failed");
             json::member(out, "value");
             encode_uilab_wire_failed(&*held, out);
+            out.push('}');
+        }
+        uilab_types::wire::ServerMessage::Presence(held) => {
+            out.push('{');
+            json::member(out, "type");
+            json::push_text(out, "presence");
+            json::member(out, "value");
+            encode_uilab_wire_presence(&*held, out);
             out.push('}');
         }
         uilab_types::wire::ServerMessage::Proposal(held) => {
@@ -879,43 +1221,53 @@ pub fn encode_uilab_wire_server_message(value: &uilab_types::wire::ServerMessage
 pub fn decode_uilab_wire_server_message(value: &json::Value, at: &str) -> Result<uilab_types::wire::ServerMessage, json::DecodeError> {
     let tag = json::member_at(value, at, "type")?;
     let at_tag = json::nested(at, "type");
-    Ok(match json::text_at(tag, &at_tag, "one of `document`, `failed`, `proposal`, `refused`, `rows`, `thinking`, `transcript`")? {
-        "document" => uilab_types::wire::ServerMessage::Document({
+    Ok(match json::text_at(tag, &at_tag, "one of `changed`, `document`, `failed`, `presence`, `proposal`, `refused`, `rows`, `thinking`, `transcript`")? {
+        "changed" => uilab_types::wire::ServerMessage::Changed({
             let at0 = json::nested(at, "value");
             let member0 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_document_state(member0, &at0)?
+            decode_uilab_wire_changed(member0, &at0)?
         }),
-        "failed" => uilab_types::wire::ServerMessage::Failed({
+        "document" => uilab_types::wire::ServerMessage::Document({
             let at1 = json::nested(at, "value");
             let member1 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_failed(member1, &at1)?
+            decode_uilab_wire_document_state(member1, &at1)?
         }),
-        "proposal" => uilab_types::wire::ServerMessage::Proposal({
+        "failed" => uilab_types::wire::ServerMessage::Failed({
             let at2 = json::nested(at, "value");
             let member2 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_proposal_shown(member2, &at2)?
+            decode_uilab_wire_failed(member2, &at2)?
         }),
-        "refused" => uilab_types::wire::ServerMessage::Refused({
+        "presence" => uilab_types::wire::ServerMessage::Presence({
             let at3 = json::nested(at, "value");
             let member3 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_refused(member3, &at3)?
+            decode_uilab_wire_presence(member3, &at3)?
         }),
-        "rows" => uilab_types::wire::ServerMessage::Rows({
+        "proposal" => uilab_types::wire::ServerMessage::Proposal({
             let at4 = json::nested(at, "value");
             let member4 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_rows(member4, &at4)?
+            decode_uilab_wire_proposal_shown(member4, &at4)?
         }),
-        "thinking" => uilab_types::wire::ServerMessage::Thinking({
+        "refused" => uilab_types::wire::ServerMessage::Refused({
             let at5 = json::nested(at, "value");
             let member5 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_thinking(member5, &at5)?
+            decode_uilab_wire_refused(member5, &at5)?
         }),
-        "transcript" => uilab_types::wire::ServerMessage::Transcript({
+        "rows" => uilab_types::wire::ServerMessage::Rows({
             let at6 = json::nested(at, "value");
             let member6 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_transcript(member6, &at6)?
+            decode_uilab_wire_rows(member6, &at6)?
         }),
-        other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `document`, `failed`, `proposal`, `refused`, `rows`, `thinking`, `transcript`".to_owned(), found: format!("`{other}`") }),
+        "thinking" => uilab_types::wire::ServerMessage::Thinking({
+            let at7 = json::nested(at, "value");
+            let member7 = json::member_at(value, at, "value")?;
+            decode_uilab_wire_thinking(member7, &at7)?
+        }),
+        "transcript" => uilab_types::wire::ServerMessage::Transcript({
+            let at8 = json::nested(at, "value");
+            let member8 = json::member_at(value, at, "value")?;
+            decode_uilab_wire_transcript(member8, &at8)?
+        }),
+        other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `changed`, `document`, `failed`, `presence`, `proposal`, `refused`, `rows`, `thinking`, `transcript`".to_owned(), found: format!("`{other}`") }),
     })
 }
 
@@ -943,6 +1295,10 @@ pub fn decode_uilab_wire_severity(value: &json::Value, at: &str) -> Result<uilab
 /// Writes `uilab.wire.Thinking` as JSON.
 pub fn encode_uilab_wire_thinking(value: &uilab_types::wire::Thinking, out: &mut String) {
     out.push('{');
+    if let Some(held0) = &value.by {
+        json::member(out, "by");
+        json::push_text(out, &*held0);
+    }
     json::member(out, "target");
     encode_uilab_session_node_path(&value.target, out);
     out.push('}');
@@ -955,10 +1311,17 @@ pub fn encode_uilab_wire_thinking(value: &uilab_types::wire::Thinking, out: &mut
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_uilab_wire_thinking(value: &json::Value, at: &str) -> Result<uilab_types::wire::Thinking, json::DecodeError> {
     Ok(uilab_types::wire::Thinking {
+        by: match value.member("by") {
+            None | Some(json::Value::Null) => None,
+            Some(member0) => {
+                let at0 = json::nested(at, "by");
+                Some(json::text_at(member0, &at0, "a string")?.to_owned())
+            }
+        },
         target: {
-            let at0 = json::nested(at, "target");
-            let member0 = json::member_at(value, at, "target")?;
-            decode_uilab_session_node_path(member0, &at0)?
+            let at1 = json::nested(at, "target");
+            let member1 = json::member_at(value, at, "target")?;
+            decode_uilab_session_node_path(member1, &at1)?
         },
     })
 }
@@ -966,6 +1329,10 @@ pub fn decode_uilab_wire_thinking(value: &json::Value, at: &str) -> Result<uilab
 /// Writes `uilab.wire.Transcript` as JSON.
 pub fn encode_uilab_wire_transcript(value: &uilab_types::wire::Transcript, out: &mut String) {
     out.push('{');
+    if let Some(held0) = &value.by {
+        json::member(out, "by");
+        json::push_text(out, &*held0);
+    }
     json::member(out, "text");
     json::push_text(out, &value.text);
     json::member(out, "audio_ms");
@@ -982,20 +1349,27 @@ pub fn encode_uilab_wire_transcript(value: &uilab_types::wire::Transcript, out: 
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_uilab_wire_transcript(value: &json::Value, at: &str) -> Result<uilab_types::wire::Transcript, json::DecodeError> {
     Ok(uilab_types::wire::Transcript {
+        by: match value.member("by") {
+            None | Some(json::Value::Null) => None,
+            Some(member0) => {
+                let at0 = json::nested(at, "by");
+                Some(json::text_at(member0, &at0, "a string")?.to_owned())
+            }
+        },
         text: {
-            let at0 = json::nested(at, "text");
-            let member0 = json::member_at(value, at, "text")?;
-            json::text_at(member0, &at0, "a string")?.to_owned()
+            let at1 = json::nested(at, "text");
+            let member1 = json::member_at(value, at, "text")?;
+            json::text_at(member1, &at1, "a string")?.to_owned()
         },
         audio_ms: {
-            let at1 = json::nested(at, "audio_ms");
-            let member1 = json::member_at(value, at, "audio_ms")?;
-            json::integer_at(member1, &at1, "an integer")?
+            let at2 = json::nested(at, "audio_ms");
+            let member2 = json::member_at(value, at, "audio_ms")?;
+            json::integer_at(member2, &at2, "an integer")?
         },
         took_ms: {
-            let at2 = json::nested(at, "took_ms");
-            let member2 = json::member_at(value, at, "took_ms")?;
-            json::integer_at(member2, &at2, "an integer")?
+            let at3 = json::nested(at, "took_ms");
+            let member3 = json::member_at(value, at, "took_ms")?;
+            json::integer_at(member3, &at3, "an integer")?
         },
     })
 }

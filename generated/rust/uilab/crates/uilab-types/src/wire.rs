@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 55369e6e2fd022d062872af44b9c252bf6b80b0b82da849d828e32c4bf780a9f
-// contract digest c7e76b5222a53b2b047350c46d9086d71ebcc13314a0ee6ce79ea111afb83928
+// model digest 1a75f0421d837e2ee884066ba29e42b368e91a0d2fb46630399bf48ac98fa437
+// contract digest 1419f72b14d91b0b3ee89f6e567db8160920e8728d07d1772d1e9b0cc5848690
 // do not edit: regenerate with `ess synthesize`
 
 //! wire — `uilab.wire`.
@@ -9,15 +9,38 @@
 //!
 //! Everything this bounded context declares that the synthesis plan marks generated.
 
+/// Changed — `uilab.wire.Changed`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Changed {
+    /// `revision` — `Integer`.
+    pub revision: i64,
+    /// `by` — `String`.
+    pub by: String,
+    /// `op` — `uilab.session.PatchOp`.
+    pub op: crate::session::PatchOp,
+    /// `changed` — `uilab.session.NodePath`.
+    pub changed: crate::session::NodePath,
+    /// `parent` — `uilab.session.NodePath`.
+    pub parent: crate::session::NodePath,
+    /// `node` — `Optional<uilab.wire.OutlineNode>`.
+    pub node: Option<OutlineNode>,
+    /// `findings` — `List<uilab.wire.Finding>`.
+    pub findings: Vec<Finding>,
+}
+
 /// ClientMessage — `uilab.wire.ClientMessage`: one of a fixed set of shapes, tagged on the wire by `type`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientMessage {
     /// Tagged `accept` — `uilab.wire.Decide`.
     Accept(Decide),
+    /// Tagged `hello` — `uilab.wire.Hello`.
+    Hello(Hello),
     /// Tagged `mic` — `uilab.wire.Mic`.
     Mic(Mic),
     /// Tagged `reject` — `uilab.wire.Decide`.
     Reject(Decide),
+    /// Tagged `resync` — `uilab.wire.Resync`.
+    Resync(Resync),
     /// Tagged `rows` — `uilab.wire.ReadRows`.
     Rows(ReadRows),
     /// Tagged `say` — `uilab.wire.Say`.
@@ -52,11 +75,15 @@ pub struct DocumentState {
     pub findings: Vec<Finding>,
     /// `undoable` — `Optional<uilab.session.ProposalId>`.
     pub undoable: Option<crate::session::ProposalId>,
+    /// `revision` — `Integer`.
+    pub revision: i64,
 }
 
 /// Failed — `uilab.wire.Failed`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Failed {
+    /// `by` — `Optional<String>`.
+    pub by: Option<String>,
     /// `message` — `String`.
     pub message: String,
 }
@@ -74,6 +101,15 @@ pub struct Finding {
     pub message: String,
 }
 
+/// Hello — `uilab.wire.Hello`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hello {
+    /// `name` — `String`.
+    pub name: String,
+    /// `kind` — `uilab.wire.OperatorKind`.
+    pub kind: OperatorKind,
+}
+
 /// Mic — `uilab.wire.Mic`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mic {
@@ -88,6 +124,28 @@ pub enum MicState {
     Open,
     /// `closed`.
     Closed,
+}
+
+/// Operator — `uilab.wire.Operator`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Operator {
+    /// `id` — `String`.
+    pub id: String,
+    /// `name` — `String`.
+    pub name: String,
+    /// `kind` — `uilab.wire.OperatorKind`.
+    pub kind: OperatorKind,
+    /// `last_seen_ms` — `Integer`.
+    pub last_seen_ms: i64,
+}
+
+/// OperatorKind — `uilab.wire.OperatorKind`: one of a closed set of names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperatorKind {
+    /// `human`.
+    Human,
+    /// `agent`.
+    Agent,
 }
 
 /// OutlineNode — `uilab.wire.OutlineNode`.
@@ -111,9 +169,20 @@ pub struct OutlineNode {
     pub children: Vec<OutlineNode>,
 }
 
+/// Presence — `uilab.wire.Presence`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Presence {
+    /// `operators` — `List<uilab.wire.Operator>`.
+    pub operators: Vec<Operator>,
+    /// `selected_by` — `Optional<String>`.
+    pub selected_by: Option<String>,
+}
+
 /// ProposalShown — `uilab.wire.ProposalShown`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProposalShown {
+    /// `by` — `Optional<String>`.
+    pub by: Option<String>,
     /// `proposal_id` — `uilab.session.ProposalId`.
     pub proposal_id: crate::session::ProposalId,
     /// `target` — `uilab.session.NodePath`.
@@ -144,10 +213,19 @@ pub struct ReadRows {
 /// Refused — `uilab.wire.Refused`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refused {
+    /// `by` — `Optional<String>`.
+    pub by: Option<String>,
     /// `check` — `String`.
     pub check: String,
     /// `message` — `String`.
     pub message: String,
+}
+
+/// Resync — `uilab.wire.Resync`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resync {
+    /// `revision` — `Integer`.
+    pub revision: i64,
 }
 
 /// Rows — `uilab.wire.Rows`.
@@ -166,6 +244,8 @@ pub struct Rows {
 pub struct Say {
     /// `text` — `String`.
     pub text: String,
+    /// `target` — `Optional<uilab.session.NodePath>`.
+    pub target: Option<crate::session::NodePath>,
 }
 
 /// Select — `uilab.wire.Select`.
@@ -178,10 +258,14 @@ pub struct Select {
 /// ServerMessage — `uilab.wire.ServerMessage`: one of a fixed set of shapes, tagged on the wire by `type`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerMessage {
+    /// Tagged `changed` — `uilab.wire.Changed`.
+    Changed(Changed),
     /// Tagged `document` — `uilab.wire.DocumentState`.
     Document(DocumentState),
     /// Tagged `failed` — `uilab.wire.Failed`.
     Failed(Failed),
+    /// Tagged `presence` — `uilab.wire.Presence`.
+    Presence(Presence),
     /// Tagged `proposal` — `uilab.wire.ProposalShown`.
     Proposal(ProposalShown),
     /// Tagged `refused` — `uilab.wire.Refused`.
@@ -206,6 +290,8 @@ pub enum Severity {
 /// Thinking — `uilab.wire.Thinking`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Thinking {
+    /// `by` — `Optional<String>`.
+    pub by: Option<String>,
     /// `target` — `uilab.session.NodePath`.
     pub target: crate::session::NodePath,
 }
@@ -213,6 +299,8 @@ pub struct Thinking {
 /// Transcript — `uilab.wire.Transcript`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transcript {
+    /// `by` — `Optional<String>`.
+    pub by: Option<String>,
     /// `text` — `String`.
     pub text: String,
     /// `audio_ms` — `Integer`.

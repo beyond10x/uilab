@@ -33,6 +33,47 @@
       "x-ess-kind": "newtype",
       "x-ess-name": "uilab.session.ProposalId"
     },
+    "uilab.wire.Changed": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "type": "string"
+        },
+        "changed": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/uilab.wire.Finding"
+          },
+          "type": "array"
+        },
+        "node": {
+          "$ref": "#/$defs/uilab.wire.OutlineNode"
+        },
+        "op": {
+          "$ref": "#/$defs/uilab.session.PatchOp"
+        },
+        "parent": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
+        "revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "revision",
+        "by",
+        "op",
+        "changed",
+        "parent",
+        "findings"
+      ],
+      "title": "Changed",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Changed"
+    },
     "uilab.wire.ClientMessage": {
       "oneOf": [
         {
@@ -51,6 +92,24 @@
             "value"
           ],
           "title": "accept",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "hello",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Hello"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "hello",
           "type": "object"
         },
         {
@@ -87,6 +146,24 @@
             "value"
           ],
           "title": "reject",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "resync",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Resync"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "resync",
           "type": "object"
         },
         {
@@ -200,6 +277,9 @@
         "outline": {
           "$ref": "#/$defs/uilab.wire.OutlineNode"
         },
+        "revision": {
+          "type": "integer"
+        },
         "selected": {
           "$ref": "#/$defs/uilab.session.NodePath"
         },
@@ -215,7 +295,8 @@
         "file",
         "selected",
         "outline",
-        "findings"
+        "findings",
+        "revision"
       ],
       "title": "DocumentState",
       "type": "object",
@@ -225,6 +306,9 @@
     "uilab.wire.Failed": {
       "additionalProperties": false,
       "properties": {
+        "by": {
+          "type": "string"
+        },
         "message": {
           "type": "string"
         }
@@ -264,6 +348,25 @@
       "x-ess-kind": "struct",
       "x-ess-name": "uilab.wire.Finding"
     },
+    "uilab.wire.Hello": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/uilab.wire.OperatorKind"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "title": "Hello",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Hello"
+    },
     "uilab.wire.Mic": {
       "additionalProperties": false,
       "properties": {
@@ -288,6 +391,43 @@
       "type": "string",
       "x-ess-kind": "enum",
       "x-ess-name": "uilab.wire.MicState"
+    },
+    "uilab.wire.Operator": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/uilab.wire.OperatorKind"
+        },
+        "last_seen_ms": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "last_seen_ms"
+      ],
+      "title": "Operator",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Operator"
+    },
+    "uilab.wire.OperatorKind": {
+      "enum": [
+        "human",
+        "agent"
+      ],
+      "title": "OperatorKind",
+      "type": "string",
+      "x-ess-kind": "enum",
+      "x-ess-name": "uilab.wire.OperatorKind"
     },
     "uilab.wire.OutlineNode": {
       "additionalProperties": false,
@@ -330,6 +470,27 @@
       "x-ess-kind": "struct",
       "x-ess-name": "uilab.wire.OutlineNode"
     },
+    "uilab.wire.Presence": {
+      "additionalProperties": false,
+      "properties": {
+        "operators": {
+          "items": {
+            "$ref": "#/$defs/uilab.wire.Operator"
+          },
+          "type": "array"
+        },
+        "selected_by": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operators"
+      ],
+      "title": "Presence",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Presence"
+    },
     "uilab.wire.ProposalShown": {
       "additionalProperties": false,
       "properties": {
@@ -337,6 +498,9 @@
           "type": "string"
         },
         "before": {
+          "type": "string"
+        },
+        "by": {
           "type": "string"
         },
         "changed": {
@@ -398,6 +562,9 @@
     "uilab.wire.Refused": {
       "additionalProperties": false,
       "properties": {
+        "by": {
+          "type": "string"
+        },
         "check": {
           "type": "string"
         },
@@ -413,6 +580,21 @@
       "type": "object",
       "x-ess-kind": "struct",
       "x-ess-name": "uilab.wire.Refused"
+    },
+    "uilab.wire.Resync": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "Resync",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Resync"
     },
     "uilab.wire.Rows": {
       "additionalProperties": false,
@@ -440,6 +622,9 @@
     "uilab.wire.Say": {
       "additionalProperties": false,
       "properties": {
+        "target": {
+          "$ref": "#/$defs/uilab.session.NodePath"
+        },
         "text": {
           "type": "string"
         }
@@ -469,6 +654,24 @@
     },
     "uilab.wire.ServerMessage": {
       "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "changed",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Changed"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "changed",
+          "type": "object"
+        },
         {
           "additionalProperties": false,
           "properties": {
@@ -503,6 +706,24 @@
             "value"
           ],
           "title": "failed",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "presence",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Presence"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "presence",
           "type": "object"
         },
         {
@@ -614,6 +835,9 @@
     "uilab.wire.Thinking": {
       "additionalProperties": false,
       "properties": {
+        "by": {
+          "type": "string"
+        },
         "target": {
           "$ref": "#/$defs/uilab.session.NodePath"
         }
@@ -631,6 +855,9 @@
       "properties": {
         "audio_ms": {
           "type": "integer"
+        },
+        "by": {
+          "type": "string"
         },
         "text": {
           "type": "string"
@@ -652,8 +879,8 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "x-ess-provenance": {
-    "contract_digest": "slice-sha256/2:722db7ad0bfb3dee692a0fd2f48c9c89fc52856ec55df3333976092691be30fd",
-    "source_digest": "55369e6e2fd022d062872af44b9c252bf6b80b0b82da849d828e32c4bf780a9f",
+    "contract_digest": "slice-sha256/2:91449902ba6bcbd0651d55ca07932d6584fd65ab961f38b4070186ed823b3415",
+    "source_digest": "1a75f0421d837e2ee884066ba29e42b368e91a0d2fb46630399bf48ac98fa437",
     "specification_version": "v1",
     "system": "uilab"
   }

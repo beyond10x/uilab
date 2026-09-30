@@ -1,12 +1,12 @@
 {
   "format": "ess-types-report/3",
-  "source_digest": "55369e6e2fd022d062872af44b9c252bf6b80b0b82da849d828e32c4bf780a9f",
+  "source_digest": "1a75f0421d837e2ee884066ba29e42b368e91a0d2fb46630399bf48ac98fa437",
   "input": {
     "kind": "model",
     "system": "uilab",
     "specification_version": "v1",
-    "contract_digest": "slice-sha256/2:722db7ad0bfb3dee692a0fd2f48c9c89fc52856ec55df3333976092691be30fd",
-    "projection_digest": "0442b2b82112495d538f53440e210865c96dbbe41d1a85d1e270791a52b09c4c"
+    "contract_digest": "slice-sha256/2:91449902ba6bcbd0651d55ca07932d6584fd65ab961f38b4070186ed823b3415",
+    "projection_digest": "d873a218395ea987e90ae1f2b20d70079847ca2ffc0d9574afaeb268356d1b0d"
   },
   "generator_version": "0.44.0",
   "target": "rust",
@@ -23,17 +23,23 @@
     "uilab.session.NodePath": "UilabSessionNodePath",
     "uilab.session.PatchOp": "UilabSessionPatchOp",
     "uilab.session.ProposalId": "UilabSessionProposalId",
+    "uilab.wire.Changed": "UilabWireChanged",
     "uilab.wire.ClientMessage": "UilabWireClientMessage",
     "uilab.wire.Decide": "UilabWireDecide",
     "uilab.wire.DocumentState": "UilabWireDocumentState",
     "uilab.wire.Failed": "UilabWireFailed",
     "uilab.wire.Finding": "UilabWireFinding",
+    "uilab.wire.Hello": "UilabWireHello",
     "uilab.wire.Mic": "UilabWireMic",
     "uilab.wire.MicState": "UilabWireMicState",
+    "uilab.wire.Operator": "UilabWireOperator",
+    "uilab.wire.OperatorKind": "UilabWireOperatorKind",
     "uilab.wire.OutlineNode": "UilabWireOutlineNode",
+    "uilab.wire.Presence": "UilabWirePresence",
     "uilab.wire.ProposalShown": "UilabWireProposalShown",
     "uilab.wire.ReadRows": "UilabWireReadRows",
     "uilab.wire.Refused": "UilabWireRefused",
+    "uilab.wire.Resync": "UilabWireResync",
     "uilab.wire.Rows": "UilabWireRows",
     "uilab.wire.Say": "UilabWireSay",
     "uilab.wire.Select": "UilabWireSelect",
@@ -114,6 +120,21 @@
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
     {
+      "pointer": "/$defs/uilab.wire.Changed/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Changed/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Changed/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
       "pointer": "/$defs/uilab.wire.ClientMessage/oneOf/0/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
@@ -145,6 +166,16 @@
     },
     {
       "pointer": "/$defs/uilab.wire.ClientMessage/oneOf/6/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ClientMessage/oneOf/7/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ClientMessage/oneOf/8/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
     },
@@ -229,6 +260,21 @@
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
     {
+      "pointer": "/$defs/uilab.wire.Hello/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Hello/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Hello/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
       "pointer": "/$defs/uilab.wire.Mic/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
@@ -259,6 +305,36 @@
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
     {
+      "pointer": "/$defs/uilab.wire.Operator/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Operator/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Operator/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.OperatorKind/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.OperatorKind/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.OperatorKind/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
       "pointer": "/$defs/uilab.wire.OutlineNode/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
@@ -270,6 +346,21 @@
     },
     {
       "pointer": "/$defs/uilab.wire.OutlineNode/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Presence/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Presence/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Presence/x-ess-name",
       "rule": "x-ess-name",
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
@@ -315,6 +406,21 @@
     },
     {
       "pointer": "/$defs/uilab.wire.Refused/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Resync/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Resync/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Resync/x-ess-name",
       "rule": "x-ess-name",
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
@@ -399,6 +505,16 @@
       "detail": "retained in source.schema.json; no decoder behavior inferred"
     },
     {
+      "pointer": "/$defs/uilab.wire.ServerMessage/oneOf/7/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ServerMessage/oneOf/8/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
       "pointer": "/$defs/uilab.wire.ServerMessage/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
@@ -476,6 +592,11 @@
       "detail": "validate this constraint against the source schema at runtime"
     },
     {
+      "pointer": "/$defs/uilab.wire.Changed/properties/revision",
+      "rule": "integer",
+      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+    },
+    {
       "pointer": "/$defs/uilab.wire.ClientMessage",
       "rule": "oneOf",
       "detail": "validate exclusive branch membership against the source schema"
@@ -484,6 +605,21 @@
       "pointer": "/$defs/uilab.wire.ClientMessage",
       "rule": "untagged_selection",
       "detail": "native union decoding chooses the first structurally decodable alternative; it does not certify source branch constraints or external dispatch"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.DocumentState/properties/revision",
+      "rule": "integer",
+      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Operator/properties/last_seen_ms",
+      "rule": "integer",
+      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Resync/properties/revision",
+      "rule": "integer",
+      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
     },
     {
       "pointer": "/$defs/uilab.wire.Rows/properties/total",
