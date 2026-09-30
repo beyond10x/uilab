@@ -7,6 +7,7 @@ const goalOwner = computed(() => (goalBanner.value && state.goal ? operatorView(
 const goalOnly = computed(() => !!goalOwner.value && !agentActions.value.some((a) => a.op.id === goalOwner.value!.id));
 import { API } from './remote.ts';
 import CanvasView from './components/CanvasView.vue';
+import ComponentsView from './components/ComponentsView.vue';
 import DocsView from './components/DocsView.vue';
 import HelpModal from './components/HelpModal.vue';
 import SidebarPanel from './components/SidebarPanel.vue';
@@ -23,6 +24,7 @@ const VIEWS: { mode: ViewMode; label: string; key: string }[] = [
   { mode: 'ui', label: 'UI', key: '1' },
   { mode: 'yaml', label: 'YAML', key: '2' },
   { mode: 'docs', label: 'Docs', key: '3' },
+  { mode: 'components', label: 'Components', key: '4' },
 ];
 
 function exportYaml(): void {
@@ -123,7 +125,8 @@ onBeforeUnmount(() => {
       </div>
       <CanvasView v-if="state.view === 'ui'" />
       <YamlView v-else-if="state.view === 'yaml'" />
-      <DocsView v-else />
+      <DocsView v-else-if="state.view === 'docs'" />
+      <ComponentsView v-else />
     </div>
     <aside class="sidebar"><SidebarPanel /></aside>
     <HelpModal v-if="state.helpOpen" />

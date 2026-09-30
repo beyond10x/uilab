@@ -14,6 +14,7 @@ const SHORTCUTS: [string[], string][] = [
   [['1'], 'show the UI'],
   [['2'], 'show the document as YAML'],
   [['3'], 'show the generated docs'],
+  [['4'], 'show the components (widgets) with previews'],
 ];
 
 // renderMarkdown escapes every piece of input, so its output is safe to insert as HTML.

@@ -1262,3 +1262,87 @@ input[type='text'] {
 .op-goal {
   font-weight: 600;
 }
+
+/* Components workspace */
+
+.components-view .comp {
+  margin: 12px;
+}
+
+.components-search {
+  flex: 0 1 320px;
+}
+
+.components-empty {
+  margin: 24px 12px;
+}
+
+.comp-summary {
+  margin: 0 0 8px;
+}
+
+.comp-params {
+  margin-bottom: 8px;
+}
+
+.comp-uses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.comp-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.comp-preview.arrange-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.comp-preview.arrange-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.comp-preview > .card {
+  margin-bottom: 0;
+}
+
+.prim {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.prim-heading {
+  margin: 0;
+  font-size: 15px;
+}
+
+.prim-image {
+  width: 160px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 4px;
+  background: #d9dde3;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.prim-placeholder {
+  padding: 6px 10px;
+  font-size: 12px;
+}

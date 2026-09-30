@@ -43,8 +43,9 @@ export interface Notice {
 
 export type Mark = 'insert' | 'replace' | 'remove';
 
-/** The canvas pane: the rendered UI, the document as YAML, or its generated documentation. */
-export type ViewMode = 'ui' | 'yaml' | 'docs';
+/** The canvas pane: the rendered UI, the document as YAML, its generated documentation, or its
+ *  widgets (the Components workspace). */
+export type ViewMode = 'ui' | 'yaml' | 'docs' | 'components';
 
 const NAME_KEY = 'uilab.operator.name';
 const FLASH_MS = 1500;

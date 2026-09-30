@@ -1183,6 +1183,11 @@ mod tests {
 
     /// A session over a copy of the library example, with the API operator `api-1` joined.
     fn rig(review: bool) -> Rig {
+        rig_over(review, |text| text)
+    }
+
+    /// A session over a copy of the library example as `edit` rewrites it.
+    fn rig_over(review: bool, edit: impl FnOnce(String) -> String) -> Rig {
         let root = std::env::temp_dir().join(format!(
             "uilab-app-test-{}-{}",
             std::process::id(),
@@ -1190,6 +1195,9 @@ mod tests {
         ));
         let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library");
         copy_dir(&example, &root.join("library"));
+        let file = root.join("library/library.ui.yaml");
+        let text = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, edit(text)).unwrap();
         let (out, rx) = broadcast::channel(1024);
         let (back, back_rx) = mpsc::channel(16);
         let app = App::open(
@@ -1620,6 +1628,137 @@ mod tests {
             .collect();
         assert_eq!(kinds, ["document", "goal", "proposal"]);
         assert_eq!(proposals(&direct), [id]);
+    }
+
+    const LOAN_CARD: &str = "widgets:
+  loan_card:
+    summary: A loan as a card.
+    params:
+      loan: {type: Loan, required: true}
+      compact: {type: boolean, default: false}
+    body:
+      - {name: title, primitive: text, text: args.loan.title, style: heading}
+      - {name: due, primitive: badge, text: args.loan.due}
+pages:
+";
+
+    /// The library with the widget `loan_card`, used once as a section of the overview.
+    fn with_loan_card(text: String) -> String {
+        assert!(text.contains("\npages:\n") && text.contains("    sections:\n      on_loan:\n"));
+        text.replacen("\npages:\n", &format!("\n{LOAN_CARD}"), 1).replacen(
+            "    sections:\n      on_loan:\n",
+            "    sections:\n      latest: {component: loan_card, args: {loan: rows.first}}\n      on_loan:\n",
+            1,
+        )
+    }
+
+    /// The outline of the last document message, as the browser receives it.
+    fn last_outline(messages: &[Server]) -> serde_json::Value {
+        let doc = messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                Server::Document(d) => Some(d),
+                _ => None,
+            })
+            .expect("a document was sent");
+        serde_json::to_value(&doc.outline).unwrap()
+    }
+
+    fn child<'v>(node: &'v serde_json::Value, path: &str) -> &'v serde_json::Value {
+        node["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["path"] == path)
+            .unwrap_or_else(|| panic!("no child `{path}` in {}", node["path"]))
+    }
+
+    #[test]
+    fn the_document_a_browser_gets_carries_widgets_their_body_and_their_instances() {
+        let mut rig = rig_over(false, with_loan_card);
+        rig.connect("ws-9");
+        let root = last_outline(&rig.drain_direct());
+        let card = child(&root, "component:loan_card");
+        assert_eq!(card["layer"], "component");
+        assert_eq!(card["name"], "loan_card");
+        assert_eq!(card["kind"], "widget");
+        assert_eq!(card["title"], "A loan as a card.");
+        assert_eq!(
+            card["props"]["params"],
+            serde_json::json!({
+                "loan": {"type": "Loan", "required": true},
+                "compact": {"type": "boolean", "default": false},
+            })
+        );
+        assert_eq!(card["props"]["arrange"], "column");
+        let body: Vec<(&str, &str, &str)> = card["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| {
+                (
+                    n["path"].as_str().unwrap(),
+                    n["layer"].as_str().unwrap(),
+                    n["kind"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            body,
+            [
+                ("component:loan_card/node:title", "node", "text"),
+                ("component:loan_card/node:due", "node", "badge"),
+            ]
+        );
+        assert_eq!(
+            child(card, "component:loan_card/node:title")["props"],
+            serde_json::json!({"text": "args.loan.title", "style": "heading"})
+        );
+        let latest = child(
+            child(&root, "page:overview"),
+            "page:overview/section:latest",
+        );
+        assert_eq!(latest["kind"], "loan_card");
+        assert_eq!(
+            latest["props"]["args"],
+            serde_json::json!({"loan": "rows.first"})
+        );
+    }
+
+    #[test]
+    fn selecting_a_widget_or_one_of_its_body_nodes_lands_there() {
+        let mut rig = rig_over(false, with_loan_card);
+        rig.connect("ws-9");
+        rig.drain();
+        for path in ["component:loan_card", "component:loan_card/node:due"] {
+            rig.client(
+                "ws-9",
+                &format!(r#"{{"type":"select","value":{{"path":"{path}"}}}}"#),
+            );
+            let messages = rig.drain();
+            assert_eq!(refusals(&messages), []);
+            let selected = messages
+                .iter()
+                .rev()
+                .find_map(|m| match m {
+                    Server::Document(d) => Some(d.selected.0.clone()),
+                    _ => None,
+                })
+                .expect("a document was sent");
+            assert_eq!(selected, path);
+        }
+        rig.client(
+            "ws-9",
+            r#"{"type":"select","value":{"path":"component:loan_card/node:ghost"}}"#,
+        );
+        assert_eq!(
+            refusals(&rig.drain())
+                .into_iter()
+                .map(|(check, _)| check)
+                .collect::<Vec<_>>(),
+            ["path_resolves"]
+        );
     }
 
     #[test]
