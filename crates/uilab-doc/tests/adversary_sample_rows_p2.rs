@@ -88,11 +88,16 @@ fn is_date(v: &Value) -> bool {
 fn a_name_that_starts_with_date_is_still_a_date() {
     let rows = sample_rows(&doc(), "draft.People");
     let row = &rows[0];
-    let wrong: Vec<String> = ["date_of_birth", "date_created", "date_added", "date_returned"]
-        .into_iter()
-        .filter(|f| !is_date(&row[*f]))
-        .map(|f| format!("{f} = {}", row[f]))
-        .collect();
+    let wrong: Vec<String> = [
+        "date_of_birth",
+        "date_created",
+        "date_added",
+        "date_returned",
+    ]
+    .into_iter()
+    .filter(|f| !is_date(&row[*f]))
+    .map(|f| format!("{f} = {}", row[f]))
+    .collect();
     assert!(
         wrong.is_empty(),
         "dates at the base commit, not dates now: {wrong:?}"
