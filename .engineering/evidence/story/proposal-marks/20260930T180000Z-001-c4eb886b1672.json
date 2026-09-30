@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-30T18:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:proposal-marks",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "round 2 c687fc2",
+    "review": "review-result:proposal-marks-adversary-1",
+    "outcome": "fixed"
+  }
+}

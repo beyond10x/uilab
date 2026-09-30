@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-30T18:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:sidebar-layout",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "round 2 177ff75",
+    "review": "review-result:sidebar-layout-adversary-1",
+    "outcome": "fixed"
+  }
+}

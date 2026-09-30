@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:help-accuracy
 kind: story
-status: active
+status: implemented
 title: Help and docs describe uilab as it is
 relations:
 - decomposes: epic:ux-fidelity
@@ -10,10 +10,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/uilab-doc/src/docs.rs
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T12:08:57Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T12:08:58Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T12:39:37Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 

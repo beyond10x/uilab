@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:proposal-marks
 kind: story
-status: active
+status: implemented
 title: Proposal preview marks added, changed and removed nodes
 relations:
 - decomposes: epic:ux-fidelity
@@ -12,14 +12,15 @@ scope:
   path: widget/src/lib/outline.ts
 - confidence: cited
   path: widget/src/store.ts
-revision: 4
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T12:08:57Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T12:08:57Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T12:39:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 
-A proposal preview marks each node by what the proposal does to it: added, changed or removed. A batch that adds a dialog and a row action shows both as added and nothing as removed.
+A proposal preview marks each node by what the proposal does to it: added, changed or removed. A batch that adds a dialog and a row action shows the dialog as added, the section that gains the row action as changed, and nothing as removed.
 
 ## Found by
 

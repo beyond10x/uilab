@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-30T18:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:components-gallery",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "coordinator correction f8300eb",
+    "review": "review-result:components-gallery-adversary-2",
+    "outcome": "fixed"
+  }
+}

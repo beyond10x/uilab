@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:yaml-follows-selection
 kind: story
-status: active
+status: implemented
 title: YAML tab follows the selection, with colours
 relations:
 - decomposes: epic:ux-fidelity
@@ -12,10 +12,11 @@ scope:
   path: widget/src/components/YamlView.vue
 - confidence: cited
   path: widget/src/lib/yamlblock.ts
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T12:08:57Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T12:08:57Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T12:39:37Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"review_outcome":1}}}
 ---
 ## Outcome
 

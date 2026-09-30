@@ -2,22 +2,29 @@
 format: aep.planning-md/3
 id: story:sidebar-layout
 kind: story
-status: active
+status: implemented
 title: Proposal card first; a compact sidebar header
 relations:
 - decomposes: epic:ux-fidelity
 - serves: vision:website-harness
 scope:
 - confidence: cited
+  path: widget/src/App.vue
+- confidence: cited
   path: widget/src/components/PresenceStrip.vue
 - confidence: cited
   path: widget/src/components/ProposalCard.vue
 - confidence: cited
   path: widget/src/components/SidebarPanel.vue
-revision: 4
+- confidence: cited
+  path: widget/src/lib/keys.ts
+- confidence: cited
+  path: widget/src/lib/sidebar.ts
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T12:08:57Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T12:08:57Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T12:39:37Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 
