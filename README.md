@@ -33,3 +33,4 @@ instructions instead.
   JSON Schema of what the selected node can hold.
 
 Agent-facing detail is in [AGENTS.md](AGENTS.md).
+The documentation site is in [website/](website/), built for `https://beyond10x.github.io/uilab/`.
