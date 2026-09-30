@@ -31,7 +31,11 @@ pages:
 fn served_library(account_reads: &str) -> Document {
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library/library.ui.yaml");
     let text = std::fs::read_to_string(file).unwrap();
-    for anchor in ["        kind: notifications\n", "\npages:\n", "reads: {view: staff.Me}"] {
+    for anchor in [
+        "        kind: notifications\n",
+        "\npages:\n",
+        "reads: {view: staff.Me}",
+    ] {
         assert!(text.contains(anchor), "anchor `{anchor}` is missing");
     }
     let text = text
@@ -73,7 +77,10 @@ fn the_amended_fixture_matches_the_served_outline() {
             "children": [],
         })
     );
-    assert_eq!(find(&root, "shell:app/overlay:whoami")["props"], json!({"args": {"staff": "me"}}));
+    assert_eq!(
+        find(&root, "shell:app/overlay:whoami")["props"],
+        json!({"args": {"staff": "me"}})
+    );
     assert_eq!(
         find(&root, "component:staff_badge")["props"]["uses"],
         json!([{"path": "shell:app/overlay:whoami"}])
@@ -85,7 +92,10 @@ fn the_amended_fixture_matches_the_served_outline() {
 fn outline_at_a_region_carries_its_view() {
     let doc = served_library("reads: {view: staff.Me}");
     let at: NodePath = "shell:app/region:account".parse().unwrap();
-    assert_eq!(outline_at(&doc, &at).unwrap().view.as_deref(), Some("staff.Me"));
+    assert_eq!(
+        outline_at(&doc, &at).unwrap().view.as_deref(),
+        Some("staff.Me")
+    );
 }
 
 /// A region whose `reads` names no view, or a view that is not a string, carries none; a draft read
@@ -100,6 +110,10 @@ fn a_region_read_without_a_string_view_carries_none() {
         ("reads: {view: draft.Profile}", Some("draft.Profile")),
     ] {
         let doc = served_library(reads);
-        assert_eq!(outline_at(&doc, &at).unwrap().view.as_deref(), expected, "{reads}");
+        assert_eq!(
+            outline_at(&doc, &at).unwrap().view.as_deref(),
+            expected,
+            "{reads}"
+        );
     }
 }
