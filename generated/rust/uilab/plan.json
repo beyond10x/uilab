@@ -2,8 +2,8 @@
   "provenance": {
     "system": "uilab",
     "specification_version": "v1",
-    "source_digest": "3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e",
-    "contract_digest": "797f8eeba742036695e9acbd13349f58b85ac02ab93c0a62197940b5d1883646"
+    "source_digest": "c1c9563af89cf1f1f8ef7782b80ff93b32b7086e6e86f27333557738d9508f0c",
+    "contract_digest": "80afaf984fa26a672bfaf0ddb52dc82a4b8cea5b476335aed27257b03acacaab"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -96,6 +96,27 @@
     {
       "kind": "domain_type",
       "source": "uilab.wire.Finding",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.Goal",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.GoalState",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.GoalStep",
       "disposition": {
         "disposition": "generated"
       }
@@ -215,6 +236,27 @@
     {
       "kind": "domain_type",
       "source": "uilab.wire.Severity",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.StartGoal",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.StepStatus",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "uilab.wire.StopGoal",
       "disposition": {
         "disposition": "generated"
       }

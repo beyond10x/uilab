@@ -1,14 +1,14 @@
 <!--
   generated from uilab v1
-  model digest 3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e
-  contract digest 797f8eeba742036695e9acbd13349f58b85ac02ab93c0a62197940b5d1883646
+  model digest c1c9563af89cf1f1f8ef7782b80ff93b32b7086e6e86f27333557738d9508f0c
+  contract digest 80afaf984fa26a672bfaf0ddb52dc82a4b8cea5b476335aed27257b03acacaab
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — uilab v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-67 capabilities: **56 generated**, **9 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+73 capabilities: **62 generated**, **9 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -27,6 +27,9 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `uilab.wire.DocumentState` |
 | domain type | `uilab.wire.Failed` |
 | domain type | `uilab.wire.Finding` |
+| domain type | `uilab.wire.Goal` |
+| domain type | `uilab.wire.GoalState` |
+| domain type | `uilab.wire.GoalStep` |
 | domain type | `uilab.wire.Hello` |
 | domain type | `uilab.wire.Mic` |
 | domain type | `uilab.wire.MicState` |
@@ -44,6 +47,9 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `uilab.wire.ServerMessage` |
 | domain type | `uilab.wire.Settings` |
 | domain type | `uilab.wire.Severity` |
+| domain type | `uilab.wire.StartGoal` |
+| domain type | `uilab.wire.StepStatus` |
+| domain type | `uilab.wire.StopGoal` |
 | domain type | `uilab.wire.Thinking` |
 | domain type | `uilab.wire.Transcript` |
 | entity lifecycle | `uilab.session.Document` |

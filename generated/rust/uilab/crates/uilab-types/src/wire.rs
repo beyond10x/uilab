@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e
-// contract digest 797f8eeba742036695e9acbd13349f58b85ac02ab93c0a62197940b5d1883646
+// model digest c1c9563af89cf1f1f8ef7782b80ff93b32b7086e6e86f27333557738d9508f0c
+// contract digest 80afaf984fa26a672bfaf0ddb52dc82a4b8cea5b476335aed27257b03acacaab
 // do not edit: regenerate with `ess synthesize`
 
 //! wire — `uilab.wire`.
@@ -33,6 +33,8 @@ pub struct Changed {
 pub enum ClientMessage {
     /// Tagged `accept` — `uilab.wire.Decide`.
     Accept(Decide),
+    /// Tagged `goal` — `uilab.wire.StartGoal`.
+    Goal(StartGoal),
     /// Tagged `hello` — `uilab.wire.Hello`.
     Hello(Hello),
     /// Tagged `mic` — `uilab.wire.Mic`.
@@ -49,6 +51,8 @@ pub enum ClientMessage {
     Select(Select),
     /// Tagged `settings` — `uilab.wire.Settings`.
     Settings(Settings),
+    /// Tagged `stop_goal` — `uilab.wire.StopGoal`.
+    StopGoal(StopGoal),
     /// Tagged `undo` — `uilab.wire.Decide`.
     Undo(Decide),
 }
@@ -103,6 +107,55 @@ pub struct Finding {
     pub path: String,
     /// `message` — `String`.
     pub message: String,
+}
+
+/// Goal — `uilab.wire.Goal`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Goal {
+    /// `goal_id` — `String`.
+    pub goal_id: String,
+    /// `by` — `String`.
+    pub by: String,
+    /// `text` — `String`.
+    pub text: String,
+    /// `state` — `uilab.wire.GoalState`.
+    pub state: GoalState,
+    /// `steps` — `List<uilab.wire.GoalStep>`.
+    pub steps: Vec<GoalStep>,
+    /// `current` — `Optional<Integer>`.
+    pub current: Option<i64>,
+    /// `message` — `Optional<String>`.
+    pub message: Option<String>,
+}
+
+/// GoalState — `uilab.wire.GoalState`: one of a closed set of names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GoalState {
+    /// `planning`.
+    Planning,
+    /// `running`.
+    Running,
+    /// `done`.
+    Done,
+    /// `stopped`.
+    Stopped,
+    /// `failed`.
+    Failed,
+}
+
+/// GoalStep — `uilab.wire.GoalStep`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoalStep {
+    /// `instruction` — `String`.
+    pub instruction: String,
+    /// `target` — `uilab.session.NodePath`.
+    pub target: crate::session::NodePath,
+    /// `why` — `String`.
+    pub why: String,
+    /// `status` — `uilab.wire.StepStatus`.
+    pub status: StepStatus,
+    /// `proposal_id` — `Optional<uilab.session.ProposalId>`.
+    pub proposal_id: Option<crate::session::ProposalId>,
 }
 
 /// Hello — `uilab.wire.Hello`.
@@ -270,6 +323,8 @@ pub enum ServerMessage {
     Document(DocumentState),
     /// Tagged `failed` — `uilab.wire.Failed`.
     Failed(Failed),
+    /// Tagged `goal` — `uilab.wire.Goal`.
+    Goal(Goal),
     /// Tagged `presence` — `uilab.wire.Presence`.
     Presence(Presence),
     /// Tagged `proposal` — `uilab.wire.ProposalShown`.
@@ -298,6 +353,45 @@ pub enum Severity {
     Error,
     /// `warning`.
     Warning,
+}
+
+/// StartGoal — `uilab.wire.StartGoal`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartGoal {
+    /// `text` — `String`.
+    pub text: String,
+    /// `target` — `Optional<uilab.session.NodePath>`.
+    pub target: Option<crate::session::NodePath>,
+    /// `max_steps` — `Optional<Integer>`.
+    pub max_steps: Option<i64>,
+    /// `review` — `Optional<Boolean>`.
+    pub review: Option<bool>,
+}
+
+/// StepStatus — `uilab.wire.StepStatus`: one of a closed set of names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepStatus {
+    /// `pending`.
+    Pending,
+    /// `thinking`.
+    Thinking,
+    /// `proposed`.
+    Proposed,
+    /// `accepted`.
+    Accepted,
+    /// `rejected`.
+    Rejected,
+    /// `refused`.
+    Refused,
+    /// `declined`.
+    Declined,
+}
+
+/// StopGoal — `uilab.wire.StopGoal`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StopGoal {
+    /// `goal_id` — `String`.
+    pub goal_id: String,
 }
 
 /// Thinking — `uilab.wire.Thinking`.

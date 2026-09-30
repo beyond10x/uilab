@@ -68,7 +68,8 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
 
 fn def_ref(layer: Layer) -> String {
     let name = match layer {
-        Layer::Section | Layer::Widget | Layer::Item => "composite",
+        Layer::Section | Layer::Widget => "composite",
+        Layer::Item => "node",
         Layer::Component => "widget_declaration",
         other => other.as_str(),
     };
@@ -165,7 +166,7 @@ fn defs(doc: &Document) -> Value {
                 "args": {"type": "object", "description": "widget instances only: one value per param of the widget"},
                 "reads": {"$ref": "#/$defs/reads"},
                 "widgets": {"type": "object", "description": "board only: composite per widget kind", "additionalProperties": {"$ref": "#/$defs/composite"}},
-                "item": {"type": "object", "description": "collection only: composites nested per row", "additionalProperties": {"$ref": "#/$defs/composite"}}
+                "item": {"type": "array", "description": "collection and record only: named nodes per row, in order", "items": {"$ref": "#/$defs/named_node"}}
             }
         },
         "primitive": {
@@ -177,8 +178,15 @@ fn defs(doc: &Document) -> Value {
             }
         },
         "node": {
-            "description": "one node of a widget body: a composite, a widget instance, or a primitive",
+            "description": "one node of a widget body or an item list: a composite, a widget instance, or a primitive",
             "oneOf": [{"$ref": "#/$defs/composite"}, {"$ref": "#/$defs/primitive"}]
+        },
+        "named_node": {
+            "description": "a node in a list, carrying its name",
+            "allOf": [
+                {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"}}},
+                {"$ref": "#/$defs/node"}
+            ]
         },
         "widget_declaration": {
             "type": "object",
@@ -204,12 +212,7 @@ fn defs(doc: &Document) -> Value {
                 "body": {
                     "type": "array",
                     "description": "named nodes, in order",
-                    "items": {
-                        "allOf": [
-                            {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"}}},
-                            {"$ref": "#/$defs/node"}
-                        ]
-                    }
+                    "items": {"$ref": "#/$defs/named_node"}
                 }
             }
         },

@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue';
-import { accept, agentActions, micDown, micUp, reject, selectNearest, state, undo, type ViewMode } from './store.ts';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { accept, agentActions, goalBanner, micDown, micUp, operatorView, reject, selectNearest, state, undo, type ViewMode } from './store.ts';
+
+/** The goal's own banner, when no agent banner of its operator already says `goal i/n`. */
+const goalOwner = computed(() => (goalBanner.value && state.goal ? operatorView(state.goal.by) : null));
+const goalOnly = computed(() => !!goalOwner.value && !agentActions.value.some((a) => a.op.id === goalOwner.value!.id));
 import { API } from './remote.ts';
 import CanvasView from './components/CanvasView.vue';
 import DocsView from './components/DocsView.vue';
@@ -101,7 +105,7 @@ onBeforeUnmount(() => {
           <span class="spacer"></span>
           <button class="export" title="download the document as YAML" @click="exportYaml">Export YAML</button>
         </nav>
-        <div v-if="agentActions.length" class="op-banners">
+        <div v-if="agentActions.length || goalOnly" class="op-banners">
           <div
             v-for="a in agentActions"
             :key="a.op.id"
@@ -110,6 +114,10 @@ onBeforeUnmount(() => {
             @click="selectNearest(a.target)"
           >
             🤖 <strong>{{ a.op.name }}</strong> is operating on <code>{{ a.target }}</code>
+            <span v-if="goalBanner && state.goal?.by === a.op.id" class="op-goal">· {{ goalBanner }}</span>
+          </div>
+          <div v-if="goalOnly && goalOwner" class="op-banner" :style="{ '--op-colour': goalOwner.colour }">
+            🎯 <strong>{{ goalOwner.local ? 'your' : `${goalOwner.name}’s` }}</strong> {{ goalBanner }}: {{ state.goal?.text }}
           </div>
         </div>
       </div>

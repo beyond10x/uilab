@@ -100,37 +100,44 @@ fn an_explicit_null_param_default_survives_a_round_trip() {
 /// The ess example for `collection` writes `item` as a list of named nodes, and uses a widget
 /// instance there: `item: [{name: card, component: partner_card, args: {partner: row}}]`.
 ///
-/// Today's state, pinned until story:item-list lands: this subset reads `item` as a map, so the
-/// ess list form is refused with its current parse error. When story:item-list lands, flip this
-/// case back: the list parses, and `page:overview/section:list/item:card` resolves to a
-/// `loan_card` instance.
+/// story:item-list: the list parses, `page:overview/section:list/item:card` resolves to a
+/// `loan_card` instance, and the widget checks hold the instance to the widget's params.
 #[test]
 fn an_ess_collection_item_list_with_a_widget_instance_parses_and_resolves() {
-    let text = DOC.replace(
-        "        columns: [{field: title}]\n",
-        "        columns: [{field: title}]\n        item: [{name: card, component: loan_card, args: {loan: row}}]\n",
+    let with_item = |item: &str| {
+        DOC.replace(
+            "        columns: [{field: title}]\n",
+            &format!("        columns: [{{field: title}}]\n        item: {item}\n"),
+        )
+    };
+    let text = with_item("[{name: card, component: loan_card, args: {loan: row}}]");
+    let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("the ess list form: {e}"));
+    let at = path("page:overview/section:list/item:card");
+    let composite = uilab_doc::resolve(&doc, &at)
+        .unwrap_or_else(|e| panic!("{at}: {e}"))
+        .composite()
+        .cloned()
+        .expect("item:card is a composite");
+    assert_eq!(composite.component, Component::Widget("loan_card".into()));
+    assert_eq!(
+        errors(&doc),
+        [],
+        "a well-formed instance passes every check"
     );
-    match Document::from_yaml(&text) {
-        Err(refused) => assert!(
-            refused
-                .to_string()
-                .contains("item: invalid type: sequence, expected a map"),
-            "story:item-list has not landed, so the list form of `item` is refused, but with a \
-             different error than pinned: {refused}"
-        ),
-        Ok(doc) => {
-            let at = path("page:overview/section:list/item:card");
-            let composite = uilab_doc::resolve(&doc, &at)
-                .ok()
-                .and_then(|n| n.composite().cloned());
-            panic!(
-                "the ess list form of `item` now parses (item:card resolves to {:?}): \
-                 story:item-list has landed, so flip this case to assert that it parses and \
-                 resolves to Component::Widget(\"loan_card\")",
-                composite.map(|c| c.component == Component::Widget("loan_card".into()))
-            );
-        }
-    }
+
+    let missing = Document::from_yaml(&with_item(
+        "[{name: card, component: loan_card, args: {cover: row.cover}}]",
+    ))
+    .unwrap();
+    let found = errors(&missing);
+    assert!(
+        found.contains(&("widget_args", at.to_string())),
+        "the instance in the item list is checked against its widget: {found:?}"
+    );
+    assert!(
+        found.iter().all(|(check, _)| *check == "widget_args"),
+        "{found:?}"
+    );
 }
 
 /// The agent is told "Composite kinds a new composite child can be" from `composite_kinds`; a

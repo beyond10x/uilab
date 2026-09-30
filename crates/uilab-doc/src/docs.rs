@@ -379,7 +379,7 @@ pub fn help_markdown() -> String {
         (Layer::Page, "a route"),
         (
             Layer::Section,
-            "a region of a page; a board holds widgets, a collection holds items per row",
+            "a region of a page; a board holds widgets, a collection or record holds named item nodes per row",
         ),
         (
             Layer::Component,
@@ -418,10 +418,11 @@ pub fn help_markdown() -> String {
         out,
         "A **widget** is an app-defined composite, declared under `widgets:` at the root with a \
          `summary`, typed `params` and a `body` of named nodes. Use it wherever a composite kind \
-         goes (a section, an overlay, a board widget, a collection item) as \
+         goes (a section, an overlay, a board widget, an item) as \
          `component: <widget>` with `args` for its params. A widget is never named like a \
          built-in kind and never contains itself.\n\n\
-         A node of a widget body is a composite, a widget instance, or one of these primitives:\n"
+         A node of a widget body or of an item list is a composite, a widget instance, or one \
+         of these primitives:\n"
     );
     for kind in PrimitiveKind::ALL {
         let _ = writeln!(out, "- **{}**: {}", kind.as_str(), kind.summary());

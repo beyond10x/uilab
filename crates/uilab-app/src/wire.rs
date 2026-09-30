@@ -10,11 +10,15 @@ use uilab_doc::{Finding, OutlineNode, Severity};
 use uilab_wire::{
     EssPresence, UilabSessionDocumentId, UilabSessionNodePath, UilabSessionPatchOp,
     UilabSessionProposalId, UilabWireChanged, UilabWireDecide, UilabWireDocumentState,
-    UilabWireFailed, UilabWireFinding, UilabWireHello, UilabWireMic, UilabWireMicState,
-    UilabWireOperator, UilabWireOperatorKind, UilabWireOutlineNode, UilabWirePresence,
-    UilabWireProposalShown, UilabWireReadRows, UilabWireRefused, UilabWireResync, UilabWireRows,
-    UilabWireSay, UilabWireSelect, UilabWireSettings, UilabWireThinking, UilabWireTranscript,
+    UilabWireFailed, UilabWireFinding, UilabWireGoal, UilabWireGoalStep, UilabWireHello,
+    UilabWireMic, UilabWireMicState, UilabWireOperator, UilabWireOperatorKind,
+    UilabWireOutlineNode, UilabWirePresence, UilabWireProposalShown, UilabWireReadRows,
+    UilabWireRefused, UilabWireResync, UilabWireRows, UilabWireSay, UilabWireSelect,
+    UilabWireSettings, UilabWireStartGoal, UilabWireStopGoal, UilabWireThinking,
+    UilabWireTranscript,
 };
+
+use crate::goal::Goal;
 
 /// Browser (or operator API) to server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -40,6 +44,10 @@ pub enum Client {
     Resync(UilabWireResync),
     /// Change the session settings for everybody.
     Settings(UilabWireSettings),
+    /// A goal the agent plans into steps and carries out one proposal at a time.
+    Goal(UilabWireStartGoal),
+    /// Stop the running goal.
+    StopGoal(UilabWireStopGoal),
 }
 
 /// Server to browser.
@@ -64,6 +72,8 @@ pub enum Server {
     Presence(UilabWirePresence),
     /// One accepted change, as a delta against the previous revision.
     Changed(UilabWireChanged),
+    /// A goal run as it stands, sent whole on every change.
+    Goal(UilabWireGoal),
 }
 
 impl Server {
@@ -98,6 +108,7 @@ impl Server {
             Server::Refused(m) => &m.by,
             Server::Failed(m) => &m.by,
             Server::Changed(m) => return Some(&m.by),
+            Server::Goal(m) => return Some(&m.by),
             Server::Document(_) | Server::Rows(_) | Server::Presence(_) => return None,
         };
         match presence {
@@ -280,6 +291,41 @@ pub fn thinking(target: &str, by: Option<&str>) -> Server {
     })
 }
 
+/// A goal run as the `goal` message carries it.
+pub fn goal(goal: &Goal) -> Server {
+    Server::Goal(UilabWireGoal {
+        by: goal.by.clone(),
+        current: present(goal.current.map(|i| Number::from(i as u64))),
+        goal_id: goal.id.clone(),
+        message: present(goal.message.clone()),
+        state: Box::new(named(goal.state.name())),
+        steps: goal
+            .steps
+            .iter()
+            .map(|s| {
+                Box::new(UilabWireGoalStep {
+                    instruction: s.instruction.clone(),
+                    proposal_id: present(s.proposal_id.as_deref().map(proposal_id)),
+                    status: Box::new(named(s.status.name())),
+                    target: node_path(&s.target.to_string()),
+                    why: s.why.clone(),
+                })
+            })
+            .collect(),
+        text: goal.text.clone(),
+    })
+}
+
+/// Whether a `goal` message says the run is over: done, stopped or failed.
+pub fn goal_ended(goal: &UilabWireGoal) -> bool {
+    matches!(goal_state(goal).as_str(), "done" | "stopped" | "failed")
+}
+
+/// The spec name of a `goal` message's state.
+pub fn goal_state(goal: &UilabWireGoal) -> String {
+    name_of(&goal.state)
+}
+
 pub fn rows(view: &str, total: Option<u64>, rows: Vec<Value>) -> Server {
     Server::Rows(UilabWireRows {
         view: view.to_owned(),
@@ -395,6 +441,8 @@ mod tests {
                 findings: &[],
             }),
         ];
+        let mut messages = messages;
+        messages.extend(goal_fixtures().iter().map(goal));
         for message in messages {
             let text = message.to_text();
             let generated: UilabWireServerMessage =
@@ -425,6 +473,9 @@ mod tests {
             r#"{"type":"resync","value":{"revision":2}}"#,
             r#"{"type":"settings","value":{"review":true}}"#,
             r#"{"type":"say","value":{"text":"t","target":"page:loans","review":true}}"#,
+            r#"{"type":"goal","value":{"text":"build out the member area"}}"#,
+            r#"{"type":"goal","value":{"text":"t","target":"page:members","max_steps":4,"review":false}}"#,
+            r#"{"type":"stop_goal","value":{"goal_id":"goal-1"}}"#,
         ];
         for text in texts {
             let ours = Client::from_text(text).unwrap_or_else(|e| panic!("{text}: {e}"));
@@ -452,5 +503,84 @@ mod tests {
         assert_eq!(Server::refused("c", "m", Some("op-1")).by(), Some("op-1"));
         assert_eq!(Server::failed("m", None).by(), None);
         assert_eq!(thinking("/", Some("op-2")).by(), Some("op-2"));
+        assert_eq!(goal(&goal_fixtures()[0]).by(), Some("api-1"));
+    }
+
+    /// A goal in each state the runner reaches: planning, running mid-way, done, stopped, failed.
+    fn goal_fixtures() -> Vec<Goal> {
+        let step = |instruction: &str, target: &str| uilab_agent::Step {
+            instruction: instruction.into(),
+            target: target.parse().unwrap(),
+            why: "w".into(),
+        };
+        let fresh = || {
+            Goal::new(
+                "goal-1",
+                "api-1",
+                "build out the member area",
+                "page:members".parse().unwrap(),
+                8,
+                true,
+            )
+        };
+        let planning = fresh();
+        let mut running = fresh();
+        running.planned(vec![
+            step("add a list", "page:members"),
+            step("add a card", "page:members/section:list"),
+        ]);
+        running.proposed(0, "p1");
+        let mut done = running.clone();
+        done.decided("p1", true);
+        done.not_proposed(1, true);
+        let mut stopped = running.clone();
+        stopped.stop();
+        let mut failed = fresh();
+        failed.plan_failed("declined: a greeting");
+        vec![planning, running, done, stopped, failed]
+    }
+
+    #[test]
+    fn a_goal_message_carries_the_run() {
+        let [planning, running, done, stopped, failed] = goal_fixtures().try_into().unwrap();
+        let value = |g: &Goal| serde_json::to_value(goal(g)).unwrap()["value"].clone();
+
+        let v = value(&running);
+        assert_eq!(v["goal_id"], "goal-1");
+        assert_eq!(v["by"], "api-1");
+        assert_eq!(v["text"], "build out the member area");
+        assert_eq!(v["state"], "running");
+        assert_eq!(v["current"], 0);
+        assert_eq!(v["steps"][0]["status"], "proposed");
+        assert_eq!(v["steps"][0]["proposal_id"], "p1");
+        assert_eq!(v["steps"][0]["target"], "page:members");
+        assert_eq!(v["steps"][1]["status"], "pending");
+        assert_eq!(v["steps"][1]["target"], "page:members/section:list");
+        assert!(v["steps"][1].get("proposal_id").is_none());
+        assert!(v.get("message").is_none());
+
+        let v = value(&planning);
+        assert_eq!(v["state"], "planning");
+        assert!(v.get("current").is_none());
+        assert_eq!(v["steps"], serde_json::json!([]));
+
+        assert_eq!(value(&done)["state"], "done");
+        assert_eq!(value(&done)["steps"][1]["status"], "declined");
+        assert_eq!(value(&stopped)["state"], "stopped");
+        assert_eq!(value(&stopped)["steps"][0]["status"], "rejected");
+        assert_eq!(value(&failed)["state"], "failed");
+        assert_eq!(value(&failed)["message"], "declined: a greeting");
+    }
+
+    #[test]
+    fn only_done_stopped_and_failed_end_a_goal() {
+        let ended: Vec<bool> = goal_fixtures()
+            .iter()
+            .map(|g| match goal(g) {
+                Server::Goal(m) => goal_ended(&m),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(ended, [false, false, true, true, true]);
     }
 }

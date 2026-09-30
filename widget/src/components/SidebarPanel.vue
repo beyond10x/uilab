@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { micDown, micUp, say, select, selectedBy, selectedNode, shownOutline, state, undo } from '../store.ts';
+import { micDown, micUp, say, sayGoal, select, selectedBy, selectedNode, shownOutline, state, undo } from '../store.ts';
 import ActivityFeed from './ActivityFeed.vue';
+import GoalPanel from './GoalPanel.vue';
 import PresenceStrip from './PresenceStrip.vue';
 import ProposalCard from './ProposalCard.vue';
 import TreeNode from './TreeNode.vue';
@@ -28,12 +29,13 @@ const statusLabel = computed(() => {
     case 'thinking':
       return state.thinkingTarget ? `thinking about ${state.thinkingTarget}…` : 'thinking…';
     default:
-      return 'idle';
+      return state.goal?.state === 'planning' ? 'planning the goal…' : 'idle';
   }
 });
 
 function send(): void {
-  say(text.value);
+  if (state.goalMode) sayGoal(text.value);
+  else say(text.value);
   text.value = '';
 }
 
@@ -101,7 +103,15 @@ function down(ev: PointerEvent): void {
       <div class="meter"><div class="meter-fill" :style="{ width: `${Math.round(state.level * 100)}%` }"></div></div>
       <div class="status" :class="`phase-${state.phase}`">{{ statusLabel }}</div>
       <form class="say" @submit.prevent="send">
-        <input v-model="text" type="text" placeholder="or type an instruction, Enter sends" />
+        <input
+          v-model="text"
+          type="text"
+          :placeholder="state.goalMode ? 'type a goal, Enter plans it in steps' : 'or type an instruction, Enter sends'"
+        />
+        <div class="say-mode" role="group" aria-label="what Enter sends">
+          <button type="button" :aria-pressed="!state.goalMode" :class="{ active: !state.goalMode }" @click="state.goalMode = false">instruction</button>
+          <button type="button" :aria-pressed="state.goalMode" :class="{ active: state.goalMode }" @click="state.goalMode = true">goal</button>
+        </div>
       </form>
       <div v-if="state.transcript" class="transcript">
         <span class="muted small">heard ({{ (state.transcript.audio_ms / 1000).toFixed(1) }} s audio, {{ state.transcript.took_ms }} ms)</span>
@@ -118,6 +128,8 @@ function down(ev: PointerEvent): void {
       <strong v-else>{{ state.notice.kind }}</strong>
       {{ state.notice.message }}
     </div>
+
+    <GoalPanel v-if="state.goal" :goal="state.goal" />
 
     <ProposalCard v-if="state.proposal" :proposal="state.proposal" />
 

@@ -35,6 +35,14 @@ test('a proposal opens the card; a new one replaces it and resets deciding', () 
   assert.deepEqual(settleCard({ pending: p1, deciding: true }, msg.proposal(p2)), { pending: p2, deciding: false });
 });
 
+test('the same proposal again keeps the card as it is, decision sent or not', () => {
+  const p = proposal('p1', 'a1');
+  const deciding: Card = { pending: p, deciding: true };
+  assert.equal(settleCard(deciding, msg.proposal({ ...p })), deciding);
+  const card = open(p);
+  assert.equal(settleCard(card, msg.proposal({ ...p })), card);
+});
+
 test('an undecided card survives unrelated documents, changes and refusals', () => {
   const p = proposal('p1', 'a1');
   const card = open(p);
@@ -65,6 +73,24 @@ test('auto-apply: proposal then changed from the same operator leaves no card', 
 test('auto-apply: proposal then a document that can undo it leaves no card', () => {
   const card = open(proposal('p1', 'h1'));
   assert.deepEqual(settleCard(card, msg.document('p1')), NO_CARD);
+});
+
+test('a goal message that decided the card proposal closes it; one still waiting on it keeps it', () => {
+  const card = open(proposal('p1', 'a1'));
+  const goal = (status: 'proposed' | 'accepted' | 'rejected', proposal_id = 'p1'): ServerMessage => ({
+    type: 'goal',
+    value: {
+      goal_id: 'goal-1',
+      by: 'a1',
+      text: 't',
+      state: 'running',
+      steps: [{ instruction: 'i', target: 'page:loans', why: 'w', status, proposal_id }],
+    },
+  });
+  assert.equal(settleCard(card, goal('proposed')), card);
+  assert.equal(settleCard(card, goal('rejected', 'p0')), card, 'another proposal');
+  assert.deepEqual(settleCard(card, goal('rejected')), NO_CARD, 'stopped or rejected elsewhere');
+  assert.deepEqual(settleCard(card, goal('accepted')), NO_CARD);
 });
 
 test('without a card, documents and changes leave it empty', () => {

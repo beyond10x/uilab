@@ -24,7 +24,7 @@ use harness_wire::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uilab_doc::{Document, NodeContext, NodePath, Patch, PathError, Refusal};
+use uilab_doc::{Document, Layer, NodeContext, NodePath, Patch, PathError, Refusal};
 
 /// The subscription route's base URL: the Messages API.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1";
@@ -414,7 +414,7 @@ impl Proposer {
         let config = self.loop_config(INSTRUCTIONS, schema)?;
         let answered = self.attempts(
             config,
-            request(doc, &context, utterance, fields),
+            request(doc, &context, target, utterance, fields),
             Retry::PATCH,
             |structured| {
                 let patch =
@@ -657,7 +657,8 @@ fit the page and read views the document has. Decline only when there is nothing
 The instruction comes from speech-to-text. Ignore filler words (um, uh, like, so, please, can \
 you), false starts and repetitions. Kind names may be mis-heard: \"table\", \"list\", \"grid\" or \
 \"collections\" mean `collection`; \"filter bar\" or \"filters\" mean `filter_bar`; \"graph\" or \
-\"plot\" mean `chart`; \"card\", \"details\" or \"detail view\" mean `record`; \"number\", \"KPI\" \
+\"plot\" mean `chart`; \"card\", \"details\" or \"detail view\" mean `record`, but a reusable card \
+or a \"card for each …\" is a widget (below); \"component\" means a widget; \"number\", \"KPI\" \
 or \"stat\" mean `metric`; \"text\" or \"markdown\" mean `rich_text`; \"dashboard\" means `board`; \
 \"drawer\", \"dialog\", \"modal\" or \"popup\" mean an overlay. Read a word by what it most \
 plausibly means in a UI editor, never literally when that makes no sense.
@@ -689,6 +690,30 @@ The 14 composite kinds, and when to use each:
 - rich_text: formatted text.
 - references: what uses a record.
 
+Widgets are app-defined, reusable components (not a board's `widgets`, which are ordinary \
+composites). A widget is declared under `widgets:` at the document root: insert it at `/` with \
+layer `component` and a short lower-case name that is not a composite kind (`member_card`). Its \
+node has `summary` (one line, required), `params` (each `{type: …, required: true}` or with a \
+`default`; a type is `string`, `number`, `boolean`, a named type such as `Member`, or a \
+constructor map), optional `arrange` (`row`, `column` or `grid`) and a `body`: a list of named \
+nodes, each with `name`. A body node is a built-in composite, an instance of another widget, or a \
+primitive `{name: …, primitive: <kind>, …}`. The primitive kinds are `text` (`text` or `field`, \
+optional `style: heading`), `badge` (`text`, `tone`), `icon` (`label`), `button` \
+(`label`, `action`), `link` (`to` or `href`), `input` (`binds`), `toggle`, `image` (`src`, \
+required `alt`) and `divider`. In a body, `args.<param>` refers to a param: `text: \
+args.member.name`. Add a body node with layer `node` under `component:<widget>`; change a widget \
+with `replace` on it. An instance is `{component: <widget>, args: {<param>: <value>}}` and goes \
+wherever a composite goes: a section, an overlay, a board's widget, a collection's item. It \
+supplies every required param and none the widget does not declare; in a collection item the \
+row is `row` (`args: {member: row}`). The widgets the document declares are listed with the \
+instruction; use one that fits. Make a new widget when the operator asks for something reusable, \
+a \"component\", a \"card for each …\", or the same structure would repeat; declare it and use it \
+in one `batch` (the insert at `/` first, then the uses, each with its own target). Otherwise keep \
+using built-in composites. To use a widget inside an existing table, target that collection and \
+insert an `item` node (layer `item`) holding the instance; when the batch starts at `/`, its \
+second patch is an `insert` at `page:<p>/section:<s>` of layer `item`. The existing sections of \
+the pages the instruction names are listed with their columns and children: target them there.
+
 Data comes from ESS views: `reads: {view: <domain>.<View>}`, with `params` for fixed filters \
 (for example `params: {state: overdue}`). Prefer a view the document already reads when it holds \
 the data asked for. When no existing view fits, read a placeholder `draft.<Name>` view (for \
@@ -701,7 +726,10 @@ add a child under the target, `replace` to change the target node itself (give t
 node, keeping what the operator did not ask to change), and `remove` to delete it. When the \
 instruction changes the pointed-at node itself (its columns, title, fields, actions or props: \
 \"also show X\", \"rename this\", \"add a column\"), use `replace` on that node; use `insert` only \
-for a new child, and never replace a parent to add one child. When one instruction needs more \
+for a new child, and never replace a parent to add one child: never replace a page or a \
+collection to add one child. A `replace` must repeat every existing prop, column and child it \
+does not mean to change; a replace that drops columns, sections or overlays the operator did not \
+ask about is wrong. When one instruction needs more \
 than one node changed, use `batch` with `patches` in order, each with its own `target`: for \
 example a row action that opens a drawer is an `insert` of the drawer overlay on the page \
 followed by a `replace` of the collection adding `row_actions: [{opens: <drawer>}]`. \
@@ -744,7 +772,13 @@ layout order) and overlays (drawers, dialogs, fullscreen panes, popovers); a boa
 widgets; a collection holds items. Composite kinds: collection (rows as a table or list), record \
 (one row as fields: a details card), form (input bound to a command), choice, filter_bar \
 (search and filters above a collection), header, overlay, confirm, metric, chart, board, \
-graph_editor, rich_text, references. Data comes from ESS views: prefer a view the document \
+graph_editor, rich_text, references. A step can also declare a widget, an app-defined reusable \
+component under `widgets:` at the root (target `/`, layer `component`, a `summary`, typed \
+`params` and a `body` of named composites, widget instances and primitives), and use it as \
+`{component: <widget>, args: {…}}` wherever a composite goes; declare a widget and its first use \
+in one step. Plan a widget when the goal asks for something reusable, a component, a card for \
+each row, or repeats a structure; use a widget the document already declares when one fits. \
+Declared widgets are `component:<name>` in the outline. Data comes from ESS views: prefer a view the document \
 already reads; when none fits, read a placeholder `draft.<Name>` view. Names of new nodes are \
 short, lower-case, with underscores, and unique among their siblings. If your plan is refused, \
 the refusal names the check it failed; fix exactly that and answer again.";
@@ -768,6 +802,39 @@ fn view_fields(fields: &[(String, Vec<String>)]) -> String {
     )
 }
 
+/// Every widget the document declares, one `- name: summary Params: p (type, required), …` line
+/// each, or `none`.
+fn declared_widgets(doc: &Document) -> String {
+    if doc.widgets.is_empty() {
+        return "none".to_owned();
+    }
+    doc.widgets
+        .iter()
+        .map(|(name, widget)| {
+            let params: Vec<String> = widget
+                .params
+                .iter()
+                .map(|(param, declared)| {
+                    let ty = match &declared.ty {
+                        Value::String(ty) => ty.clone(),
+                        other => other.to_string(),
+                    };
+                    if declared.is_required() {
+                        format!("{param} ({ty}, required)")
+                    } else {
+                        format!("{param} ({ty})")
+                    }
+                })
+                .collect();
+            format!(
+                "\n- {name}: {summary} Params: {params}",
+                summary = widget.summary,
+                params = join(params)
+            )
+        })
+        .collect()
+}
+
 /// The first message of a plan run: the goal, the cap, the node's context and the whole outline.
 fn plan_request(
     doc: &Document,
@@ -786,7 +853,8 @@ fn plan_request(
          Child layers it can take: {layers}\n\
          Existing children: {children}\n\
          Views the document already reads: {views}\n\
-         Fields of each view's rows: {fields}\n\n\
+         Fields of each view's rows: {fields}\n\
+         Widgets the document declares: {widgets}\n\n\
          The document outline, one node per line (path, kind, title, view it reads):\n\
          {outline}\n\
          The target node as YAML:\n```yaml\n{yaml}```",
@@ -803,6 +871,7 @@ fn plan_request(
         children = join(context.children.clone()),
         views = join(known_views(doc)),
         fields = view_fields(fields),
+        widgets = declared_widgets(doc),
         yaml = context.yaml,
     )
 }
@@ -830,13 +899,146 @@ fn outline_lines(node: &uilab_doc::OutlineNode, depth: usize, out: &mut String) 
     }
 }
 
+/// The lower-case words of `text`; anything not a letter or digit, `_` included, separates them.
+fn words(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether two words name the same thing: equal, or one is the other's plural by `s`, `es` or
+/// `ies` for `y`. A plural counts only when the singular has at least four letters, so `news` is
+/// not the plural of `new`; an exact word has no minimum.
+fn same_word(a: &str, b: &str) -> bool {
+    let plural_of = |plural: &str, singular: &str| {
+        singular.chars().count() >= 4
+            && (plural.strip_suffix('s') == Some(singular)
+                || plural.strip_suffix("es") == Some(singular)
+                || singular
+                    .strip_suffix('y')
+                    .is_some_and(|stem| plural.strip_suffix("ies") == Some(stem)))
+    };
+    a == b || plural_of(a, b) || plural_of(b, a)
+}
+
+/// The pages a request at `target` is about: the target page, then every other page whose name
+/// or title the utterance says as whole words, in order (underscores as spaces, plurals as
+/// [`same_word`]). None below a page.
+fn named_pages<'a>(doc: &'a Document, target: &NodePath, utterance: &str) -> Vec<&'a str> {
+    let own = match target.layer() {
+        Layer::Root => None,
+        Layer::Page => target.0.first().map(|segment| segment.name.as_str()),
+        _ => return Vec::new(),
+    };
+    let said = words(utterance);
+    let names = |name: &str| {
+        let name = words(name);
+        !name.is_empty()
+            && said.windows(name.len()).any(|run| {
+                run.iter()
+                    .zip(&name)
+                    .all(|(spoken, word)| same_word(spoken, word))
+            })
+    };
+    let own = own.and_then(|own| doc.pages.get_key_value(own).map(|(name, _)| name.as_str()));
+    own.into_iter()
+        .chain(
+            doc.pages
+                .iter()
+                .filter(|(name, page)| {
+                    own != Some(name.as_str())
+                        && (names(name) || page.title.as_deref().is_some_and(names))
+                })
+                .map(|(name, _)| name.as_str()),
+        )
+        .collect()
+}
+
+/// A section's columns, as `name, standing (as tag)`.
+fn columns(composite: &uilab_doc::model::Composite) -> Option<String> {
+    let columns = composite.props.get("columns")?.as_array()?;
+    Some(
+        columns
+            .iter()
+            .map(
+                |column| match (column["field"].as_str(), column["as"].as_str()) {
+                    (Some(field), Some(shown)) => format!("{field} (as {shown})"),
+                    (Some(field), None) => field.to_owned(),
+                    _ => column.to_string(),
+                },
+            )
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
+}
+
+/// One line per section and overlay of each page in `pages`: path, kind, view, columns and
+/// children, so a patch can target them in place rather than rewrite the page.
+fn page_nodes(doc: &Document, pages: &[&str]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for &name in pages {
+        let page_path = NodePath::root().child(Layer::Page, name);
+        let Some(page) = doc.pages.get(name) else {
+            continue;
+        };
+        for (section, composite) in &page.sections {
+            let Some(composite) = composite else { continue };
+            let path = page_path.child(Layer::Section, section);
+            let _ = write!(out, "\n- {path}: {}", composite.component.as_str());
+            if let Some(reads) = &composite.reads {
+                let _ = write!(out, " reads {}", reads.view);
+            }
+            if let Some(columns) = columns(composite) {
+                let _ = write!(out, "; columns {columns}");
+            }
+            let children = uilab_doc::path::children(doc, &path)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(layer, child)| format!("{layer}:{child}"))
+                .collect();
+            let _ = write!(out, "; children {}", join(children));
+        }
+        for (overlay, body) in &page.overlays {
+            let Some(body) = body else { continue };
+            let path = page_path.child(Layer::Overlay, overlay);
+            let _ = write!(
+                out,
+                "\n- {path}: {} {}",
+                serde_json::to_value(body.kind)
+                    .ok()
+                    .and_then(|kind| kind.as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+                body.body.component.as_str()
+            );
+        }
+    }
+    if out.is_empty() {
+        "none".to_owned()
+    } else {
+        out
+    }
+}
+
 /// The first message of a run: the utterance and the node's context.
 fn request(
     doc: &Document,
     context: &NodeContext,
+    target: &NodePath,
     utterance: &str,
     fields: &[(String, Vec<String>)],
 ) -> String {
+    let pages = named_pages(doc, target, utterance);
+    let places = if matches!(target.layer(), Layer::Root | Layer::Page) {
+        format!(
+            "Existing nodes of the pages the instruction is about (patch them in place): {}\n",
+            page_nodes(doc, &pages)
+        )
+    } else {
+        String::new()
+    };
     let layers = context
         .allowed_children
         .iter()
@@ -855,7 +1057,9 @@ fn request(
          Composite kinds a new composite child can be: {kinds}\n\
          Existing children: {children}\n\
          Views the document already reads: {views}\n\
-         Fields of each view's rows: {fields}\n\n\
+         Fields of each view's rows: {fields}\n\
+         Widgets the document declares: {widgets}\n\
+         {places}\n\
          The target node as YAML:\n```yaml\n{yaml}```",
         path = context.path,
         kind = context.kind,
@@ -865,6 +1069,7 @@ fn request(
         children = join(context.children.clone()),
         views = join(known_views(doc)),
         fields = view_fields(fields),
+        widgets = declared_widgets(doc),
         yaml = context.yaml,
     )
 }
