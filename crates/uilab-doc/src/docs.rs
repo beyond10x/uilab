@@ -6,10 +6,10 @@ use std::fmt::Write;
 
 use serde_json::Value;
 
-use crate::check::{Finding, Severity, composites};
+use crate::check::{Finding, Severity, composites, widget_uses};
 use crate::fixtures::Fixtures;
-use crate::model::{Composite, CompositeKind, Document, NavPages, NodeBody, PrimitiveKind};
-use crate::path::{Layer, NodePath};
+use crate::model::{CompositeKind, Document, NavPages, NodeBody, PrimitiveKind};
+use crate::path::Layer;
 
 /// The document's documentation as Markdown.
 pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) -> String {
@@ -137,7 +137,7 @@ pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) 
     }
     out.push('\n');
 
-    widgets_markdown(&mut out, doc, &all);
+    widgets_markdown(&mut out, doc);
 
     // Data.
     let _ = writeln!(out, "## Data\n");
@@ -272,8 +272,10 @@ pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) 
     out
 }
 
-/// The Widgets section: each declared widget with its summary, params, body and use sites.
-fn widgets_markdown(out: &mut String, doc: &Document, all: &[(NodePath, &Composite)]) {
+/// The Widgets section: each declared widget with its summary, params, body and use sites. The
+/// use sites are the instances the widget checks see, typed or held in untyped data.
+fn widgets_markdown(out: &mut String, doc: &Document) {
+    let uses = widget_uses(doc);
     let _ = writeln!(out, "## Widgets\n");
     if doc.widgets.is_empty() {
         let _ = writeln!(out, "The document declares no widgets.\n");
@@ -326,10 +328,13 @@ fn widgets_markdown(out: &mut String, doc: &Document, all: &[(NodePath, &Composi
             })
             .collect();
         let _ = writeln!(out, "Body: {}\n", body.join(", "));
-        let used: Vec<String> = all
+        let used: Vec<String> = uses
             .iter()
-            .filter(|(_, c)| c.component.widget() == Some(name.as_str()))
-            .map(|(p, _)| format!("`{p}`"))
+            .filter(|(_, i)| i.widget == name.as_str())
+            .map(|(p, i)| match &i.trail {
+                Some(trail) => format!("`{p}` (`{trail}`)"),
+                None => format!("`{p}`"),
+            })
             .collect();
         if used.is_empty() {
             let _ = writeln!(out, "Not used yet.\n");

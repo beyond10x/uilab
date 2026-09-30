@@ -1339,3 +1339,94 @@ fn the_agent_context_offers_widgets_that_do_not_recurse() {
     );
     assert!(kinds("page:overview/section:latest").is_empty());
 }
+
+/// The Node positions outside composites: a page header's `metrics` and an action's `choice`, and
+/// a page kind's `sections` and `header`. Instances there are checked, keep their widget from
+/// being removed, and are listed as use sites with their trail.
+#[test]
+fn widget_instances_in_page_headers_and_page_kinds_are_checked_and_documented() {
+    let with_header = |header: serde_json::Value| {
+        let mut doc = with_widgets();
+        doc.pages["overview"].extra.insert("header".into(), header);
+        doc
+    };
+    let with_kind = |kind: serde_json::Value| {
+        let mut doc = with_widgets();
+        doc.page_kinds.insert("board_page".into(), kind);
+        doc
+    };
+    let missing = json!({"component": "loan_tile"});
+    for (doc, at) in [
+        (
+            with_header(json!({"metrics": [{"name": "due", "component": "loan_tile"}]})),
+            "page:overview",
+        ),
+        (
+            with_header(
+                json!({"actions": [{"name": "pick", "as": "choice", "choice": missing.clone()}]}),
+            ),
+            "page:overview",
+        ),
+        (
+            with_kind(json!({"sections": {"summary": missing.clone()}})),
+            "/",
+        ),
+        (
+            with_kind(json!({"header": {"metrics": [{"name": "due", "component": "loan_tile"}]}})),
+            "/",
+        ),
+    ] {
+        assert_eq!(errors(&doc), [("widget_resolves", at.to_owned())]);
+    }
+    let doc = with_header(json!({"metrics": [{"name": "due", "component": "state_badge"}]}));
+    assert_eq!(errors(&doc), [("widget_args", "page:overview".to_owned())]);
+    assert!(
+        check(&doc)[0]
+            .message
+            .starts_with("`header/metrics/due`: missing required arg `state`"),
+        "{}",
+        check(&doc)[0].message
+    );
+
+    let doc = with_kind(json!({"header": {"metrics": [
+        {"name": "due", "component": "state_badge", "args": {"state": "row.state"}}
+    ]}}));
+    assert!(errors(&doc).is_empty(), "{:?}", errors(&doc));
+    assert_eq!(
+        admit(
+            &doc,
+            &Patch::Remove {
+                target: path("component:state_badge")
+            }
+        )
+        .unwrap_err()
+        .check,
+        "widget_resolves",
+        "a widget used only by a page kind cannot be removed"
+    );
+    let docs = uilab_doc::docs_markdown(&doc, &Fixtures::default(), &check(&doc));
+    assert!(
+        docs.contains("`/` (`page_kinds/board_page/header/metrics/due`)"),
+        "{docs}"
+    );
+
+    let mut doc = with_header(json!({"metrics": [
+        {"name": "due", "component": "state_badge", "args": {"state": "row.state"}}
+    ]}));
+    doc.pages["overview"].sections["list"]
+        .as_mut()
+        .unwrap()
+        .props
+        .insert(
+            "children".into(),
+            json!([{"name": "badge", "component": "state_badge", "args": {"state": "row.state"}}]),
+        );
+    let docs = uilab_doc::docs_markdown(&doc, &Fixtures::default(), &check(&doc));
+    for site in [
+        "`component:loan_card/node:state`",
+        "`page:overview/section:list` (`children/badge`)",
+        "`page:overview` (`header/metrics/due`)",
+    ] {
+        assert!(docs.contains(site), "missing use site {site}:\n{docs}");
+    }
+}
