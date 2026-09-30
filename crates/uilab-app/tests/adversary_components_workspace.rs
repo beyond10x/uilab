@@ -69,20 +69,24 @@ fn child<'v>(node: &'v Value, path: &str) -> &'v Value {
         .unwrap_or_else(|| panic!("no child `{path}` in {}", node["path"]))
 }
 
-/// Every node of the outline below the root and outside a widget declaration whose kind is
-/// `widget`: the typed half of the browser's use-site walk, and the brief's fallback rule.
-fn typed_uses(node: &Value, widget: &str, out: &mut Vec<String>) {
-    let layer = node["layer"].as_str().unwrap_or("");
-    if layer != "root" && layer != "component" && node["kind"] == widget {
-        out.push(node["path"].as_str().unwrap().to_owned());
-    }
-    for c in node["children"].as_array().unwrap() {
-        typed_uses(c, widget, out);
-    }
+/// The paths of the use sites the outline carries on the component node of `widget`: what the
+/// Components tab lists.
+fn outline_uses(doc: &Document, widget: &str) -> Vec<String> {
+    let root = serde_json::to_value(outline(doc)).unwrap();
+    let node = child(&root, &format!("component:{widget}"));
+    node["props"]["uses"]
+        .as_array()
+        .unwrap_or_else(|| panic!("component:{widget} carries no uses: {}", node["props"]))
+        .iter()
+        .map(|u| match u["trail"].as_str() {
+            Some(trail) => format!("{} ({trail})", u["path"].as_str().unwrap()),
+            None => u["path"].as_str().unwrap().to_owned(),
+        })
+        .collect()
 }
 
-/// A widget used only in a page header is listed by the docs, and the tab can only find it if the
-/// outline carries the header: the page node's props hold nothing but its shell today.
+/// A widget used only in a page header is listed by the docs, and the outline the browser gets
+/// carries that use, so the tab does not show `loan_card` as not used.
 #[test]
 fn the_outline_carries_a_widget_instance_held_in_a_page_header() {
     let doc = library();
@@ -90,19 +94,14 @@ fn the_outline_carries_a_widget_instance_held_in_a_page_header() {
         docs_uses(&doc, "loan_card"),
         "Used at: `page:overview` (`header/metrics/due`)"
     );
-    let root = serde_json::to_value(outline(&doc)).unwrap();
-    let page = child(&root, "page:overview");
-    let props = serde_json::to_string(&page["props"]).unwrap();
-    assert!(
-        props.contains("\"component\":\"loan_card\""),
-        "the outline the browser gets has no trace of the header instance, so the Components tab \
-         shows `loan_card` as not used; page:overview props = {props}"
+    assert_eq!(
+        outline_uses(&doc, "loan_card"),
+        ["page:overview (header/metrics/due)"]
     );
 }
 
-/// A widget named like a primitive: the docs list one use; the outline gives the primitive nodes
-/// the same kind, so any walk of the outline by kind (the tab's, and the brief's fallback) counts
-/// every primitive `badge` of the document as a use of the widget `badge`.
+/// A widget named like a primitive: the docs list one use, and the outline carries that one use
+/// only, although primitive nodes of the document share the kind `badge`.
 #[test]
 fn the_outline_tells_a_primitive_from_an_instance_of_a_widget_named_like_it() {
     let doc = library();
@@ -110,8 +109,8 @@ fn the_outline_tells_a_primitive_from_an_instance_of_a_widget_named_like_it() {
         docs_uses(&doc, "badge"),
         "Used at: `page:overview/section:latest`"
     );
-    let root = serde_json::to_value(outline(&doc)).unwrap();
-    let mut found = Vec::new();
-    typed_uses(&root, "badge", &mut found);
-    assert_eq!(found, ["page:overview/section:latest"]);
+    assert_eq!(
+        outline_uses(&doc, "badge"),
+        ["page:overview/section:latest"]
+    );
 }

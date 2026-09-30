@@ -14,7 +14,8 @@ function n(path: string, layer: string, kind: string, children: OutlineNode[] = 
  * instance of it. The server outline gives a primitive node its primitive name as kind
  * (`component:loan_card/node:due` → kind `badge`, as the unit's own uilab-app test asserts), so a
  * primitive badge and an instance of the widget `badge` carry the same kind. The docs' use sites
- * (`widget_uses`) count only the instance; a primitive is not a use of a widget.
+ * (`widget_uses`) count only the instance, and the server puts those on the component node as
+ * `uses`; the tab must list them and not add the primitives that share the kind.
  */
 test('a primitive whose kind matches a widget name is not a use site of that widget', () => {
   const root = n('/', 'root', 'document', [
@@ -23,14 +24,14 @@ test('a primitive whose kind matches a widget name is not a use site of that wid
       'component',
       'widget',
       [n('component:badge/node:tag', 'node', 'badge', [], { props: { text: 'args.label' } })],
-      { title: 'A toned tag.', props: { params: { label: { type: 'string', required: true } }, arrange: 'row' } },
+      { title: 'A toned tag.', props: { params: { label: { type: 'string', required: true } }, arrange: 'row', uses: [{ path: 'page:overview/section:latest' }] } },
     ),
     n(
       'component:loan_card',
       'component',
       'widget',
       [n('component:loan_card/node:due', 'node', 'badge', [], { props: { text: 'args.loan.due' } })],
-      { title: 'A loan as a card.', props: { params: { loan: { type: 'Loan', required: true } }, arrange: 'column' } },
+      { title: 'A loan as a card.', props: { params: { loan: { type: 'Loan', required: true } }, arrange: 'column', uses: [] } },
     ),
     n('page:overview', 'page', 'dashboard_page', [
       n('page:overview/section:latest', 'section', 'badge', [], { props: { args: { label: 'rows.first' } } }),
