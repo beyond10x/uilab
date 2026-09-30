@@ -886,23 +886,26 @@ impl App {
     }
 
     /// Broadcasts an accepted proposal as a delta. A page or a menu section changes the menu as
-    /// well, which a delta at one path cannot carry, so those go out as a full snapshot.
-    fn announce_change(&self, by: &str, id: &s::ProposalId) {
+    /// well, which a delta at one path cannot carry, and a change that adds or drops a widget
+    /// instance changes the use sites on component nodes elsewhere in the tree: those go out as a
+    /// full snapshot.
+    fn announce_change(&self, by: &str, id: &s::ProposalId, before: &Document) {
         let Some(patch) = self.handle.patch(id) else {
             self.send_document();
             return;
         };
         let changed = patch.changed_path();
+        let doc = self.doc();
         if matches!(patch, Patch::Batch { .. })
             || matches!(
                 changed.layer(),
                 Layer::Page | Layer::NavSection | Layer::Shell
             )
+            || component_uses(before) != component_uses(&doc)
         {
             self.send_document();
             return;
         }
-        let doc = self.doc();
         let node = match patch {
             Patch::Remove { .. } => None,
             _ => outline_at(&doc, &changed),
@@ -955,6 +958,7 @@ impl App {
     /// Applies a waiting proposal. `automatic` when review is off and nobody pressed accept.
     fn accept(&mut self, by: &str, proposal_id: &str, automatic: bool) {
         let id = proposal(proposal_id);
+        let before = self.doc();
         let outcome = self.port.accept_proposal(s::AcceptProposal {
             proposal_id: id.clone(),
         });
@@ -967,7 +971,7 @@ impl App {
                     "accepted",
                     json!({"by": by, "proposal_id": proposal_id, "revision": self.revision, "automatic": automatic}),
                 );
-                self.announce_change(by, &id);
+                self.announce_change(by, &id, &before);
             }
             Ok(s::AcceptProposalOutcome::Stale { error }) => self.send(Server::refused(
                 error.check,
@@ -1143,6 +1147,16 @@ fn proposal(id: &str) -> s::ProposalId {
     s::ProposalId(Uuid(id.to_owned()))
 }
 
+/// The use sites each component node of the outline carries, in outline order.
+fn component_uses(doc: &Document) -> Vec<Option<serde_json::Value>> {
+    outline(doc)
+        .children
+        .into_iter()
+        .filter(|c| c.layer == Layer::Component)
+        .map(|c| c.props.and_then(|p| p.get("uses").cloned()))
+        .collect()
+}
+
 /// The session actor without a model: `App::open` asks for nothing, so each test answers for the
 /// agent by handing the actor the `Planned` and `Proposed` it would have got back.
 #[cfg(test)]
@@ -1184,6 +1198,11 @@ mod tests {
 
     /// A session over a copy of the library example, with the API operator `api-1` joined.
     fn rig(review: bool) -> Rig {
+        rig_over(review, |text| text)
+    }
+
+    /// A session over a copy of the library example as `edit` rewrites it.
+    fn rig_over(review: bool, edit: impl FnOnce(String) -> String) -> Rig {
         let root = std::env::temp_dir().join(format!(
             "uilab-app-test-{}-{}",
             std::process::id(),
@@ -1191,6 +1210,9 @@ mod tests {
         ));
         let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library");
         copy_dir(&example, &root.join("library"));
+        let file = root.join("library/library.ui.yaml");
+        let text = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, edit(text)).unwrap();
         let (out, rx) = broadcast::channel(1024);
         let (back, back_rx) = mpsc::channel(16);
         let app = App::open(
@@ -1623,6 +1645,162 @@ mod tests {
         assert_eq!(proposals(&direct), [id]);
     }
 
+    const LOAN_CARD: &str = "widgets:
+  loan_card:
+    summary: A loan as a card.
+    params:
+      loan: {type: Loan, required: true}
+      compact: {type: boolean, default: false}
+    body:
+      - {name: title, primitive: text, text: args.loan.title, style: heading}
+      - {name: due, primitive: badge, text: args.loan.due}
+pages:
+";
+
+    /// The library with the widget `loan_card`, used once as a section of the overview.
+    fn with_loan_card(text: String) -> String {
+        assert!(text.contains("\npages:\n") && text.contains("    sections:\n      on_loan:\n"));
+        text.replacen("\npages:\n", &format!("\n{LOAN_CARD}"), 1).replacen(
+            "    sections:\n      on_loan:\n",
+            "    sections:\n      latest: {component: loan_card, args: {loan: rows.first}}\n      on_loan:\n",
+            1,
+        )
+    }
+
+    /// The outline of the last document message, as the browser receives it.
+    fn last_outline(messages: &[Server]) -> serde_json::Value {
+        let doc = messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                Server::Document(d) => Some(d),
+                _ => None,
+            })
+            .expect("a document was sent");
+        serde_json::to_value(&doc.outline).unwrap()
+    }
+
+    fn child<'v>(node: &'v serde_json::Value, path: &str) -> &'v serde_json::Value {
+        node["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["path"] == path)
+            .unwrap_or_else(|| panic!("no child `{path}` in {}", node["path"]))
+    }
+
+    #[test]
+    fn the_document_a_browser_gets_carries_widgets_their_body_and_their_instances() {
+        let mut rig = rig_over(false, with_loan_card);
+        rig.connect("ws-9");
+        let root = last_outline(&rig.drain_direct());
+        let card = child(&root, "component:loan_card");
+        assert_eq!(card["layer"], "component");
+        assert_eq!(card["name"], "loan_card");
+        assert_eq!(card["kind"], "widget");
+        assert_eq!(card["title"], "A loan as a card.");
+        assert_eq!(
+            card["props"]["params"],
+            serde_json::json!({
+                "loan": {"type": "Loan", "required": true},
+                "compact": {"type": "boolean", "default": false},
+            })
+        );
+        assert_eq!(card["props"]["arrange"], "column");
+        let body: Vec<(&str, &str, &str)> = card["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| {
+                (
+                    n["path"].as_str().unwrap(),
+                    n["layer"].as_str().unwrap(),
+                    n["kind"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            body,
+            [
+                ("component:loan_card/node:title", "node", "text"),
+                ("component:loan_card/node:due", "node", "badge"),
+            ]
+        );
+        assert_eq!(
+            child(card, "component:loan_card/node:title")["props"],
+            serde_json::json!({"text": "args.loan.title", "style": "heading"})
+        );
+        let latest = child(
+            child(&root, "page:overview"),
+            "page:overview/section:latest",
+        );
+        assert_eq!(latest["kind"], "loan_card");
+        assert_eq!(
+            latest["props"]["args"],
+            serde_json::json!({"loan": "rows.first"})
+        );
+    }
+
+    /// The Components tab lists a widget's use sites from the outline, so the outline carries
+    /// every one the docs list, a page header's included.
+    #[test]
+    fn the_outline_a_browser_gets_carries_each_widget_s_use_sites() {
+        let mut rig = rig_over(false, |text| {
+            let text = with_loan_card(text);
+            assert!(text.contains("    title: Overview\n    sections:\n"));
+            text.replacen(
+                "    title: Overview\n    sections:\n",
+                "    title: Overview\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}]}\n    sections:\n",
+                1,
+            )
+        });
+        rig.connect("ws-9");
+        let root = last_outline(&rig.drain_direct());
+        let card = child(&root, "component:loan_card");
+        assert_eq!(
+            card["props"]["uses"],
+            serde_json::json!([
+                {"path": "page:overview/section:latest"},
+                {"path": "page:overview", "trail": "header/metrics/due"},
+            ])
+        );
+    }
+
+    #[test]
+    fn selecting_a_widget_or_one_of_its_body_nodes_lands_there() {
+        let mut rig = rig_over(false, with_loan_card);
+        rig.connect("ws-9");
+        rig.drain();
+        for path in ["component:loan_card", "component:loan_card/node:due"] {
+            rig.client(
+                "ws-9",
+                &format!(r#"{{"type":"select","value":{{"path":"{path}"}}}}"#),
+            );
+            let messages = rig.drain();
+            assert_eq!(refusals(&messages), []);
+            let selected = messages
+                .iter()
+                .rev()
+                .find_map(|m| match m {
+                    Server::Document(d) => Some(d.selected.0.clone()),
+                    _ => None,
+                })
+                .expect("a document was sent");
+            assert_eq!(selected, path);
+        }
+        rig.client(
+            "ws-9",
+            r#"{"type":"select","value":{"path":"component:loan_card/node:ghost"}}"#,
+        );
+        assert_eq!(
+            refusals(&rig.drain())
+                .into_iter()
+                .map(|(check, _)| check)
+                .collect::<Vec<_>>(),
+            ["path_resolves"]
+        );
+    }
+
     #[test]
     fn a_reject_of_another_proposal_keeps_the_waiting_one() {
         let mut rig = rig(true);
@@ -1724,5 +1902,78 @@ mod tests {
             drops,
             ["replace at page:members/section:list drops columns joined, loans, standing"]
         );
+    }
+
+    /// Accepts `patch` as the API operator's, with review off.
+    fn accept_patch(rig: &mut Rig, patch: Patch) -> Vec<Server> {
+        rig.app.handle_cmd(Cmd::Proposed {
+            by: "api-1".into(),
+            target: patch.target().clone(),
+            utterance: "u".into(),
+            result: Box::new(Ok(uilab_agent::Proposal {
+                patch,
+                turns: 1,
+                cost_micro_usd: None,
+                attempts: 1,
+            })),
+            ms: 1,
+            review: false,
+            step: None,
+        });
+        rig.drain_broadcast()
+    }
+
+    fn loan_card_uses(outline: &serde_json::Value) -> Vec<String> {
+        child(outline, "component:loan_card")["props"]["uses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|u| u["path"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// The use sites sit on component nodes, which a delta at the changed path does not re-send:
+    /// a change that adds or drops an instance goes out as a full document, and one that does
+    /// not stays a delta.
+    #[test]
+    fn a_change_that_adds_or_drops_a_widget_instance_sends_the_whole_outline() {
+        let mut rig = rig_over(false, with_loan_card);
+        let sent = accept_patch(
+            &mut rig,
+            Patch::Insert {
+                target: "page:overview".parse().unwrap(),
+                child: uilab_doc::Child {
+                    layer: Layer::Section,
+                    name: "more".into(),
+                    node: json!({"component": "loan_card", "args": {"loan": "rows.first"}}),
+                    nav_section: None,
+                },
+            },
+        );
+        assert!(!sent.iter().any(|m| matches!(m, Server::Changed(_))));
+        assert_eq!(
+            loan_card_uses(&last_outline(&sent)),
+            ["page:overview/section:latest", "page:overview/section:more"]
+        );
+
+        let sent = accept_patch(
+            &mut rig,
+            Patch::Remove {
+                target: "page:overview/section:latest".parse().unwrap(),
+            },
+        );
+        assert_eq!(
+            loan_card_uses(&last_outline(&sent)),
+            ["page:overview/section:more"]
+        );
+
+        let sent = accept_patch(
+            &mut rig,
+            Patch::Remove {
+                target: "page:overview/section:recent".parse().unwrap(),
+            },
+        );
+        assert!(sent.iter().any(|m| matches!(m, Server::Changed(_))));
+        assert!(!sent.iter().any(|m| matches!(m, Server::Document(_))));
     }
 }

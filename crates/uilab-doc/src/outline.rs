@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::check::reaches;
+use crate::check::{Instance, reaches, widget_uses};
 use crate::model::{CompositeKind, Document};
 use crate::path::{Layer, NodePath, NodeRef, PathError, allowed_children, children, resolve};
 
@@ -25,7 +25,9 @@ pub struct OutlineNode {
     pub view: Option<String>,
     /// A composite's props other than `component`, `reads`, `widgets` and `item`: what a renderer
     /// needs to draw it (columns, title, from, fields, a widget instance's args). A primitive's
-    /// props; a widget's params and arrangement.
+    /// props; a widget's params, arrangement and `uses`: each instance of it as `{path, trail?}`,
+    /// the node that holds it and the way through that node's untyped data, as the widget checks
+    /// and the docs find them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub props: Option<serde_json::Value>,
     /// Its children.
@@ -34,10 +36,27 @@ pub struct OutlineNode {
 
 /// The whole document as a tree, from the root.
 pub fn outline(doc: &Document) -> OutlineNode {
-    node(doc, &NodePath::root()).expect("the root resolves")
+    node(doc, &widget_uses(doc), &NodePath::root()).expect("the root resolves")
 }
 
-fn node(doc: &Document, path: &NodePath) -> Result<OutlineNode, PathError> {
+/// The use sites of the widget `name`, one per instance, in the order [`widget_uses`] finds them.
+fn uses_of(uses: &[(NodePath, Instance<'_>)], name: &str) -> serde_json::Value {
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for (path, instance) in uses.iter().filter(|(_, i)| i.widget == name) {
+        let site = match &instance.trail {
+            Some(trail) => serde_json::json!({"path": path.to_string(), "trail": trail}),
+            None => serde_json::json!({"path": path.to_string()}),
+        };
+        out.push(site);
+    }
+    serde_json::Value::Array(out)
+}
+
+fn node(
+    doc: &Document,
+    uses: &[(NodePath, Instance<'_>)],
+    path: &NodePath,
+) -> Result<OutlineNode, PathError> {
     let found = resolve(doc, path)?;
     // Composites carry their own props. The menu, its sections and pages carry what a renderer
     // needs to place them: the home page, a section's pages, a page's shell.
@@ -55,6 +74,7 @@ fn node(doc: &Document, path: &NodePath) -> Result<OutlineNode, PathError> {
         NodeRef::Component(w) => Some(serde_json::json!({
             "params": w.params,
             "arrange": w.arrangement(),
+            "uses": uses_of(uses, path.name()),
         })),
         NodeRef::Primitive(p) => Some(serde_json::Value::Object(
             p.props.clone().into_iter().collect(),
@@ -88,7 +108,7 @@ fn node(doc: &Document, path: &NodePath) -> Result<OutlineNode, PathError> {
     };
     let mut kids = Vec::new();
     for (layer, name) in children(doc, path)? {
-        kids.push(node(doc, &path.child(layer, &name))?);
+        kids.push(node(doc, uses, &path.child(layer, &name))?);
     }
     Ok(OutlineNode {
         path: path.to_string(),
@@ -238,5 +258,142 @@ pub fn vocabulary(doc: &Document, path: &NodePath) -> Vec<String> {
 
 /// The outline of the subtree at `path`, or `None` when no node has that path.
 pub fn outline_at(doc: &Document, path: &NodePath) -> Option<OutlineNode> {
-    node(doc, path).ok()
+    node(doc, &widget_uses(doc), path).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::*;
+    use crate::{Fixtures, docs_markdown};
+
+    const WIDGETS: &str = "widgets:
+  loan_card:
+    summary: A loan as a card.
+    params:
+      loan: {type: Loan, required: true}
+    body:
+      - {name: title, primitive: text, text: args.loan.title, style: heading}
+      - {name: due, primitive: badge, text: args.loan.due}
+  badge:
+    summary: A toned tag.
+    params:
+      label: {type: string, required: true}
+    body:
+      - {name: tag, primitive: badge, text: args.label}
+  unused:
+    summary: Nothing uses it.
+    body:
+      - {name: tag, primitive: text, text: nothing}
+pages:
+";
+
+    /// The library example with the widgets `loan_card`, `badge` and `unused`, none of them used.
+    fn library() -> Document {
+        let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/library/library.ui.yaml");
+        let text = std::fs::read_to_string(file).unwrap();
+        assert!(text.contains("\npages:\n"), "fixture anchor is missing");
+        Document::from_yaml(&text.replacen("\npages:\n", &format!("\n{WIDGETS}"), 1)).unwrap()
+    }
+
+    /// The `uses` prop of the widget `name`'s outline node.
+    fn uses(doc: &Document, name: &str) -> Value {
+        let root = outline(doc);
+        let widget = root
+            .children
+            .iter()
+            .find(|c| c.path == format!("component:{name}"))
+            .unwrap_or_else(|| panic!("no widget `{name}` in the outline"));
+        widget.props.as_ref().expect("a widget has props")["uses"].clone()
+    }
+
+    #[test]
+    fn a_widget_used_only_in_a_page_header_carries_that_use() {
+        let mut doc = library();
+        doc.pages["overview"].extra.insert(
+            "header".into(),
+            json!({"metrics": [{"name": "due", "component": "loan_card", "args": {"loan": "rows.first"}}]}),
+        );
+        assert_eq!(
+            uses(&doc, "loan_card"),
+            json!([{"path": "page:overview", "trail": "header/metrics/due"}])
+        );
+    }
+
+    #[test]
+    fn a_widget_used_only_in_a_page_kind_carries_that_use_at_the_root() {
+        let mut doc = library();
+        doc.page_kinds.insert(
+            "board_page".into(),
+            json!({"header": {"metrics": [{"name": "due", "component": "badge", "args": {"label": "row.state"}}]}}),
+        );
+        assert_eq!(
+            uses(&doc, "badge"),
+            json!([{"path": "/", "trail": "page_kinds/board_page/header/metrics/due"}])
+        );
+    }
+
+    /// A primitive `badge` has kind `badge` in the outline, as an instance of the widget `badge`
+    /// does; only the instance is a use.
+    #[test]
+    fn a_widget_named_like_a_primitive_carries_only_its_instances() {
+        let mut doc = library();
+        let latest: crate::model::Composite =
+            serde_json::from_value(json!({"component": "badge", "args": {"label": "rows.first"}}))
+                .unwrap();
+        doc.pages["overview"]
+            .sections
+            .insert("latest".into(), Some(latest));
+        assert_eq!(
+            uses(&doc, "badge"),
+            json!([{"path": "page:overview/section:latest"}])
+        );
+        assert_eq!(uses(&doc, "unused"), json!([]));
+    }
+
+    /// Every widget's `uses` are the use sites the docs list for it, in the same order: the
+    /// outline and `/api/docs.md` read one walk.
+    #[test]
+    fn every_widget_carries_the_use_sites_the_docs_list() {
+        let mut doc = library();
+        doc.pages["overview"].extra.insert(
+            "header".into(),
+            json!({"metrics": [
+                {"name": "due", "component": "loan_card", "args": {"loan": "rows.first"}},
+                {"name": "tag", "component": "badge", "args": {"label": "rows.first"}}
+            ]}),
+        );
+        doc.page_kinds.insert(
+            "board_page".into(),
+            json!({"sections": {"s": {"component": "loan_card", "args": {"loan": "row"}}}}),
+        );
+        let docs = docs_markdown(&doc, &Fixtures::default(), &[]);
+        for name in doc.widgets.keys() {
+            let listed: Vec<String> = uses(&doc, name)
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|u| match u.get("trail") {
+                    Some(trail) => format!(
+                        "`{}` (`{}`)",
+                        u["path"].as_str().unwrap(),
+                        trail.as_str().unwrap()
+                    ),
+                    None => format!("`{}`", u["path"].as_str().unwrap()),
+                })
+                .collect();
+            let line = if listed.is_empty() {
+                "Not used yet.".to_owned()
+            } else {
+                format!("Used at: {}", listed.join(", "))
+            };
+            let section = docs.split(&format!("### {name}\n")).nth(1).unwrap();
+            assert!(
+                section.lines().any(|l| l == line),
+                "`{name}`: the outline lists {line:?}, the docs do not"
+            );
+        }
+    }
 }
