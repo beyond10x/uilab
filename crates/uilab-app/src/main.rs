@@ -76,9 +76,9 @@ struct Serve {
     /// Where each run keeps its journal: events.jsonl and one WAV per utterance.
     #[arg(long, default_value_t = default_journal())]
     journal: String,
-    /// Hold every proposal for accept or reject; by default changes apply at once, with undo.
+    /// Apply every proposal at once instead of waiting for accept or reject.
     #[arg(long)]
-    review: bool,
+    auto_apply: bool,
 }
 
 fn default_journal() -> String {
@@ -138,7 +138,7 @@ async fn run(serve: Serve) -> Result<(), String> {
         stt,
         proposer,
         journal: PathBuf::from(&serve.journal),
-        review: serve.review,
+        review: !serve.auto_apply,
     };
 
     let (out, _) = broadcast::channel(1024);
