@@ -2,12 +2,13 @@
 import { computed } from 'vue';
 import type { UilabWireProposalShown as ProposalShown } from '../generated/types.ts';
 import { diffLines, hunks } from '../lib/diff.ts';
-import { accept, reject, select, state } from '../store.ts';
+import { accept, operatorView, reject, select, state } from '../store.ts';
 
 const props = defineProps<{ proposal: ProposalShown }>();
 
 const diff = computed(() => hunks(diffLines(props.proposal.before, props.proposal.after)));
 const opClass = computed(() => `op-${props.proposal.op.toLowerCase()}`);
+const by = computed(() => operatorView(props.proposal.by));
 </script>
 
 <template>
@@ -19,6 +20,9 @@ const opClass = computed(() => `op-${props.proposal.op.toLowerCase()}`);
         →
         <code class="path">{{ proposal.changed }}</code>
       </template>
+      <span v-if="by" class="by small" :style="{ color: by.colour }">
+        by {{ by.kind === 'agent' ? '🤖 ' : '' }}{{ by.local ? 'you' : by.name }}
+      </span>
     </div>
     <p class="utterance">“{{ proposal.utterance }}”</p>
     <div class="diff">

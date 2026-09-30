@@ -2,7 +2,7 @@
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { columnsOf, fieldsOf, isDraftView, propsOf } from '../lib/outline.ts';
-import { isRemoved, marks, requestRows, select, state } from '../store.ts';
+import { isRemoved, marks, requestRows, select, state, tint } from '../store.ts';
 
 const props = defineProps<{ node: OutlineNode }>();
 
@@ -73,7 +73,7 @@ function display(v: unknown): string {
 <template>
   <div
     class="card node"
-    :class="[marks(node.path), { removed: isRemoved(node.path), board: kind === 'board' }]"
+    :class="[marks(node.path), { removed: isRemoved(node.path), board: kind === 'board' }]" :style="tint(node.path)"
     :data-path="node.path"
     @click.stop="select(node.path)"
   >

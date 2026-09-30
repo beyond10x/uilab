@@ -45,6 +45,15 @@ export function lineage(root: OutlineNode, path: string): OutlineNode[] | null {
   return chain;
 }
 
+/** The path of the deepest node of the outline that `path` is or sits under; the root at worst. */
+export function nearestExisting(root: OutlineNode, path: string): string {
+  for (let p: string | null = normalize(path); p !== null; p = parentPath(p)) {
+    const node = findNode(root, p);
+    if (node) return node.path;
+  }
+  return root.path;
+}
+
 /** The page path (`page:<name>`) a path sits on, or `null` when it is not under a page. */
 export function pageOf(path: string): string | null {
   const first = segments(path)[0];

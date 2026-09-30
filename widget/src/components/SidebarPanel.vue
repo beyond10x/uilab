@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { micDown, micUp, say, select, selectedNode, shownOutline, state, undo } from '../store.ts';
+import { micDown, micUp, say, select, selectedBy, selectedNode, shownOutline, state, undo } from '../store.ts';
+import ActivityFeed from './ActivityFeed.vue';
+import PresenceStrip from './PresenceStrip.vue';
 import ProposalCard from './ProposalCard.vue';
 import TreeNode from './TreeNode.vue';
 
@@ -44,6 +46,7 @@ function down(ev: PointerEvent): void {
 <template>
   <div class="side">
     <div class="side-head">
+      <PresenceStrip />
       <div class="conn" :class="`conn-${state.conn}`"><span class="dot"></span>{{ connLabel }}</div>
       <template v-if="doc">
         <div class="doc-title">{{ doc.title || shownOutline?.title || 'untitled' }}</div>
@@ -75,6 +78,7 @@ function down(ev: PointerEvent): void {
       <span class="muted small">selected</span>
       <code>{{ doc?.selected ?? '—' }}</code>
       <span v-if="selectedNode" class="muted small">{{ selectedNode.kind }}</span>
+      <span v-if="selectedBy" class="selected-by small" :style="{ color: selectedBy.colour }">selected by {{ selectedBy.kind === 'agent' ? '🤖 ' : '' }}{{ selectedBy.local ? 'you' : selectedBy.name }}</span>
     </div>
 
     <div class="voice">
@@ -116,5 +120,7 @@ function down(ev: PointerEvent): void {
     <div class="undo-row">
       <button :disabled="!doc?.undoable || !!state.proposal" @click="undo">Undo <kbd>Ctrl+Z</kbd></button>
     </div>
+
+    <ActivityFeed />
   </div>
 </template>

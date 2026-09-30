@@ -4,11 +4,16 @@
 //   "remove …"      → Remove the selected section
 //   "rename …"      → Replace the selected section's title
 //   "refuse …"      → refused;  "fail …" → failed
+// A second operator, the agent "Claude", acts on instructions that start with "claude":
+//   "claude …"        → thinks on the selection, then applies an Insert as `changed`
+//   "claude remove …" → Remove of the selected section;  "claude refuse …" → refused
+//   "claude gap …"    → a `changed` that skips a revision, so the app must resync
 // window.__uilabMock records what the app sent, including the binary audio frames.
 import type {
   UilabWireClientMessage as ClientMessage,
   UilabWireDocumentState as DocumentState,
   UilabWireFinding as Finding,
+  UilabWireOperator as Operator,
   UilabWireOutlineNode as OutlineNode,
   UilabWireProposalShown as ProposalShown,
   UilabWireServerMessage as ServerMessage,
@@ -33,6 +38,8 @@ declare global {
 }
 
 const SPOKEN = 'add a table of overdue loans under the loans page';
+const HUMAN_ID = 'op-human-1';
+const AGENT_ID = 'op-agent-1';
 
 export class MockTransport implements Transport {
   private h: TransportHandlers | null = null;
@@ -43,7 +50,10 @@ export class MockTransport implements Transport {
     selected: 'page:overview',
     outline: libraryOutline(),
     findings: [],
+    revision: 0,
   };
+  private operators: Operator[] = [{ id: AGENT_ID, name: 'Claude', kind: 'agent', last_seen_ms: 0 }];
+  private selectedBy: string | undefined;
   private pending: { proposal: ProposalShown; outline: OutlineNode; findings: Finding[] } | null = null;
   private undoStack: { id: string; outline: OutlineNode; findings: Finding[] }[] = [];
   private seq = 0;
@@ -84,11 +94,24 @@ export class MockTransport implements Transport {
     this.emit({ type: 'document', value: this.doc });
   }
 
+  private emitPresence(): void {
+    this.emit({ type: 'presence', value: { operators: this.operators, selected_by: this.selectedBy } });
+  }
+
   private handle(msg: ClientMessage): void {
     switch (msg.type) {
+      case 'hello':
+        this.operators = [{ id: HUMAN_ID, name: msg.value.name, kind: msg.value.kind, last_seen_ms: 0 }, ...this.operators.filter((o) => o.id !== HUMAN_ID)];
+        this.emitPresence();
+        break;
+      case 'resync':
+        this.emitDocument();
+        break;
       case 'select':
         this.doc.selected = msg.value.path;
+        this.selectedBy = HUMAN_ID;
         this.emitDocument();
+        this.emitPresence();
         break;
       case 'rows': {
         const rows = libraryRows[msg.value.view] ?? { view: msg.value.view, total: 0, rows: [] };
@@ -106,12 +129,14 @@ export class MockTransport implements Transport {
         }
         break;
       case 'say':
-        this.instruct(msg.value.text);
+        if (/^claude\b/i.test(msg.value.text)) this.agent(msg.value.text.toLowerCase(), msg.value.target ?? this.doc.selected);
+        else this.instruct(msg.value.text);
         break;
       case 'accept':
         if (this.pending?.proposal.proposal_id === msg.value.proposal_id) {
           this.undoStack.push({ id: msg.value.proposal_id, outline: this.doc.outline, findings: this.doc.findings });
           this.doc.outline = this.pending.outline;
+          this.doc.revision++;
           this.doc.findings = this.pending.findings;
           this.doc.selected = findNode(this.doc.outline, this.pending.proposal.changed) ? this.pending.proposal.changed : this.pending.proposal.target;
           this.pending = null;
@@ -127,6 +152,7 @@ export class MockTransport implements Transport {
         if (top && top.id === msg.value.proposal_id) {
           this.undoStack.pop();
           this.doc.outline = top.outline;
+          this.doc.revision++;
           this.doc.findings = top.findings;
           if (!findNode(this.doc.outline, this.doc.selected)) this.doc.selected = '/';
         }
@@ -134,6 +160,41 @@ export class MockTransport implements Transport {
         break;
       }
     }
+  }
+
+  /** The agent operator: thinks on `target`, then changes the document directly. */
+  private agent(text: string, target: string): void {
+    this.emit({ type: 'transcript', value: { by: AGENT_ID, text, audio_ms: 0, took_ms: 0 } });
+    this.emit({ type: 'thinking', value: { by: AGENT_ID, target } });
+    setTimeout(() => {
+      if (text.includes('refuse')) {
+        this.emit({ type: 'refused', value: { by: AGENT_ID, check: 'layer.misplaced', message: `a section cannot sit under ${target}` } });
+        return;
+      }
+      const outline = structuredClone(this.doc.outline);
+      let change: { op: 'Insert' | 'Remove'; changed: string; parent: string; node?: OutlineNode };
+      if (text.includes('remove')) {
+        const node = findNode(outline, target);
+        const parent = node && node.layer === 'section' ? findNode(outline, parentPath(node.path) ?? '/') : null;
+        if (!node || !parent) {
+          this.emit({ type: 'failed', value: { by: AGENT_ID, message: 'select a section for the agent to remove' } });
+          return;
+        }
+        parent.children = parent.children.filter((c) => c.path !== node.path);
+        change = { op: 'Remove', changed: node.path, parent: parent.path };
+      } else {
+        const pagePath = pageOf(target) ?? 'page:overview';
+        const page = findNode(outline, pagePath)!;
+        let name = 'agent_note';
+        for (let k = 2; page.children.some((c) => c.name === name); k++) name = `agent_note_${k}`;
+        const node: OutlineNode = { path: `${pagePath}/section:${name}`, layer: 'section', name, kind: 'text', title: 'Added by the agent', children: [] };
+        page.children.push(node);
+        change = { op: 'Insert', changed: node.path, parent: pagePath, node };
+      }
+      this.doc.outline = outline;
+      this.doc.revision += text.includes('gap') ? 2 : 1;
+      this.emit({ type: 'changed', value: { by: AGENT_ID, revision: this.doc.revision, findings: this.doc.findings, ...change } });
+    }, 1200);
   }
 
   private instruct(text: string): void {

@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { childrenOf, findNode, labelOf, navLayout, shellOf } from '../lib/outline.ts';
-import { activePage, highlight, isRemoved, marks, select, shownOutline, showPage, state } from '../store.ts';
+import { activePage, highlight, isRemoved, marks, select, shownOutline, showPage, state, tint } from '../store.ts';
 import CompositeView from './CompositeView.vue';
 
 const root = computed(() => shownOutline.value);
@@ -43,8 +43,8 @@ function openOverlay(o: OutlineNode): void {
   <div v-if="!root" class="canvas-empty">
     <p>{{ state.conn === 'open' ? 'waiting for the document…' : 'connecting to the server…' }}</p>
   </div>
-  <div v-else class="frame node" :class="marks(root.path)" :data-path="root.path" @click="select(root.path)">
-    <header class="frame-bar node" :class="shell ? marks(shell.path) : {}" @click.stop="shell && select(shell.path)">
+  <div v-else class="frame node" :class="marks(root.path)" :style="tint(root.path)" :data-path="root.path" @click="select(root.path)">
+    <header class="frame-bar node" :class="shell ? marks(shell.path) : {}" :style="tint(shell?.path)" @click.stop="shell && select(shell.path)">
       <strong>{{ labelOf(root) }}</strong>
       <span class="muted small">{{ shell ? shell.name : 'no shell' }}</span>
       <span class="spacer"></span>
@@ -52,7 +52,7 @@ function openOverlay(o: OutlineNode): void {
         v-for="r in barRegions"
         :key="r.path"
         class="chip node"
-        :class="[marks(r.path), { removed: isRemoved(r.path) }]"
+        :class="[marks(r.path), { removed: isRemoved(r.path) }]" :style="tint(r.path)"
         @click.stop="select(r.path)"
       >
         {{ r.name }} <span class="muted">{{ r.kind }}</span>
@@ -61,7 +61,7 @@ function openOverlay(o: OutlineNode): void {
         v-for="o in shellOverlays"
         :key="o.path"
         class="chip node"
-        :class="[marks(o.path), { removed: isRemoved(o.path) }]"
+        :class="[marks(o.path), { removed: isRemoved(o.path) }]" :style="tint(o.path)"
         @click.stop="openOverlay(o)"
       >
         ▢ {{ o.title || o.name }}
@@ -71,7 +71,7 @@ function openOverlay(o: OutlineNode): void {
       <nav
         v-if="showNav"
         class="nav-col node"
-        :class="[navRegion ? marks(navRegion.path) : {}, nav ? marks(nav.path) : {}, { removed: nav && isRemoved(nav.path) }]"
+        :class="[navRegion ? marks(navRegion.path) : {}, nav ? marks(nav.path) : {}, { removed: nav && isRemoved(nav.path) }]" :style="tint(nav?.path) ?? tint(navRegion?.path)"
         @click.stop="nav ? select(nav.path) : navRegion && select(navRegion.path)"
       >
         <div class="card-label">nav{{ navRegion ? ` · ${navRegion.kind}` : '' }}</div>
@@ -79,7 +79,7 @@ function openOverlay(o: OutlineNode): void {
           <div
             v-if="g.section"
             class="nav-heading node"
-            :class="[marks(g.section.path), { removed: isRemoved(g.section.path) }]"
+            :class="[marks(g.section.path), { removed: isRemoved(g.section.path) }]" :style="tint(g.section.path)"
             @click.stop="select(g.section.path)"
           >
             {{ g.section.title || g.section.name }}
@@ -90,7 +90,7 @@ function openOverlay(o: OutlineNode): void {
             :key="e.page.path"
             href="#"
             class="nav-page node"
-            :class="[marks(e.page.path), { current: page?.path === e.page.path, removed: isRemoved(e.page.path) }]"
+            :class="[marks(e.page.path), { current: page?.path === e.page.path, removed: isRemoved(e.page.path) }]" :style="tint(e.page.path)"
             @click.stop.prevent="openPage(e.page)"
           >
             {{ e.page.title || e.page.name }}
@@ -98,12 +98,12 @@ function openOverlay(o: OutlineNode): void {
           </a>
         </div>
       </nav>
-      <main class="outlet node" :class="outletRegion ? marks(outletRegion.path) : {}">
+      <main class="outlet node" :class="outletRegion ? marks(outletRegion.path) : {}" :style="tint(outletRegion?.path)">
         <p v-if="changeElsewhere" class="change-note">change at <code>{{ changeElsewhere }}</code></p>
         <div
           v-if="page"
           class="page node"
-          :class="[marks(page.path), { removed: isRemoved(page.path) }]"
+          :class="[marks(page.path), { removed: isRemoved(page.path) }]" :style="tint(page.path)"
           :data-path="page.path"
           @click.stop="select(page.path)"
         >
@@ -114,7 +114,7 @@ function openOverlay(o: OutlineNode): void {
               v-for="o in pageOverlays"
               :key="o.path"
               class="chip node"
-              :class="[marks(o.path), { removed: isRemoved(o.path) }]"
+              :class="[marks(o.path), { removed: isRemoved(o.path) }]" :style="tint(o.path)"
               @click.stop="openOverlay(o)"
             >
               ▢ {{ o.title || o.name }} <span class="muted">{{ o.kind }}</span>

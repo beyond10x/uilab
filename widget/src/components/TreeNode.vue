@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
-import { isRemoved, marks, select, state } from '../store.ts';
+import { isRemoved, marks, select, state, tint } from '../store.ts';
 
 const props = defineProps<{ node: OutlineNode; depth: number }>();
 
@@ -32,7 +32,7 @@ function toggle(): void {
     <div
       class="tree-row"
       :class="[marks(node.path), { removed: isRemoved(node.path) }]"
-      :style="{ paddingLeft: `${depth * 14 + 4}px` }"
+      :style="[{ paddingLeft: `${depth * 14 + 4}px` }, tint(node.path)]"
       :title="node.path"
       @click="select(node.path)"
     >

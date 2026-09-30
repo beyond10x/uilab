@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue';
-import { accept, micDown, micUp, reject, state, undo } from './store.ts';
+import { accept, agentActions, micDown, micUp, reject, selectNearest, state, undo } from './store.ts';
 import CanvasView from './components/CanvasView.vue';
 import SidebarPanel from './components/SidebarPanel.vue';
 
@@ -54,7 +54,20 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app">
-    <div class="canvas-pane"><CanvasView /></div>
+    <div class="canvas-pane">
+      <div v-if="agentActions.length" class="op-banners">
+        <div
+          v-for="a in agentActions"
+          :key="a.op.id"
+          class="op-banner"
+          :style="{ '--op-colour': a.op.colour }"
+          @click="selectNearest(a.target)"
+        >
+          🤖 <strong>{{ a.op.name }}</strong> is operating on <code>{{ a.target }}</code>
+        </div>
+      </div>
+      <CanvasView />
+    </div>
     <aside class="sidebar"><SidebarPanel /></aside>
   </div>
 </template>
