@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-30T08:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:replace-drops",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "wave 2026-09-30 w3 integration gate at 737d0a3: ess validate; task drift; pnpm check 96/96 + build; cargo test --workspace --release 219 passed 0 failed; clippy -D warnings; cargo fmt --check (Taskfile packages)"
+  }
+}

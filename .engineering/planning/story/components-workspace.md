@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:components-workspace
 kind: story
-status: active
+status: implemented
 title: Components workspace in the browser
 relations:
 - decomposes: epic:component-library
@@ -13,10 +13,11 @@ scope:
   path: crates/uilab-app
 - confidence: cited
   path: widget
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T05:00:08Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T05:00:08Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T05:43:39Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

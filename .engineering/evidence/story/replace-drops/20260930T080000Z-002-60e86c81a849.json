@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-30T08:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:replace-drops",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "corrections 89d2c46, 9c5f564, 0c89cb2",
+    "review": "review-result:replace-drops-adversary-2",
+    "outcome": "fixed"
+  }
+}
