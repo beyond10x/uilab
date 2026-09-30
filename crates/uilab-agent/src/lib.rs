@@ -204,11 +204,44 @@ pub fn check_retarget(
     Ok(())
 }
 
-/// Whether `utterance` names a page: says the word, or a page's name or title.
+/// Whether `utterance` names a page: says the word, or a page's name or title, in words that are
+/// not part of a widget name it also says ("the loan card" names the widget `loan_card`, not the
+/// page `loans`; "the page header" names the widget `page_header`).
 fn names_a_page(doc: &Document, utterance: &str) -> bool {
     let said = words(utterance);
-    said.iter().any(|word| same_word(word, "page"))
-        || !named_pages(doc, &NodePath::root(), utterance).is_empty()
+    let mut free = vec![true; said.len()];
+    for widget in doc.widgets.keys() {
+        for (start, len) in runs_of(&said, widget) {
+            free[start..start + len].fill(false);
+        }
+    }
+    let names_freely = |name: &str| {
+        runs_of(&said, name)
+            .into_iter()
+            .any(|(start, len)| free[start..start + len].iter().all(|f| *f))
+    };
+    names_freely("page")
+        || doc.pages.iter().any(|(name, page)| {
+            names_freely(name) || page.title.as_deref().is_some_and(names_freely)
+        })
+}
+
+/// Where `said` says `name` as whole words (underscores as spaces, plurals as [`same_word`]): the
+/// start and length of each run.
+fn runs_of(said: &[String], name: &str) -> Vec<(usize, usize)> {
+    let name = words(name);
+    if name.is_empty() {
+        return Vec::new();
+    }
+    said.windows(name.len())
+        .enumerate()
+        .filter(|(_, run)| {
+            run.iter()
+                .zip(&name)
+                .all(|(spoken, word)| same_word(spoken, word))
+        })
+        .map(|(start, _)| (start, name.len()))
+        .collect()
 }
 
 /// A goal broken into ordered steps, and what planning it took.
@@ -1022,7 +1055,8 @@ page\", \"select the menu\", \"show me the loans page\"), answer `op: retarget` 
 When the instruction names no other place (\"add a column\", \"make this a chart\", \"add a table \
 of overdue loans\" at a page), propose the patch at the target as usual; \"this\" and \"here\" mean \
 the target. On the Components tab, move only to `/` or a `component:` path unless the \
-instruction names a page.";
+instruction names a page; a widget's name does not name one (\"the loan card\" is the widget \
+`loan_card`, not the loans page).";
 
 /// What the planner is told about `ui-spec/1` and its job.
 pub const PLAN_INSTRUCTIONS: &str = "\

@@ -50,6 +50,115 @@ fn a_components_move_to_a_page_is_refused_when_the_instruction_names_only_a_widg
     );
 }
 
+/// The library example with the widgets `names` declared, each a one-node body.
+fn library_with_widgets(names: &[&str]) -> Document {
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library/library.ui.yaml");
+    let text = std::fs::read_to_string(file).unwrap();
+    let widgets: String = names
+        .iter()
+        .map(|name| {
+            format!(
+                "  {name}:\n    summary: A widget.\n    body:\n      - {{name: title, primitive: text, text: Title, style: heading}}\n"
+            )
+        })
+        .collect();
+    let text = text.replacen("\npages:\n", &format!("\nwidgets:\n{widgets}pages:\n"), 1);
+    Document::from_yaml(&text).unwrap()
+}
+
+fn components_move(doc: &Document, from: &str, to: &str, utterance: &str) -> Result<(), String> {
+    check_retarget(
+        doc,
+        &from.parse().unwrap(),
+        &to.parse().unwrap(),
+        utterance,
+        false,
+        Workspace::Components,
+    )
+    .map_err(|refusal| refusal.check)
+}
+
+/// Coordinator decision (round 2): on the Components tab a page counts as named only by a word
+/// that is not part of a widget name the instruction also names. The words left over after the
+/// widget's name still name a page, by its name or by the word "page".
+#[test]
+fn a_components_move_to_a_page_is_admitted_when_words_beside_the_widget_name_the_page() {
+    let doc = library_with_loan_card();
+    assert_eq!(
+        components_move(
+            &doc,
+            "component:loan_card",
+            "page:loans",
+            "put the loan card on the loans page"
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        components_move(
+            &doc,
+            "component:loan_card",
+            "page:loans",
+            "show the loan cards in loans"
+        ),
+        Ok(()),
+        "\"loans\" after the widget's name names the page"
+    );
+    assert_eq!(
+        components_move(
+            &doc,
+            "component:loan_card",
+            "page:loans",
+            "make the loan cards bigger"
+        ),
+        Err("retarget_workspace".to_owned()),
+        "the plural of the widget's name is still the widget"
+    );
+}
+
+/// The same rule holds for every way a page is named: the word "page" inside a widget's name
+/// (`page_header`) and a page's name inside a widget's name (`members_badge`) name the widget.
+#[test]
+fn a_page_word_inside_a_widget_name_names_no_page() {
+    let doc = library_with_widgets(&["page_header", "members_badge"]);
+    assert_eq!(
+        components_move(
+            &doc,
+            "component:page_header",
+            "page:loans",
+            "make the page header bigger"
+        ),
+        Err("retarget_workspace".to_owned())
+    );
+    assert_eq!(
+        components_move(
+            &doc,
+            "component:members_badge",
+            "page:members",
+            "round the members badge"
+        ),
+        Err("retarget_workspace".to_owned())
+    );
+    assert_eq!(
+        components_move(
+            &doc,
+            "component:members_badge",
+            "page:members",
+            "put the members badge on the members page"
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        components_move(
+            &doc,
+            "component:page_header",
+            "component:members_badge",
+            "make the page header look like the members badge"
+        ),
+        Ok(()),
+        "a move among the widgets is not held to the rule"
+    );
+}
+
 /// Answers each turn with the next scripted `answer` call.
 struct ScriptedModel {
     wire: WireId,

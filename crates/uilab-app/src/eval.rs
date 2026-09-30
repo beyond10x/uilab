@@ -111,6 +111,15 @@ pub fn judge(case: &Case, messages: &[Server], ms: u64) -> Outcome {
             after = p.after.clone();
             reasons.push(format!("{got}, expected no proposal after a navigation"));
         }
+        None if moved.is_some_and(|m| m.navigate_only) => {
+            got = format!("moved to {} (navigate only)", moved.map_or("", |m| &m.to.0));
+            let wanted = if case.expect.declined {
+                "a decline"
+            } else {
+                "a proposal"
+            };
+            reasons.push(format!("{got}, expected {wanted}"));
+        }
         None => {
             let why = messages.iter().find_map(|m| match m {
                 Server::Refused(r) => Some(format!("refused {}: {}", r.check, r.message)),
@@ -512,6 +521,58 @@ mod tests {
             !out.reasons.iter().any(|r| r.contains("wait ran out")),
             "{:?}",
             out.reasons
+        );
+    }
+
+    /// Coordinator decision (round 2): a navigation-only move the case did not expect is
+    /// reported as "moved to X (navigate only)", and the reason says what the case wanted.
+    #[test]
+    fn an_unexpected_navigation_names_the_move_and_what_the_case_wanted() {
+        let navigated = [moved("page:members", true)];
+        let wants_a_patch = Expect {
+            op: Some("Insert".into()),
+            ..Expect::default()
+        };
+        let out = judge(&case(wants_a_patch), &navigated, 10);
+        assert_eq!(out.got, "moved to page:members (navigate only)");
+        assert_eq!(
+            out.reasons,
+            ["moved to page:members (navigate only), expected a proposal"]
+        );
+
+        let wants_a_decline = Expect {
+            declined: true,
+            ..Expect::default()
+        };
+        let out = judge(&case(wants_a_decline), &navigated, 10);
+        assert_eq!(out.got, "moved to page:members (navigate only)");
+        assert_eq!(
+            out.reasons,
+            ["moved to page:members (navigate only), expected a decline"]
+        );
+
+        let stays = Expect {
+            stays: true,
+            ..Expect::default()
+        };
+        let out = judge(&case(stays), &navigated, 10);
+        assert_eq!(out.got, "moved to page:members (navigate only)");
+        assert_eq!(
+            out.reasons,
+            [
+                "moved to page:members, expected no move",
+                "moved to page:members (navigate only), expected a proposal"
+            ]
+        );
+
+        let expected_move_then_patch = Expect {
+            moved_to: Some("page:members".into()),
+            ..Expect::default()
+        };
+        let out = judge(&case(expected_move_then_patch), &navigated, 10);
+        assert_eq!(
+            out.reasons,
+            ["moved to page:members (navigate only), expected a proposal"]
         );
     }
 }
