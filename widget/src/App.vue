@@ -5,6 +5,7 @@ import { accept, agentActions, goalBanner, micDown, micUp, operatorView, reject,
 /** The goal's own banner, when no agent banner of its operator already says `goal i/n`. */
 const goalOwner = computed(() => (goalBanner.value && state.goal ? operatorView(state.goal.by) : null));
 const goalOnly = computed(() => !!goalOwner.value && !agentActions.value.some((a) => a.op.id === goalOwner.value!.id));
+import { enterAccepts, type KeyTarget } from './lib/keys.ts';
 import { API } from './remote.ts';
 import CanvasView from './components/CanvasView.vue';
 import ComponentsView from './components/ComponentsView.vue';
@@ -52,7 +53,7 @@ function onKeyDown(ev: KeyboardEvent): void {
   } else if (ev.code === 'Space') {
     ev.preventDefault();
     if (!ev.repeat) void micDown();
-  } else if (ev.key === 'Enter' && state.proposal) {
+  } else if (ev.key === 'Enter' && state.proposal && enterAccepts(ev.target as KeyTarget | null)) {
     ev.preventDefault();
     accept();
   } else if (ev.key === 'Escape') {

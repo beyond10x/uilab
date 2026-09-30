@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { renamed } from '../lib/sidebar.ts';
-import { localId, operatorView, setName, state, type OperatorView } from '../store.ts';
+import { presenceChips, renamed } from '../lib/sidebar.ts';
+import { operatorView, setName, state } from '../store.ts';
 
-/** Operators presence lists, the local one first; before presence names this browser, a pending chip. */
-const chips = computed<(OperatorView & { pending?: boolean })[]>(() => {
-  const listed = state.presence.operators.map((o) => operatorView(o.id)!).sort((a, b) => Number(b.local) - Number(a.local));
-  if (localId.value || state.conn !== 'open') return listed;
-  const self = { id: '', name: state.name, kind: 'human' as const, colour: 'var(--muted)', local: true, pending: true };
-  return [self, ...listed];
-});
+/** Operators presence lists, the local one first, and the local one in every connection state. */
+const chips = computed(() =>
+  presenceChips(
+    state.presence.operators.map((o) => operatorView(o.id)!),
+    state.name,
+    state.conn,
+  ),
+);
 
 const editing = ref(false);
 const draft = ref('');
@@ -32,11 +33,6 @@ function commit(): void {
 function cancel(): void {
   editing.value = false;
 }
-
-function title(o: OperatorView & { pending?: boolean }): string {
-  if (o.local) return o.pending ? 'you (presence does not list this browser yet) · click to rename' : 'you · click to rename';
-  return `${o.name} · ${o.kind} · ${o.id}`;
-}
 </script>
 
 <template>
@@ -47,7 +43,7 @@ function title(o: OperatorView & { pending?: boolean }): string {
       class="op-chip"
       :class="[`op-${o.kind}`, { local: o.local, pending: o.pending, editing: o.local && editing }]"
       :style="{ '--op-colour': o.colour }"
-      :title="title(o)"
+      :title="o.title"
     >
       <span v-if="o.kind === 'agent'" class="glyph">🤖</span>
       <span v-else class="op-dot"></span>
@@ -65,7 +61,7 @@ function title(o: OperatorView & { pending?: boolean }): string {
         />
       </template>
       <button v-else-if="o.local" type="button" class="chip-name" aria-label="rename yourself" @click="edit">{{ o.name }}</button>
-      <template v-else>{{ o.name }}</template>
+      <span v-else class="chip-label">{{ o.name }}</span>
       <span class="op-kind">{{ o.local ? 'you' : o.kind }}</span>
     </span>
   </div>
@@ -77,6 +73,25 @@ function title(o: OperatorView & { pending?: boolean }): string {
   flex-wrap: wrap;
   gap: 4px;
   min-width: 0;
+}
+
+.op-chip {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.op-chip .glyph,
+.op-chip .op-dot,
+.op-chip .op-kind {
+  flex: none;
+}
+
+.chip-name,
+.chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chip-name {

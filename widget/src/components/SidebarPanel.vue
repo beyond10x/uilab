@@ -40,7 +40,6 @@ function down(ev: PointerEvent): void {
         <PresenceStrip />
         <span class="conn" :class="`conn-${state.conn}`" :title="connLabel" role="status" :aria-label="connLabel">
           <span class="dot"></span>
-          <span v-if="state.conn !== 'open'" class="small">{{ connLabel }}</span>
         </span>
         <button
           v-if="doc"
@@ -60,6 +59,7 @@ function down(ev: PointerEvent): void {
         </button>
         <button class="help-button" title="help (?)" aria-label="help" @click="state.helpOpen = true">?</button>
       </div>
+      <div v-if="state.conn !== 'open'" class="conn-line small" :class="`conn-${state.conn}`" aria-hidden="true">{{ connLabel }}</div>
       <ul v-if="doc && findingsOpen" class="findings">
         <li v-for="(f, i) in doc.findings" :key="i" :class="f.severity">
           <code>{{ f.check }}</code> {{ f.message }}
@@ -142,10 +142,12 @@ function down(ev: PointerEvent): void {
 <style scoped>
 .side-head {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
 }
 
 .head-row {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -153,6 +155,10 @@ function down(ev: PointerEvent): void {
 
 .head-row > :first-child {
   flex: 1;
+}
+
+.conn-line {
+  color: var(--muted);
 }
 
 .conn {

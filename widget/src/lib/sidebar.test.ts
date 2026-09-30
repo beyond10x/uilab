@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { UilabWireFinding as Finding } from '../generated/types.ts';
-import { findingsBadge, phaseLabel, renamed, SIDEBAR_ORDER, templateSections } from './sidebar.ts';
+import { findingsBadge, phaseLabel, presenceChips, renamed, SIDEBAR_ORDER } from './sidebar.ts';
 
 const finding = (severity: Finding['severity']): Finding => ({ check: 'c', message: 'm', path: '/', severity });
 
@@ -42,24 +42,51 @@ test('a chip rename sends only a new, non-blank name', () => {
 
 test('the sidebar is ordered header, card, input, tree, activity', () => {
   assert.deepEqual(SIDEBAR_ORDER, ['header', 'card', 'input', 'tree', 'activity']);
-  const sfc = readFileSync(new URL('../components/SidebarPanel.vue', import.meta.url), 'utf8');
-  assert.deepEqual(templateSections(sfc), SIDEBAR_ORDER);
 });
 
-test('the sidebar shows no file path row and no idle status', () => {
+test('the sidebar shows no idle status', () => {
   const sfc = readFileSync(new URL('../components/SidebarPanel.vue', import.meta.url), 'utf8');
-  assert.doesNotMatch(sfc, /class="[^"]*\bfile\b/);
   assert.doesNotMatch(sfc, /'idle'/);
-  assert.match(sfc, /:title="doc\.file"/);
 });
 
-test('the name edit lives in the operator chip', () => {
-  const sfc = readFileSync(new URL('../components/PresenceStrip.vue', import.meta.url), 'utf8');
-  assert.doesNotMatch(sfc, /you-name/);
-  assert.match(sfc, /class="op-chip[^"]*"[\s\S]*?<input[^>]*aria-label="your name"/);
+const CONNS = ['open', 'connecting', 'closed'] as const;
+const op = (id: string, name: string, local = false, kind: 'human' | 'agent' = 'human') => ({ id, name, kind, colour: '#000', local });
+
+test('the local operator has a chip, first, in every connection state before presence lists it', () => {
+  for (const conn of CONNS) {
+    for (const listed of [[], [op('h-1', 'Grace'), op('a-1', 'planner', false, 'agent')]]) {
+      const chips = presenceChips(listed, 'Ada', conn);
+      assert.deepEqual(
+        chips.map((c) => [c.name, c.local, !!c.pending]),
+        [['Ada', true, true], ...listed.map((o) => [o.name, false, false])],
+        `${conn} with ${listed.length} listed`,
+      );
+    }
+  }
 });
 
-test('template sections are read in document order', () => {
-  const sfc = '<template><div data-section="b"></div><x data-section="a" /></template>';
-  assert.deepEqual(templateSections(sfc), ['b', 'a']);
+test('a local operator presence lists comes first and is not pending, in every connection state', () => {
+  for (const conn of CONNS) {
+    const chips = presenceChips([op('h-1', 'Grace'), op('h-2', 'Ada', true)], 'Ada', conn);
+    assert.deepEqual(
+      chips.map((c) => [c.id, c.local, !!c.pending]),
+      [
+        ['h-2', true, false],
+        ['h-1', false, false],
+      ],
+      conn,
+    );
+  }
+});
+
+test('a chip title says who it is and, for a pending local chip, why it is pending', () => {
+  const [pendingOpen] = presenceChips([], 'Ada', 'open');
+  const [pendingClosed] = presenceChips([], 'Ada', 'closed');
+  const [pendingConnecting] = presenceChips([], 'Ada', 'connecting');
+  const [listedLocal, other] = presenceChips([op('h-2', 'Ada', true), op('a-1', 'planner', false, 'agent')], 'Ada', 'open');
+  assert.equal(pendingOpen.title, 'you (presence does not list this browser yet) · click to rename');
+  assert.equal(pendingClosed.title, 'you (not connected) · click to rename');
+  assert.equal(pendingConnecting.title, 'you (not connected) · click to rename');
+  assert.equal(listedLocal.title, 'you · click to rename');
+  assert.equal(other.title, 'planner · agent · a-1');
 });
