@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T03:55:33Z",
+  "actor": "human:timo",
+  "artifact": "story:widget-model",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "VERIFIED (new behaviour): cargo test -p uilab-doc --no-fail-fast on unit/widget-model ed6e305 exit 0, 41 passed 0 failed; baseline wave/2026-09-30-w1 has no widget checks (0 matches for widget_named_like_builtin); coordinator read the round-3 diff: 0 test lines removed",
+    "reference": "~/.cache/uilab-wave-w1/widget-model/baseline.log vs ~/.cache/uilab-wave-w1/widget-model/treatment.log"
+  }
+}
