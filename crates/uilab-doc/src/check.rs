@@ -35,7 +35,7 @@ pub struct Finding {
 }
 
 /// Every check id, with its severity and what it holds.
-pub const CHECKS: [(&str, Severity, &str); 16] = [
+pub const CHECKS: [(&str, Severity, &str); 17] = [
     (
         "format_marker",
         Severity::Error,
@@ -111,6 +111,11 @@ pub const CHECKS: [(&str, Severity, &str); 16] = [
         "widget_resolves",
         Severity::Error,
         "a `component` that is not a composite kind names a declared widget",
+    ),
+    (
+        "names_unique",
+        Severity::Error,
+        "no two nodes of an `item` list share a name",
     ),
 ];
 
@@ -310,6 +315,19 @@ pub fn check(doc: &Document) -> Vec<Finding> {
     }
 
     check_widgets(&mut out, doc);
+
+    // Item lists: a node is addressed by its name, so two siblings cannot share one.
+    for (path, composite) in composites(doc) {
+        for (i, node) in composite.item.iter().enumerate() {
+            if composite.item[..i].iter().any(|n| n.name == node.name) {
+                out.push(
+                    "names_unique",
+                    path.child(Layer::Item, &node.name),
+                    format!("two nodes of the `item` list are named `{}`", node.name),
+                );
+            }
+        }
+    }
 
     // Fixtures.
     let fixtures: HashSet<&str> = doc
@@ -542,7 +560,7 @@ fn uses(widget: &Widget) -> Vec<&str> {
     while let Some(composite) = stack.pop() {
         out.extend(instances_in(composite).into_iter().map(|i| i.widget));
         stack.extend(composite.widgets.values());
-        stack.extend(composite.item.values());
+        stack.extend(composite.item_composites());
     }
     out
 }
@@ -580,8 +598,10 @@ pub fn composites(doc: &Document) -> Vec<(NodePath, &Composite)> {
         for (name, widget) in &composite.widgets {
             walk(path.child(Layer::Widget, name), widget, out);
         }
-        for (name, item) in &composite.item {
-            walk(path.child(Layer::Item, name), item, out);
+        for node in &composite.item {
+            if let Some(item) = node.composite() {
+                walk(path.child(Layer::Item, &node.name), item, out);
+            }
         }
     }
     let root = NodePath::root();
@@ -654,8 +674,16 @@ fn check_composite(
     for (name, widget) in &composite.widgets {
         check_composite(out, &path.child(Layer::Widget, name), widget, overlays, &[]);
     }
-    for (name, item) in &composite.item {
-        check_composite(out, &path.child(Layer::Item, name), item, overlays, &[]);
+    for node in &composite.item {
+        if let Some(item) = node.composite() {
+            check_composite(
+                out,
+                &path.child(Layer::Item, &node.name),
+                item,
+                overlays,
+                &[],
+            );
+        }
     }
 }
 
