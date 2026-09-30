@@ -25,6 +25,7 @@ import {
   type FeedEntry,
   type InFlight,
 } from './lib/collab.ts';
+import { settleCard } from './lib/card.ts';
 import { findNode, homePage, isDraftView, isWithin, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf, segments } from './lib/outline.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
@@ -57,6 +58,7 @@ export const state = shallowReactive({
   conn: 'connecting' as ConnState,
   retryInMs: 0,
   doc: null as DocumentState | null,
+  /** The proposal waiting for accept or reject (the card). */
   proposal: null as ProposalShown | null,
   /** Accept or reject sent; the proposal stays shown until the next document. */
   deciding: false,
@@ -257,16 +259,16 @@ function onChanged(c: Changed): void {
   }
   state.doc = { ...doc, outline, findings: c.findings, revision: c.revision };
   state.revision = c.revision;
-  if (state.deciding) {
-    state.proposal = null;
-    state.deciding = false;
-  }
   const at = flashPath(c);
   flash(at, operatorView(c.by)?.colour ?? 'var(--accent)');
   for (const n of lineage(outline, at)?.slice(0, -1) ?? []) state.expanded.add(n.path);
 }
 
 function onMessage(msg: ServerMessage): void {
+  const card = settleCard({ pending: state.proposal, deciding: state.deciding }, msg);
+  if (card.pending !== state.proposal) state.proposal = card.pending;
+  if (card.deciding !== state.deciding) state.deciding = card.deciding;
+
   const entry = feedEntry(msg, Date.now(), ++feedSeq, state.inFlight);
   if (entry) state.feed = pushFeed(state.feed, entry);
   const inFlight = trackInFlight(state.inFlight, msg);
@@ -279,10 +281,6 @@ function onMessage(msg: ServerMessage): void {
       state.doc = msg.value;
       state.revision = msg.value.revision;
       state.resyncing = false;
-      if (state.deciding) {
-        state.proposal = null;
-        state.deciding = false;
-      }
       if (msg.value.selected !== before) reveal(msg.value.selected);
       break;
     }
@@ -305,8 +303,6 @@ function onMessage(msg: ServerMessage): void {
       state.thinkingTarget = msg.value.target;
       break;
     case 'proposal': {
-      state.proposal = msg.value;
-      state.deciding = false;
       if (local) {
         state.phase = 'idle';
         state.notice = null;
@@ -408,6 +404,7 @@ export function undo(): void {
   state.notice = null;
   send({ type: 'undo', value: { proposal_id: id } });
 }
+
 
 export async function micDown(): Promise<void> {
   if (micHeld || state.phase === 'listening') return;

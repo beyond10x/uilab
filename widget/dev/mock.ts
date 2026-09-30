@@ -51,6 +51,7 @@ export class MockTransport implements Transport {
     outline: libraryOutline(),
     findings: [],
     revision: 0,
+    review: true,
   };
   private operators: Operator[] = [{ id: AGENT_ID, name: 'Claude', kind: 'agent', last_seen_ms: 0 }];
   private selectedBy: string | undefined;

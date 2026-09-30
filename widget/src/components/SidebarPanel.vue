@@ -54,6 +54,7 @@ function down(ev: PointerEvent): void {
       </template>
     </div>
 
+
     <details v-if="doc" class="findings-box">
       <summary>
         <span :class="{ 'count-error': errors.length }">{{ errors.length }} error{{ errors.length === 1 ? '' : 's' }}</span>,
