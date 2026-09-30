@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T18:05:00Z",
+  "actor": "human:timo",
+  "artifact": "story:public-docs-site",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "npm run build (no broken links) at d84ed3d; two independent visual reviews PASS at d84ed3d (reviewer C round 3, reviewer D round 3); GitHub Actions docs run 36755597852 build+deploy success on 2686a1c; https://beyond10x.github.io/uilab/ 200",
+    "reference": "https://github.com/beyond10x/uilab/actions/runs/36755597852"
+  }
+}
