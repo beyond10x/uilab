@@ -160,14 +160,25 @@ test('a new proposal takes the document current when it arrives; no proposal has
 });
 
 test('a derived prop is left out of the comparison; every other prop still counts', () => {
-  assert.deepEqual(DERIVED_PROPS, { component: ['uses'], nav_section: ['pages'] });
+  assert.deepEqual(DERIVED_PROPS, { component: ['uses'] });
   const widget = (props: { [key: string]: EssJsonValue }) => n('component:card', 'component', 'widget', [], { props });
   const section = (props: { [key: string]: EssJsonValue }) =>
     n('nav', 'nav', 'navigation', [n('nav/nav_section:main', 'nav_section', 'nav_section', [], { props })]);
-  const a = n('/', 'root', 'document', [section({ pages: ['a'] }), widget({ arrange: 'column', uses: [] })]);
-  const b = n('/', 'root', 'document', [section({ pages: ['a', 'b'] }), widget({ arrange: 'column', uses: [{ path: 'page:a/section:x' }] })]);
-  assert.equal(outlineMarks(a, b).size, 0);
-  const c = n('/', 'root', 'document', [section({ pages: ['a'], from_view: 'v' }), widget({ arrange: 'row', uses: [] })]);
+  const page = (name: string) => n(`page:${name}`, 'page', 'list_page');
+  // The page `b` the proposal adds is its own change, not its section's.
+  const a = n('/', 'root', 'document', [section({ pages: ['a'] }), widget({ arrange: 'column', uses: [] }), page('a')]);
+  const b = n('/', 'root', 'document', [
+    section({ pages: ['a', 'b'] }),
+    widget({ arrange: 'column', uses: [{ path: 'page:a/section:x' }] }),
+    page('a'),
+    page('b'),
+  ]);
+  assert.deepEqual(asObject(outlineMarks(a, b)), { 'page:b': 'added' });
+  // A reorder is the section's own change.
+  const r1 = n('/', 'root', 'document', [section({ pages: ['a', 'b'] }), page('a'), page('b')]);
+  const r2 = n('/', 'root', 'document', [section({ pages: ['b', 'a'] }), page('a'), page('b')]);
+  assert.deepEqual(asObject(outlineMarks(r1, r2)), { 'nav/nav_section:main': 'changed' });
+  const c = n('/', 'root', 'document', [section({ pages: ['a'], from_view: 'v' }), widget({ arrange: 'row', uses: [] }), page('a')]);
   assert.deepEqual(asObject(outlineMarks(a, c)), { 'component:card': 'changed', 'nav/nav_section:main': 'changed' });
   // The same key on another layer is the document's own prop.
   const s = (props: { [key: string]: EssJsonValue }) =>
@@ -201,5 +212,10 @@ test('only removed pages come back into a section; a page the proposal moves els
   const d = navDoc([['a', ['overview', 'loans']], ['b', ['members']]], ['overview', 'loans', 'members']);
   const p = navDoc([['a', ['overview']], ['b', ['loans']]], ['overview', 'loans']);
   assert.deepEqual(menu(withRemoved(d, p)), [['overview'], ['members', 'loans']]);
-  assert.deepEqual(asObject(outlineMarks(d, p)), { 'page:members': 'removed' });
+  // Moving `loans` from `a` to `b` changes both sections; `members` is removed.
+  assert.deepEqual(asObject(outlineMarks(d, p)), {
+    'nav/nav_section:a': 'changed',
+    'nav/nav_section:b': 'changed',
+    'page:members': 'removed',
+  });
 });

@@ -20,29 +20,45 @@ function sameJson(a: unknown, b: unknown): boolean {
 
 /**
  * Props the server derives from other nodes rather than reads from the node itself, by layer: a
- * widget's `uses` (its instances) and a menu section's `pages` (a page Remove drops the page from
- * them). A change to one of these is a change elsewhere, so it does not make the node changed.
+ * widget's `uses` (its instances). A change to one of these is a change elsewhere, so it does not
+ * make the node changed.
  */
 export const DERIVED_PROPS: Readonly<Record<string, readonly string[]>> = {
   component: ['uses'],
-  nav_section: ['pages'],
 };
 
-/** The node's own props: its props without the ones derived for its layer. */
-function ownProps(node: OutlineNode): unknown {
+/** The pages a proposal takes out and brings in, by name. */
+interface PageChange {
+  removed: Set<string>;
+  added: Set<string>;
+}
+
+/**
+ * The node's own props: its props without the ones derived for its layer. A menu section's
+ * `pages` is its own list, but a page Remove also drops the page from it and a page Insert adds
+ * it: those entries are the page's change, so the document side leaves out removed pages and the
+ * proposal side added ones. A move or a reorder still differs.
+ */
+function ownProps(node: OutlineNode, side: 'doc' | 'proposal', pages: PageChange): unknown {
   const derived = DERIVED_PROPS[node.layer];
   const p = node.props ?? null;
-  if (!derived || !p || typeof p !== 'object' || Array.isArray(p)) return p;
-  return Object.fromEntries(Object.entries(p).filter(([k]) => !derived.includes(k)));
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return p;
+  let own = derived ? Object.fromEntries(Object.entries(p).filter(([k]) => !derived.includes(k))) : p;
+  const list = (own as Record<string, unknown>).pages;
+  if (node.layer === 'nav_section' && Array.isArray(list)) {
+    const skip = side === 'doc' ? pages.removed : pages.added;
+    own = { ...own, pages: list.filter((name) => !(typeof name === 'string' && skip.has(name))) };
+  }
+  return own;
 }
 
 /** Whether the node itself differs, children aside: its own props, title, kind or view. */
-function nodeDiffers(a: OutlineNode, b: OutlineNode): boolean {
+function nodeDiffers(a: OutlineNode, b: OutlineNode, pages: PageChange): boolean {
   return (
     a.kind !== b.kind ||
     (a.title ?? null) !== (b.title ?? null) ||
     (a.view ?? null) !== (b.view ?? null) ||
-    !sameJson(ownProps(a), ownProps(b))
+    !sameJson(ownProps(a, 'doc', pages), ownProps(b, 'proposal', pages))
   );
 }
 
@@ -55,13 +71,13 @@ function byPath(nodes: OutlineNode[]): Map<string, OutlineNode> {
   return new Map(nodes.map((c) => [normalize(c.path), c]));
 }
 
-function compare(doc: OutlineNode, proposal: OutlineNode, out: Map<string, Mark>): void {
-  if (nodeDiffers(doc, proposal)) out.set(normalize(proposal.path), 'changed');
+function compare(doc: OutlineNode, proposal: OutlineNode, out: Map<string, Mark>, pages: PageChange): void {
+  if (nodeDiffers(doc, proposal, pages)) out.set(normalize(proposal.path), 'changed');
   const docKids = byPath(doc.children);
   const proposalKids = byPath(proposal.children);
   for (const c of proposal.children) {
     const before = docKids.get(normalize(c.path));
-    if (before) compare(before, c, out);
+    if (before) compare(before, c, out, pages);
     else markSubtree(c, 'added', out);
   }
   for (const c of doc.children) if (!proposalKids.has(normalize(c.path))) markSubtree(c, 'removed', out);
@@ -74,7 +90,13 @@ function compare(doc: OutlineNode, proposal: OutlineNode, out: Map<string, Mark>
  */
 export function outlineMarks(doc: OutlineNode, proposal: OutlineNode): Map<string, Mark> {
   const out = new Map<string, Mark>();
-  compare(doc, proposal, out);
+  const before = new Set(pagesOf(doc).map((p) => p.name));
+  const after = new Set(pagesOf(proposal).map((p) => p.name));
+  const pages: PageChange = {
+    removed: new Set([...before].filter((name) => !after.has(name))),
+    added: new Set([...after].filter((name) => !before.has(name))),
+  };
+  compare(doc, proposal, out, pages);
   return out;
 }
 
