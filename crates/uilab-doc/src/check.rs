@@ -1,7 +1,8 @@
 //! The document checks: the `checks` of `ui-spec/1` that apply to this subset, plus the ones the
 //! subset adds. Ids that exist in `ui-spec/1` keep its spelling.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -14,7 +15,7 @@ use crate::model::{
 use crate::path::{Layer, NodePath, NodeRef, children, resolve};
 
 /// How much a finding matters. An error refuses a patch that introduces it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     /// The document is wrong.
@@ -24,7 +25,7 @@ pub enum Severity {
 }
 
 /// One check that does not hold, at one node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct Finding {
     /// Id of the check.
     pub check: &'static str,
@@ -434,6 +435,7 @@ pub fn check(doc: &Document) -> Vec<Finding> {
     }
 
     check_widgets(&mut out, doc);
+    widget_opens(&mut out, doc);
 
     // Item lists: a node is addressed by its name, so two siblings cannot share one.
     for (path, composite) in composites(doc) {
@@ -504,7 +506,7 @@ fn check_widgets(out: &mut Findings, doc: &Document) {
     for (path, instance) in widget_uses(doc) {
         let name = instance.widget;
         let at = instance
-            .trail
+            .key
             .as_ref()
             .map_or(String::new(), |t| format!("`{t}`: "));
         let Some(widget) = doc.widgets.get(name) else {
@@ -529,11 +531,261 @@ fn check_widgets(out: &mut Findings, doc: &Document) {
     }
 }
 
+/// `opens_resolves` inside widget bodies, as ess WidgetInstance expansion says: at each use site
+/// [`widget_uses`] finds on a page or in a shell overlay, every `opens` of the used widget's body,
+/// through nested widgets, against the overlays of that page and its shell (or of that shell),
+/// at the instance's own path, a [`NodePath`] that selects it; `<instance path>/body/<node>` is not
+/// one, so the message names the body trail, and the instance's trail through untyped data when it
+/// has one. `args.<param>` is substituted first (see [`Opened::at`]). A use in another widget's
+/// body counts only through that widget's own uses, and a use in `page_kinds` sits on no page, so
+/// neither reports by itself.
+fn widget_opens(out: &mut Findings, doc: &Document) {
+    let mut expander = Expander::new(doc);
+    for (path, instance) in widget_uses(doc) {
+        let Some((reachable, declarer)) = overlays_at(doc, &path) else {
+            continue;
+        };
+        let widget = doc.widgets.get(instance.widget);
+        let expanded = expander.body(instance.widget);
+        let at = match &instance.key {
+            Some(key) => format!(" at `{key}`"),
+            None => String::new(),
+        };
+        for (node, opened) in expanded.iter() {
+            let Some(opened) = opened.at(widget, instance.args) else {
+                continue;
+            };
+            if !reachable.contains(&opened.as_str()) {
+                out.push(
+                    "opens_resolves",
+                    &path,
+                    format!(
+                        "widget `{}`{at}, body `body/{node}`, opens `{opened}`, which {declarer}",
+                        instance.widget
+                    ),
+                );
+            }
+        }
+    }
+}
+
+/// An `opens` in a widget body: an overlay as written, or `args.<param>`, which each instance binds.
+#[derive(Debug, Clone)]
+enum Opened {
+    Overlay(String),
+    Arg(String),
+}
+
+impl Opened {
+    /// What a body's `opens` names; `None` for `args.<param>.<field>`, which no static check can
+    /// judge.
+    fn written(text: String) -> Option<Self> {
+        match text.strip_prefix("args.") {
+            None => Some(Opened::Overlay(text)),
+            Some(param) if !param.is_empty() && !param.contains('.') => {
+                Some(Opened::Arg(param.to_owned()))
+            }
+            Some(_) => None,
+        }
+    }
+
+    /// The overlay it names at a use of `widget` on a page or shell: [`Opened::bind`], where an
+    /// `args.<param>` still left has no holder to bind it.
+    fn at(&self, widget: Option<&Widget>, args: Option<&Value>) -> Option<String> {
+        match self.bind(widget, args)? {
+            Opened::Overlay(name) => Some(name),
+            Opened::Arg(_) => None,
+        }
+    }
+
+    /// What it names at an instance of `widget` with `args`: `args.<param>` is the value the
+    /// instance binds, else the param's `default`. A bound `args.<param>` passes the holder's own
+    /// param through, for the holder's instance to bind. `None` when that cannot be judged
+    /// statically: the param is unbound with no default, or bound to a non-string, a field of an
+    /// arg, or a runtime reference (`row`, `rows`, or a path under one).
+    fn bind(&self, widget: Option<&Widget>, args: Option<&Value>) -> Option<Opened> {
+        let param = match self {
+            Opened::Overlay(name) => return Some(Opened::Overlay(name.clone())),
+            Opened::Arg(param) => param,
+        };
+        let bound = args
+            .and_then(|a| a.as_object())
+            .and_then(|a| a.get(param))
+            .or_else(|| widget?.params.get(param)?.default.as_ref())?;
+        match bound {
+            Value::String(text) if text.starts_with("args.") => Opened::written(text.clone()),
+            Value::String(name) if !is_reference(name) => Some(Opened::Overlay(name.clone())),
+            _ => None,
+        }
+    }
+}
+
+/// The shallower of two places on the expansion stack, either of which may be absent.
+fn shallowest(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// Whether a bound value is an expression read at run time rather than a name as written.
+fn is_reference(text: &str) -> bool {
+    ["row", "rows", "args"].into_iter().any(|root| {
+        text.strip_prefix(root)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+    })
+}
+
+/// The overlays an `opens` in a node at `path` may name, with the end of the message that says
+/// who does not declare one: a page's and its shell's, or a shell's own. `None` off every page
+/// and shell.
+fn overlays_at<'a>(doc: &'a Document, path: &NodePath) -> Option<(Vec<&'a str>, String)> {
+    let first = path.0.first()?;
+    match first.layer {
+        Layer::Page => {
+            let page = doc.pages.get(&first.name)?;
+            let mut reachable: Vec<&str> = page.overlays.keys().map(String::as_str).collect();
+            if let Some(shell) = doc.shell_of(page).and_then(|s| doc.shells.get(s)) {
+                reachable.extend(shell.overlays.keys().map(String::as_str));
+            }
+            Some((reachable, "neither the page nor its shell declares".into()))
+        }
+        Layer::Shell => {
+            let shell = doc.shells.get(&first.name)?;
+            Some((
+                shell.overlays.keys().map(String::as_str).collect(),
+                format!("shell `{}` does not declare", first.name),
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Each `opens` of a body node: the node's path relative to the body, and what it opens, with the
+/// `args.<param>` of the body itself left for each instance to bind.
+type BodyOpens = Rc<Vec<(String, Opened)>>;
+
+/// Expands widget bodies for [`widget_opens`]: every `opens` a widget's body holds, through the
+/// widgets it uses, each nested instance's `args` substituted. A widget already being expanded is
+/// not expanded again, so a body that recurs (a `widget_recursion` error) stops where it recurs.
+/// An expansion is kept for reuse unless it stopped at a widget expanded around it: where such a
+/// recursion stops depends on the widgets being expanded outside it, so reusing it under another
+/// use would make the findings depend on the order of the uses. A recursion that closes inside the
+/// expansion (at the widget itself or one below it) stops the same way wherever it is expanded.
+struct Expander<'a> {
+    doc: &'a Document,
+    done: HashMap<&'a str, BodyOpens>,
+    expanding: Vec<&'a str>,
+    /// The shallowest place on `expanding` at which an expansion under way stopped at a recursion.
+    stopped_at: Option<usize>,
+}
+
+impl<'a> Expander<'a> {
+    fn new(doc: &'a Document) -> Self {
+        Expander {
+            doc,
+            done: HashMap::new(),
+            expanding: Vec::new(),
+            stopped_at: None,
+        }
+    }
+
+    /// The expanded `opens` of widget `name`'s body; nothing for an undeclared widget.
+    fn body(&mut self, name: &'a str) -> BodyOpens {
+        if let Some(done) = self.done.get(name) {
+            return Rc::clone(done);
+        }
+        let Some(widget) = self.doc.widgets.get(name) else {
+            return Rc::default();
+        };
+        if self.expanding.contains(&name) {
+            let depth = self.expanding.iter().position(|w| *w == name);
+            self.stopped_at = shallowest(self.stopped_at, depth);
+            return Rc::default();
+        }
+        let outer = self.stopped_at.take();
+        let depth = self.expanding.len();
+        self.expanding.push(name);
+        let mut found = Vec::new();
+        for node in &widget.body {
+            self.node(node.name.clone(), node, &mut found);
+        }
+        self.expanding.pop();
+        let found = Rc::new(found);
+        let inner = self.stopped_at.filter(|at| *at < depth);
+        if inner.is_none() {
+            self.done.insert(name, Rc::clone(&found));
+        }
+        self.stopped_at = shallowest(outer, inner);
+        found
+    }
+
+    fn node(&mut self, at: String, node: &'a Node, found: &mut Vec<(String, Opened)>) {
+        match &node.body {
+            NodeBody::Composite(c) => self.composite(at, c, found),
+            NodeBody::Primitive(p) => {
+                self.props(&at, &p.props, instances_in_props(&p.props), found)
+            }
+        }
+    }
+
+    /// A composite of a body: its props and the widget it may be, then its board widgets and
+    /// items, however deep.
+    fn composite(
+        &mut self,
+        at: String,
+        composite: &'a Composite,
+        found: &mut Vec<(String, Opened)>,
+    ) {
+        self.props(&at, &composite.props, instances_in(composite), found);
+        for (name, widget) in &composite.widgets {
+            self.composite(format!("{at}/{}:{name}", Layer::Widget), widget, found);
+        }
+        for node in &composite.item {
+            self.node(format!("{at}/{}:{}", Layer::Item, node.name), node, found);
+        }
+    }
+
+    /// The `opens` in one node's props, and the expanded bodies of the widgets it instantiates,
+    /// each with the `args` its instance binds substituted; what an instance cannot bind
+    /// statically is dropped.
+    fn props(
+        &mut self,
+        at: &str,
+        props: &IndexMap<String, Value>,
+        instances: Vec<Instance<'a>>,
+        found: &mut Vec<(String, Opened)>,
+    ) {
+        let value = Value::Object(props.clone().into_iter().collect());
+        found.extend(
+            opens(&value)
+                .into_iter()
+                .filter_map(Opened::written)
+                .map(|o| (at.to_owned(), o)),
+        );
+        for instance in instances {
+            let used = match &instance.key {
+                Some(key) => format!("{at}/{key}"),
+                None => at.to_owned(),
+            };
+            let widget = self.doc.widgets.get(instance.widget);
+            for (inner, opened) in self.body(instance.widget).iter() {
+                if let Some(bound) = opened.bind(widget, instance.args) {
+                    found.push((format!("{used}/body/{inner}"), bound));
+                }
+            }
+        }
+    }
+}
+
 /// A widget instance: a typed composite, or one written in untyped data.
 pub(crate) struct Instance<'a> {
     /// From the node that holds it to the instance through untyped data (`children/badge`,
     /// `header/metrics/due`); `None` for a typed composite, which is the node itself.
     pub(crate) trail: Option<String>,
+    /// The trail as findings name it, so that putting an entry before it in a list does not move
+    /// it: an unnamed list entry is the widget's name when it is the instance itself, else `*`.
+    pub(crate) key: Option<String>,
     /// The widget it names.
     pub(crate) widget: &'a str,
     /// Its `args`.
@@ -568,14 +820,14 @@ pub(crate) fn widget_uses(doc: &Document) -> Vec<(NodePath, Instance<'_>)> {
     for (name, page) in &doc.pages {
         if let Some(header) = page.extra.get("header") {
             let mut found = Vec::new();
-            walk_value(header, "header".into(), &mut found);
+            walk_value(header, Trail::new("header"), &mut found);
             let at = root.child(Layer::Page, name);
             out.extend(found.into_iter().map(|i| (at.clone(), i)));
         }
     }
     for (kind, value) in &doc.page_kinds {
         let mut found = Vec::new();
-        walk_value(value, format!("page_kinds/{kind}"), &mut found);
+        walk_value(value, Trail::new(&format!("page_kinds/{kind}")), &mut found);
         out.extend(found.into_iter().map(|i| (root.clone(), i)));
     }
     out
@@ -591,6 +843,7 @@ fn instances_in(composite: &Composite) -> Vec<Instance<'_>> {
     if let Some(name) = composite.component.widget() {
         out.push(Instance {
             trail: None,
+            key: None,
             widget: name,
             args: composite.args(),
         });
@@ -604,39 +857,69 @@ fn instances_in_props(props: &IndexMap<String, Value>) -> Vec<Instance<'_>> {
     let mut out = Vec::new();
     for (key, value) in props {
         if key != "args" {
-            walk_value(value, key.clone(), &mut out);
+            walk_value(value, Trail::new(key), &mut out);
         }
     }
     out
 }
 
+/// Where [`walk_value`] is in untyped data: the trail the docs show, which names an unnamed list
+/// entry by its index, and the key findings use, which does not (see [`Instance::key`]).
+struct Trail {
+    shown: String,
+    key: String,
+}
+
+impl Trail {
+    fn new(start: &str) -> Self {
+        Trail {
+            shown: start.to_owned(),
+            key: start.to_owned(),
+        }
+    }
+
+    fn child(&self, shown: &str, key: &str) -> Self {
+        Trail {
+            shown: format!("{}/{shown}", self.shown),
+            key: format!("{}/{key}", self.key),
+        }
+    }
+}
+
+/// The widget an untyped object instantiates: its `component`, when that is not a composite kind.
+fn widget_named(value: &Value) -> Option<&str> {
+    value
+        .get("component")
+        .and_then(Value::as_str)
+        .filter(|name| CompositeKind::parse(name).is_none())
+}
+
 /// Every widget instance under untyped data, however deep: any object whose `component` is not a
 /// composite kind. An `args` value is data, not nodes, and is not searched.
-fn walk_value<'a>(value: &'a Value, trail: String, out: &mut Vec<Instance<'a>>) {
+fn walk_value<'a>(value: &'a Value, trail: Trail, out: &mut Vec<Instance<'a>>) {
     match value {
         Value::Object(map) => {
-            if let Some(Value::String(name)) = map.get("component")
-                && CompositeKind::parse(name).is_none()
-            {
+            if let Some(name) = widget_named(value) {
                 out.push(Instance {
-                    trail: Some(trail.clone()),
+                    trail: Some(trail.shown.clone()),
+                    key: Some(trail.key.clone()),
                     widget: name,
                     args: map.get("args"),
                 });
             }
             for (key, v) in map {
                 if key != "args" {
-                    walk_value(v, format!("{trail}/{key}"), out);
+                    walk_value(v, trail.child(key, key), out);
                 }
             }
         }
         Value::Array(items) => {
             for (i, item) in items.iter().enumerate() {
-                let segment = item
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map_or(i.to_string(), str::to_owned);
-                walk_value(item, format!("{trail}/{segment}"), out);
+                let child = match item.get("name").and_then(Value::as_str) {
+                    Some(name) => trail.child(name, name),
+                    None => trail.child(&i.to_string(), widget_named(item).unwrap_or("*")),
+                };
+                walk_value(item, child, out);
             }
         }
         _ => {}
