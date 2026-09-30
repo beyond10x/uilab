@@ -14,7 +14,7 @@ export function yamlLines(text: string): string[] {
   return text.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n');
 }
 
-const NUMBER = /^(?:[-+]?(?:\d[\d_]*(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|0x[0-9a-fA-F]+|0o[0-7]+|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/;
+const NUMBER = /^(?:[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|0x[0-9a-fA-F]+|0o[0-7]+|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/;
 const LITERAL = /^(?:true|True|TRUE|false|False|FALSE|null|Null|NULL|~)$/;
 const BLOCK_SCALAR = /^[|>][-+0-9]*$/;
 const FLOW_DELIM = '[]{},';
@@ -166,6 +166,16 @@ export function yamlTokens(text: string): Token[][] {
       break;
     }
     if (t.done()) return t.out;
+    // A block scalar as a list entry (`- |-`, how serde_yaml writes a multi-line string in a list)
+    // has no key: it belongs to the dash.
+    const entry = t.plainEnd(false);
+    if (BLOCK_SCALAR.test(line.slice(t.pos, entry))) {
+      t.push(entry, 'punct');
+      scalarIndent = owner;
+      t.space();
+      if (!t.comment()) t.push(line.length, 'string');
+      return t.out;
+    }
     const c = line[t.pos];
     const keyAt = t.pos;
     if (c !== '[' && c !== '{' && t.scalar(false)) {
