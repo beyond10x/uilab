@@ -365,8 +365,13 @@ non-draft view name.
 Names of new nodes (sections, overlays, pages, widgets, items) are short, lower-case, and use \
 underscores: `overdue`, `due_soon`. They must be unique among their siblings. Use `insert` to \
 add a child under the target, `replace` to change the target node itself (give the whole new \
-node, keeping what the operator did not ask to change), and `remove` to delete it. Prefer the \
-smallest change: insert under the node the operator points at rather than replacing its parent. \
+node, keeping what the operator did not ask to change), and `remove` to delete it. When the \
+instruction changes the pointed-at node itself (its columns, title, fields, actions or props: \
+\"also show X\", \"rename this\", \"add a column\"), use `replace` on that node; use `insert` only \
+for a new child, and never replace a parent to add one child. When one instruction needs more \
+than one node changed, use `batch` with `patches` in order, each with its own `target`: for \
+example a row action that opens a drawer is an `insert` of the drawer overlay on the page \
+followed by a `replace` of the collection adding `row_actions: [{opens: <drawer>}]`. \
 Columns, a metric's `from` and form or record fields name fields of the rows the composite \
 reads; when a view's fields are listed, use only those, and read a `draft.` view when the data \
 asked for is not among them. An `opens` \

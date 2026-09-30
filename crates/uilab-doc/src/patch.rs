@@ -30,6 +30,15 @@ pub enum Patch {
         /// Path of the node.
         target: NodePath,
     },
+    /// Several patches admitted together, in order: what one instruction needs when it touches
+    /// more than one node (a drawer and the row action that opens it). The checks run once, on
+    /// the result of all of them.
+    Batch {
+        /// The node the operator pointed at.
+        target: NodePath,
+        /// The patches; none of them is a batch.
+        patches: Vec<Patch>,
+    },
 }
 
 /// A node inserted by a patch.
@@ -52,7 +61,8 @@ impl Patch {
         match self {
             Patch::Insert { target, .. }
             | Patch::Replace { target, .. }
-            | Patch::Remove { target } => target,
+            | Patch::Remove { target }
+            | Patch::Batch { target, .. } => target,
         }
     }
 
@@ -62,14 +72,31 @@ impl Patch {
             Patch::Insert { .. } => "Insert",
             Patch::Replace { .. } => "Replace",
             Patch::Remove { .. } => "Remove",
+            Patch::Batch { .. } => "Batch",
         }
     }
 
-    /// The path of the node that changed: the new child for an insert.
+    /// The path of the node that changed: the new child for an insert; for a batch, the nearest
+    /// node that holds every change.
     pub fn changed_path(&self) -> NodePath {
         match self {
             Patch::Insert { target, child } => target.child(child.layer, &child.name),
             Patch::Replace { target, .. } | Patch::Remove { target } => target.clone(),
+            Patch::Batch { patches, .. } => {
+                let mut paths = patches.iter().map(Patch::changed_path);
+                let first = paths.next().unwrap_or_default();
+                paths.fold(first, |common, path| {
+                    NodePath(
+                        common
+                            .0
+                            .iter()
+                            .zip(&path.0)
+                            .take_while(|(a, b)| a == b)
+                            .map(|(a, _)| a.clone())
+                            .collect(),
+                    )
+                })
+            }
         }
     }
 }
@@ -150,6 +177,24 @@ fn apply_unchecked(doc: &mut Document, patch: &Patch) -> Result<(), Refusal> {
         Patch::Insert { target, child } => insert(doc, target, child),
         Patch::Replace { target, node } => replace(doc, target, node),
         Patch::Remove { target } => remove(doc, target),
+        Patch::Batch { patches, .. } => {
+            if patches.is_empty() {
+                return Err(Refusal::new(
+                    "batch_shape",
+                    "a batch holds at least one patch",
+                ));
+            }
+            for (i, patch) in patches.iter().enumerate() {
+                if matches!(patch, Patch::Batch { .. }) {
+                    return Err(Refusal::new("batch_shape", "a batch cannot hold a batch"));
+                }
+                apply_unchecked(doc, patch).map_err(|r| Refusal {
+                    check: r.check,
+                    message: format!("patch {} of {}: {}", i + 1, patches.len(), r.message),
+                })?;
+            }
+            Ok(())
+        }
     }
 }
 

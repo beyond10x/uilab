@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 1a75f0421d837e2ee884066ba29e42b368e91a0d2fb46630399bf48ac98fa437
-// contract digest 1419f72b14d91b0b3ee89f6e567db8160920e8728d07d1772d1e9b0cc5848690
+// model digest 671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf
+// contract digest 989bc1e79ee0eb257a75b80b6e076c650ce3b2d5d73883df0f19629de0ee462c
 // do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
@@ -77,6 +77,7 @@ pub fn encode_uilab_session_patch_op(value: &uilab_types::session::PatchOp, out:
         uilab_types::session::PatchOp::Insert => json::push_text(out, "Insert"),
         uilab_types::session::PatchOp::Replace => json::push_text(out, "Replace"),
         uilab_types::session::PatchOp::Remove => json::push_text(out, "Remove"),
+        uilab_types::session::PatchOp::Batch => json::push_text(out, "Batch"),
     }
 }
 
@@ -86,11 +87,12 @@ pub fn encode_uilab_session_patch_op(value: &uilab_types::session::PatchOp, out:
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_uilab_session_patch_op(value: &json::Value, at: &str) -> Result<uilab_types::session::PatchOp, json::DecodeError> {
-    Ok(match json::text_at(value, at, "one of `Insert`, `Replace`, `Remove`")? {
+    Ok(match json::text_at(value, at, "one of `Insert`, `Replace`, `Remove`, `Batch`")? {
         "Insert" => uilab_types::session::PatchOp::Insert,
         "Replace" => uilab_types::session::PatchOp::Replace,
         "Remove" => uilab_types::session::PatchOp::Remove,
-        other => return Err(json::DecodeError { at: at.to_owned(), expected: "one of `Insert`, `Replace`, `Remove`".to_owned(), found: format!("`{other}`") }),
+        "Batch" => uilab_types::session::PatchOp::Batch,
+        other => return Err(json::DecodeError { at: at.to_owned(), expected: "one of `Insert`, `Replace`, `Remove`, `Batch`".to_owned(), found: format!("`{other}`") }),
     })
 }
 

@@ -542,10 +542,12 @@ impl App {
             return;
         };
         let changed = patch.changed_path();
-        if matches!(
-            changed.layer(),
-            Layer::Page | Layer::NavSection | Layer::Shell
-        ) {
+        if matches!(patch, Patch::Batch { .. })
+            || matches!(
+                changed.layer(),
+                Layer::Page | Layer::NavSection | Layer::Shell
+            )
+        {
             self.send_document();
             return;
         }
@@ -641,11 +643,15 @@ impl App {
             )),
             Patch::Replace { node, .. } => Some(body_from_json(node)),
             Patch::Remove { .. } => None,
+            Patch::Batch { patches, .. } => {
+                Some(body_from_json(&serde_json::json!({"patches": patches})))
+            }
         };
         let op = match &patch {
             Patch::Insert { .. } => s::PatchOp::Insert,
             Patch::Replace { .. } => s::PatchOp::Replace,
             Patch::Remove { .. } => s::PatchOp::Remove,
+            Patch::Batch { .. } => s::PatchOp::Batch,
         };
         let outcome = self.port.propose_patch(s::ProposePatch {
             document_id: self.document_id.clone(),

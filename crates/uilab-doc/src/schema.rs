@@ -21,9 +21,19 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
         ops.push("replace");
         ops.push("remove");
     }
+    ops.push("batch");
 
     let mut properties = serde_json::Map::new();
-    properties.insert("op".into(), json!({"enum": ops, "description": "insert adds a child under target; replace swaps the node at target; remove deletes it"}));
+    properties.insert("op".into(), json!({"enum": ops, "description": "insert adds a child under target; replace swaps the node at target; remove deletes it; batch applies `patches` together, for one instruction that must change more than one node"}));
+    properties.insert(
+        "patches".into(),
+        json!({
+            "description": "for batch only: the patches, applied in order and checked together; each names its own target",
+            "type": "array",
+            "minItems": 2,
+            "items": {"$ref": "#/$defs/patch"},
+        }),
+    );
     properties.insert("target".into(), json!({"const": path.to_string()}));
     if !children.is_empty() {
         let variants: Vec<Value> = children.iter().map(|l| child_variant(doc, *l)).collect();
@@ -109,6 +119,26 @@ fn defs(doc: &Document) -> Value {
     }
 
     json!({
+        "patch": {
+            "type": "object",
+            "required": ["op", "target"],
+            "additionalProperties": false,
+            "properties": {
+                "op": {"enum": ["insert", "replace", "remove"]},
+                "target": {"type": "string", "description": "path of the node this patch acts on: the parent for insert"},
+                "child": {
+                    "type": "object",
+                    "required": ["layer", "name", "node"],
+                    "properties": {
+                        "layer": {"enum": ["shell", "region", "nav_section", "page", "section", "overlay", "widget", "item"]},
+                        "name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"},
+                        "node": {"type": "object"},
+                        "nav_section": {"type": "string"}
+                    }
+                },
+                "node": {"type": "object"}
+            }
+        },
         "reads": {
             "type": "object",
             "required": ["view"],

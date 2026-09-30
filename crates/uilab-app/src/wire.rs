@@ -13,7 +13,7 @@ use uilab_wire::{
     UilabWireFailed, UilabWireFinding, UilabWireHello, UilabWireMic, UilabWireMicState,
     UilabWireOperator, UilabWireOperatorKind, UilabWireOutlineNode, UilabWirePresence,
     UilabWireProposalShown, UilabWireReadRows, UilabWireRefused, UilabWireResync, UilabWireRows,
-    UilabWireSay, UilabWireSelect, UilabWireSeverity, UilabWireThinking, UilabWireTranscript,
+    UilabWireSay, UilabWireSelect, UilabWireThinking, UilabWireTranscript,
 };
 
 /// Browser (or operator API) to server.
@@ -116,22 +116,32 @@ fn by_of(by: Option<&str>) -> EssPresence<String> {
     present(by.map(str::to_owned))
 }
 
+/// A generated enum value by its spec name. The generated variants are numbered in sorted
+/// order, so picking one by index silently changes meaning when the spec gains a variant.
+fn named<T: serde::de::DeserializeOwned>(name: &str) -> T {
+    serde_json::from_value(Value::String(name.to_owned())).expect("a name the spec declares")
+}
+
+/// The spec name of a generated enum value.
+fn name_of<T: Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
 /// Whether a mic message opens the microphone.
 pub fn mic_open(mic: &UilabWireMic) -> bool {
-    matches!(*mic.state, UilabWireMicState::V1)
+    name_of::<UilabWireMicState>(&mic.state) == "open"
 }
 
 /// Whether a hello or operator is an agent.
 pub fn is_agent(kind: &UilabWireOperatorKind) -> bool {
-    matches!(kind, UilabWireOperatorKind::V0)
+    name_of(kind) == "agent"
 }
 
 pub fn operator_kind(agent: bool) -> Box<UilabWireOperatorKind> {
-    Box::new(if agent {
-        UilabWireOperatorKind::V0
-    } else {
-        UilabWireOperatorKind::V1
-    })
+    Box::new(named(if agent { "agent" } else { "human" }))
 }
 
 pub fn node_path(path: &str) -> Box<UilabSessionNodePath> {
@@ -146,12 +156,9 @@ pub fn document_id(id: &str) -> Box<UilabSessionDocumentId> {
     Box::new(UilabSessionDocumentId(id.to_owned()))
 }
 
+/// The generated enum by its spec name; its variants are numbered, so never pick one by index.
 pub fn op(name: &str) -> Box<UilabSessionPatchOp> {
-    Box::new(match name {
-        "Insert" => UilabSessionPatchOp::V0,
-        "Remove" => UilabSessionPatchOp::V1,
-        _ => UilabSessionPatchOp::V2,
-    })
+    Box::new(named(name))
 }
 
 fn present<T>(value: Option<T>) -> EssPresence<T> {
@@ -174,10 +181,10 @@ pub fn findings(findings: &[Finding]) -> Vec<Box<UilabWireFinding>> {
                 check: f.check.to_owned(),
                 message: f.message.clone(),
                 path: f.path.clone(),
-                severity: Box::new(match f.severity {
-                    Severity::Error => UilabWireSeverity::V0,
-                    Severity::Warning => UilabWireSeverity::V1,
-                }),
+                severity: Box::new(named(match f.severity {
+                    Severity::Error => "error",
+                    Severity::Warning => "warning",
+                })),
             })
         })
         .collect()

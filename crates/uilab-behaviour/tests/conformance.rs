@@ -50,6 +50,7 @@ fn op_name(op: PatchOp) -> &'static str {
         PatchOp::Insert => "Insert",
         PatchOp::Replace => "Replace",
         PatchOp::Remove => "Remove",
+        PatchOp::Batch => "Batch",
     }
 }
 
@@ -58,6 +59,7 @@ fn op_named(name: &str) -> Result<PatchOp, String> {
         "Insert" => Ok(PatchOp::Insert),
         "Replace" => Ok(PatchOp::Replace),
         "Remove" => Ok(PatchOp::Remove),
+        "Batch" => Ok(PatchOp::Batch),
         other => Err(format!("`{other}` is not a PatchOp")),
     }
 }

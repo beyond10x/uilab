@@ -118,6 +118,12 @@ pub fn build_patch(
             Some(_) => Err(refusal(NODE_SHAPE, "a remove carries no body")),
             None => Ok(Patch::Remove { target }),
         },
+        s::PatchOp::Batch => {
+            let body = body.ok_or_else(|| refusal(NODE_SHAPE, "a batch carries its patches"))?;
+            let patches: Vec<Patch> = serde_json::from_value(body["patches"].clone())
+                .map_err(|e| refusal(NODE_SHAPE, format!("not a list of patches: {e}")))?;
+            Ok(Patch::Batch { target, patches })
+        }
     }
 }
 

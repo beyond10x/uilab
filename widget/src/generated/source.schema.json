@@ -18,7 +18,8 @@
       "enum": [
         "Insert",
         "Replace",
-        "Remove"
+        "Remove",
+        "Batch"
       ],
       "title": "PatchOp",
       "type": "string",
@@ -879,8 +880,8 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "x-ess-provenance": {
-    "contract_digest": "slice-sha256/2:91449902ba6bcbd0651d55ca07932d6584fd65ab961f38b4070186ed823b3415",
-    "source_digest": "1a75f0421d837e2ee884066ba29e42b368e91a0d2fb46630399bf48ac98fa437",
+    "contract_digest": "slice-sha256/2:20b3327dd7faee37ca9ff51935d3b548651bfa3d2110ce6498bd61f3b97cf11a",
+    "source_digest": "671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf",
     "specification_version": "v1",
     "system": "uilab"
   }

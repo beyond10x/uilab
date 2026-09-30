@@ -115,11 +115,11 @@ fn patch_schema_offers_only_what_the_node_can_take() {
     assert!(metric["properties"].get("child").is_none());
     assert_eq!(
         metric["properties"]["op"]["enum"],
-        json!(["replace", "remove"])
+        json!(["replace", "remove", "batch"])
     );
 
     let root = patch_schema(&doc, &NodePath::root()).unwrap();
-    assert_eq!(root["properties"]["op"]["enum"], json!(["insert"]));
+    assert_eq!(root["properties"]["op"]["enum"], json!(["insert", "batch"]));
     assert_eq!(layers(root.clone()), ["shell", "page"]);
     let nav = &root["properties"]["child"]["oneOf"][1]["properties"]["nav_section"]["enum"];
     assert_eq!(nav, &json!(["circulation", "people"]));
@@ -377,4 +377,43 @@ fn columns_that_name_no_fixture_field_are_warned() {
             .iter()
             .all(|f| f.check == "column_fields" && f.severity == Severity::Warning)
     );
+}
+
+#[test]
+fn a_batch_admits_what_its_parts_cannot_alone() {
+    let doc = library();
+    let row_action = Patch::Replace {
+        target: path("page:members/section:list"),
+        node: json!({"component": "collection", "reads": {"view": "members.All"},
+            "columns": [{"field": "name"}], "row_actions": [{"opens": "edit_member", "label": "Edit"}]}),
+    };
+    assert_eq!(
+        admit(&doc, &row_action).unwrap_err().check,
+        "opens_resolves"
+    );
+    let drawer = Patch::Insert {
+        target: path("page:members"),
+        child: Child {
+            layer: Layer::Overlay,
+            name: "edit_member".into(),
+            node: json!({"kind": "drawer", "component": "form", "fields": ["name"]}),
+            nav_section: None,
+        },
+    };
+    let batch = Patch::Batch {
+        target: path("page:members/section:list"),
+        patches: vec![drawer, row_action],
+    };
+    let (next, _) = admit(&doc, &batch).unwrap();
+    assert!(resolve(&next, &path("page:members/overlay:edit_member")).is_ok());
+    assert_eq!(batch.changed_path().to_string(), "page:members");
+    assert_eq!(batch.op_name(), "Batch");
+
+    let nested = Patch::Batch {
+        target: NodePath::root(),
+        patches: vec![batch.clone()],
+    };
+    assert_eq!(admit(&doc, &nested).unwrap_err().check, "batch_shape");
+    let wire: Patch = serde_json::from_value(serde_json::to_value(&batch).unwrap()).unwrap();
+    assert_eq!(wire, batch);
 }
