@@ -1571,4 +1571,32 @@ mod tests {
         });
         assert!(proposals(&rig.drain()).is_empty());
     }
+
+    #[test]
+    fn a_stale_decision_on_another_proposal_keeps_the_step_proposal_for_a_browser_that_connects() {
+        let mut rig = rig(true);
+        rig.start(true);
+        rig.planned(&["page:members"]);
+        rig.answer(0);
+        let id = rig.goal().steps[0].proposal_id.clone().unwrap();
+        // A card or a command left over from an earlier proposal decides that one, not the step's.
+        rig.client(
+            "ws-7",
+            r#"{"type":"accept","value":{"proposal_id":"an-earlier-proposal"}}"#,
+        );
+        assert_eq!(
+            rig.statuses(),
+            [StepStatus::Proposed],
+            "precondition: the step still waits on its proposal"
+        );
+        rig.drain();
+        rig.app.handle_cmd(Cmd::Connected {
+            operator: "ws-9".into(),
+        });
+        assert_eq!(
+            proposals(&rig.drain()),
+            [id],
+            "the step waits on a proposal no browser that connects is shown"
+        );
+    }
 }
