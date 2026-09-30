@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:widget-opens-at-use
 kind: story
-status: draft
+status: active
 title: Check a widget body's opens at each use site
 relations:
 - decomposes: epic:component-library
@@ -10,7 +10,10 @@ relations:
 scope:
 - confidence: cited
   path: crates/uilab-doc
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T05:45:22Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T05:45:22Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
