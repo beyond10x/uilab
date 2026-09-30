@@ -29,7 +29,7 @@ import {
 import { settleCard } from './lib/card.ts';
 import { bannerLabel, goalEnded, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
 import { targetIn, workspaceOf } from './lib/workspace.ts';
-import { markClasses, outlineMarks, withRemoved, type Mark } from './lib/marks.ts';
+import { markClasses, outlineMarks, previewBase, withRemoved, type Mark } from './lib/marks.ts';
 import { findNode, homePage, isDraftView, lineage, nearestExisting, normalize, overlayOf, pageOf, pagesOf } from './lib/outline.ts';
 import { MicCapture } from './mic.ts';
 import type { ConnState, Transport } from './transport.ts';
@@ -66,6 +66,8 @@ export const state = shallowReactive({
   doc: null as DocumentState | null,
   /** The proposal waiting for accept or reject (the card). */
   proposal: null as ProposalShown | null,
+  /** The document outline the proposal was shown against (`previewBase`). */
+  proposalBase: null as OutlineNode | null,
   /** Accept or reject sent; the proposal stays shown until the next document. */
   deciding: false,
   phase: 'idle' as Phase,
@@ -121,19 +123,20 @@ const mic = new MicCapture({
 });
 
 /** The outline the canvas and tree show: the proposal's while one is pending, with the nodes it
- *  removes kept from the document's so they can be drawn as removed. */
+ *  removes kept from the outline it was shown against so they can be drawn as removed. */
 export const shownOutline = computed<OutlineNode | null>(() => {
   const p = state.proposal;
-  const doc = state.doc?.outline ?? null;
-  if (!p) return doc;
-  return doc ? withRemoved(doc, p.outline) : p.outline;
+  if (!p) return state.doc?.outline ?? null;
+  const base = state.proposalBase;
+  return base ? withRemoved(base, p.outline) : p.outline;
 });
 
-/** Normalized path → what the pending proposal does to that node; empty without a proposal. */
+/** Normalized path → what the pending proposal does to that node, against the outline it was shown
+ *  against; empty without a proposal. */
 export const proposalMarks = computed<ReadonlyMap<string, Mark>>(() => {
   const p = state.proposal;
-  const doc = state.doc?.outline;
-  return p && doc ? outlineMarks(doc, p.outline) : new Map();
+  const base = state.proposalBase;
+  return p && base ? outlineMarks(base, p.outline) : new Map();
 });
 
 /** What the pending proposal does to the node at `path`, if anything. */
@@ -290,6 +293,7 @@ function onMessage(msg: ServerMessage): void {
   const goal = settleGoal(state.goal, msg);
   if (goal !== state.goal) state.goal = goal;
   const card = settleCard({ pending: state.proposal, deciding: state.deciding }, msg);
+  settleBase(state.proposal, card.pending);
   if (card.pending !== state.proposal) state.proposal = card.pending;
   if (card.deciding !== state.deciding) state.deciding = card.deciding;
 
@@ -366,6 +370,14 @@ function onMessage(msg: ServerMessage): void {
       break;
     }
   }
+  // A proposal that came before any document takes the first one.
+  settleBase(state.proposal, state.proposal);
+}
+
+/** Keeps the outline the pending proposal is shown against, as the card goes from `before` to `after`. */
+function settleBase(before: ProposalShown | null, after: ProposalShown | null): void {
+  const base = previewBase(before, after, state.proposalBase, state.doc?.outline ?? null);
+  if (base !== state.proposalBase) state.proposalBase = base;
 }
 
 function onState(conn: ConnState, retryInMs?: number): void {
