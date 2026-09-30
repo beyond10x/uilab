@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-30T03:03:06Z",
+  "actor": "human:timo",
+  "artifact": "story:speech",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check on main at fede586: ESS valid, drift clean, widget build ok, cargo 55 passed 0 failed",
+    "reference": "/home/timo/.cache/claude-tmp/uilab-gate-fede586.log"
+  }
+}

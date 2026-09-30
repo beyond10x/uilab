@@ -2,14 +2,19 @@
 format: aep.planning-md/3
 id: story:improvement-rounds
 kind: story
-status: draft
+status: implemented
 title: Eval rounds that change prompt, schema, checks or model
 relations:
 - decomposes: epic:operator-loop
+- serves: vision:website-harness
 scope:
 - confidence: cited
   path: crates/uilab-agent
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T03:03:10Z", actor: "human:timo", revision: 3, decided_on: {"recorded":{"test_result":3}}}
+- {from: "proposed", to: "active", at: "2026-09-30T03:03:10Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":3}}}
+- {from: "active", to: "implemented", at: "2026-09-30T03:03:10Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":4}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status

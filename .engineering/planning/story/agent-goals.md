@@ -6,7 +6,18 @@ status: draft
 title: 'Long-running goals: the agent works in steps until done'
 relations:
 - decomposes: epic:workbench
-revision: 1
+- serves: vision:website-harness
+- depends_on: story:goal-planner
+scope:
+- confidence: cited
+  path: crates/uilab-app
+- confidence: cited
+  path: ess/domains/wire.yaml
+- confidence: cited
+  path: generated
+- confidence: cited
+  path: widget
+revision: 2
 ---
 ## Outcome
 

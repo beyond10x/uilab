@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:server
 kind: story
-status: draft
+status: implemented
 title: 'uilab serve: browser app, WebSocket, session'
 relations:
 - decomposes: epic:voice-editing
@@ -10,6 +10,7 @@ relations:
 - depends_on: story:speech
 - depends_on: story:agent-proposer
 - depends_on: story:browser-app
+- serves: vision:website-harness
 scope:
 - confidence: cited
   path: Cargo.toml
@@ -17,7 +18,11 @@ scope:
   path: Taskfile.yml
 - confidence: cited
   path: crates/uilab-app
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T03:03:07Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T03:03:07Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T03:03:08Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

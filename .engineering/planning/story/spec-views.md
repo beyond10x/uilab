@@ -2,11 +2,16 @@
 format: aep.planning-md/3
 id: story:spec-views
 kind: story
-status: draft
+status: implemented
 title: Help (?), UI / YAML / Docs view modes, export
 relations:
 - decomposes: epic:workbench
-revision: 1
+- serves: vision:website-harness
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T03:03:10Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-09-30T03:03:10Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-09-30T03:03:11Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":1}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status

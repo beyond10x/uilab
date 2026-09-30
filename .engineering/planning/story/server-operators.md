@@ -2,14 +2,19 @@
 format: aep.planning-md/3
 id: story:server-operators
 kind: story
-status: draft
+status: implemented
 title: Presence, revision, changed events, operator REST API, uilab op
 relations:
 - decomposes: epic:operator-loop
+- serves: vision:website-harness
 scope:
 - confidence: cited
   path: crates/uilab-app
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T03:03:08Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T03:03:08Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T03:03:09Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 <!-- Starting point for a `story` artifact, seeded by `aep artifact new story <name>`.
      No frontmatter here on purpose: the `---` block is written by the CLI from the id, kind, status

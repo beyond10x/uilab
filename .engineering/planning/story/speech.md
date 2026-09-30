@@ -2,14 +2,19 @@
 format: aep.planning-md/3
 id: story:speech
 kind: story
-status: draft
+status: implemented
 title: Speech to text on the local GPU
 relations:
 - decomposes: epic:voice-editing
+- serves: vision:website-harness
 scope:
 - confidence: cited
   path: crates/uilab-stt
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-09-30T03:03:06Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-09-30T03:03:06Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T03:03:06Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 
