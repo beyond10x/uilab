@@ -41,6 +41,9 @@ pub enum OpCommand {
         /// The node; the shared selection when absent.
         #[arg(long)]
         target: Option<String>,
+        /// Hold this proposal for accept or reject, whatever the session setting.
+        #[arg(long)]
+        review: bool,
         text: String,
     },
     /// Select a node for everybody.
@@ -149,7 +152,7 @@ pub async fn run(op: Op) -> Result<(), String> {
                 .filter(|c| only.is_empty() || only.contains(&c.id))
             {
                 let say = client(
-                    serde_json::json!({"type": "say", "value": {"text": case.say, "target": case.target}}),
+                    serde_json::json!({"type": "say", "value": {"text": case.say, "target": case.target, "review": true}}),
                 )?;
                 let started = std::time::Instant::now();
                 let acted = match act(&http, &cached, &say).await {
@@ -193,9 +196,13 @@ pub async fn run(op: Op) -> Result<(), String> {
             save(&op.name, &cached)?;
             return Ok(());
         }
-        OpCommand::Say { target, text } => client(serde_json::json!({
+        OpCommand::Say {
+            target,
+            text,
+            review,
+        } => client(serde_json::json!({
             "type": "say",
-            "value": match target { Some(t) => serde_json::json!({"text": text, "target": t}), None => serde_json::json!({"text": text}) },
+            "value": match (target, review) { (Some(t), true) => serde_json::json!({"text": text, "target": t, "review": true}), (Some(t), false) => serde_json::json!({"text": text, "target": t}), (None, true) => serde_json::json!({"text": text, "review": true}), (None, false) => serde_json::json!({"text": text}) },
         }))?,
         OpCommand::Select { path } => {
             client(serde_json::json!({"type": "select", "value": {"path": path}}))?

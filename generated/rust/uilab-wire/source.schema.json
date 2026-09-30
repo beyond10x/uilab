@@ -225,6 +225,24 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "const": "settings",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/uilab.wire.Settings"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "title": "settings",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
               "const": "undo",
               "type": "string"
             },
@@ -278,6 +296,9 @@
         "outline": {
           "$ref": "#/$defs/uilab.wire.OutlineNode"
         },
+        "review": {
+          "type": "boolean"
+        },
         "revision": {
           "type": "integer"
         },
@@ -297,7 +318,8 @@
         "selected",
         "outline",
         "findings",
-        "revision"
+        "revision",
+        "review"
       ],
       "title": "DocumentState",
       "type": "object",
@@ -623,6 +645,9 @@
     "uilab.wire.Say": {
       "additionalProperties": false,
       "properties": {
+        "review": {
+          "type": "boolean"
+        },
         "target": {
           "$ref": "#/$defs/uilab.session.NodePath"
         },
@@ -823,6 +848,21 @@
       "x-ess-name": "uilab.wire.ServerMessage",
       "x-ess-union-tag": "type"
     },
+    "uilab.wire.Settings": {
+      "additionalProperties": false,
+      "properties": {
+        "review": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "review"
+      ],
+      "title": "Settings",
+      "type": "object",
+      "x-ess-kind": "struct",
+      "x-ess-name": "uilab.wire.Settings"
+    },
     "uilab.wire.Severity": {
       "enum": [
         "error",
@@ -880,8 +920,8 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "x-ess-provenance": {
-    "contract_digest": "slice-sha256/2:20b3327dd7faee37ca9ff51935d3b548651bfa3d2110ce6498bd61f3b97cf11a",
-    "source_digest": "671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf",
+    "contract_digest": "slice-sha256/2:b4361a5e6fb4e3978c44af3558a5400f48139805ddcd387562ecde0445119ad1",
+    "source_digest": "3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e",
     "specification_version": "v1",
     "system": "uilab"
   }

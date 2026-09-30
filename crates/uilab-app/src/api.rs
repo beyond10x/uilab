@@ -153,6 +153,15 @@ pub async fn act(
                     let done = kind.settled_by(&message);
                     messages.push(message);
                     if done {
+                        // Whatever the same step already sent goes too: with review off, the
+                        // proposal and its automatic accept are sent back to back.
+                        while let Ok(more) = out.try_recv() {
+                            if more.by().is_none_or(|by| by == me)
+                                && !matches!(more, Server::Presence(_))
+                            {
+                                messages.push(more);
+                            }
+                        }
                         return true;
                     }
                 }
@@ -187,6 +196,7 @@ impl Settle {
             Client::Accept(_) => Settle::Change,
             Client::Rows(_) => Settle::Rows,
             Client::Select(_)
+            | Client::Settings(_)
             | Client::Reject(_)
             | Client::Undo(_)
             | Client::Resync(_)

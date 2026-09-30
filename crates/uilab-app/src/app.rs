@@ -51,6 +51,7 @@ pub enum Cmd {
         utterance: String,
         result: Result<uilab_agent::Proposal, (String, String)>,
         ms: u64,
+        review: bool,
     },
     /// The operator API registers an operator.
     Register {
@@ -74,6 +75,8 @@ pub struct Config {
     pub stt: Option<uilab_stt::TranscriberConfig>,
     pub proposer: uilab_agent::ProposerConfig,
     pub journal: PathBuf,
+    /// Hold each proposal for accept or reject; otherwise apply it at once.
+    pub review: bool,
 }
 
 struct Operator {
@@ -97,6 +100,7 @@ pub struct App {
     operators: IndexMap<String, Operator>,
     selected_by: Option<String>,
     revision: u64,
+    review: bool,
     next_api_operator: u64,
     pending: Option<String>,
     audio: Option<(String, Vec<f32>)>,
@@ -165,6 +169,7 @@ impl App {
             operators: IndexMap::new(),
             selected_by: None,
             revision: 0,
+            review: config.review,
             next_api_operator: 0,
             pending: None,
             audio: None,
@@ -229,6 +234,7 @@ impl App {
             findings: &findings,
             undoable,
             revision: self.revision,
+            review: self.review,
         })
     }
 
@@ -345,7 +351,7 @@ impl App {
                 if t.text.trim().is_empty() {
                     self.send(Server::refused("speech", "nothing was heard", Some(&by)));
                 } else {
-                    self.propose(&by, t.text, None);
+                    self.propose(&by, t.text, None, None);
                 }
             }
             Cmd::Heard {
@@ -364,6 +370,7 @@ impl App {
                 utterance,
                 result,
                 ms,
+                review,
             } => {
                 self.busy = false;
                 match result {
@@ -380,7 +387,7 @@ impl App {
                                 "patch": proposal.patch,
                             }),
                         );
-                        self.record(&by, utterance, proposal.patch)
+                        self.record(&by, utterance, proposal.patch, review)
                     }
                     Err((check, message)) => {
                         self.journal.write(
@@ -465,35 +472,18 @@ impl App {
                     },
                     uilab_wire::EssPresence::Absent => None,
                 };
-                self.propose(by, say.text, target)
+                let review = match say.review {
+                    uilab_wire::EssPresence::Present(review) => Some(review),
+                    uilab_wire::EssPresence::Absent => None,
+                };
+                self.propose(by, say.text, target, review)
             }
-            Client::Accept(d) => {
-                let id = proposal(&d.proposal_id.0);
-                let outcome = self.port.accept_proposal(s::AcceptProposal {
-                    proposal_id: id.clone(),
-                });
-                self.pending = None;
-                match outcome {
-                    Ok(s::AcceptProposalOutcome::Accepted { .. }) => {
-                        self.revision += 1;
-                        self.journal.write(
-                            "accepted",
-                            json!({"by": by, "proposal_id": d.proposal_id.0, "revision": self.revision}),
-                        );
-                        self.announce_change(by, &id);
-                    }
-                    Ok(s::AcceptProposalOutcome::Stale { error }) => self.send(Server::refused(
-                        error.check,
-                        "the document changed since the proposal",
-                        Some(by),
-                    )),
-                    Ok(_) => self.send(Server::refused(
-                        "wrong_state",
-                        "that proposal is not waiting",
-                        Some(by),
-                    )),
-                    Err(e) => self.send(Server::failed(e.to_string(), Some(by))),
-                }
+            Client::Accept(d) => self.accept(by, &d.proposal_id.0, false),
+            Client::Settings(settings) => {
+                self.review = settings.review;
+                self.journal
+                    .write("settings", json!({"by": by, "review": self.review}));
+                self.send_document();
             }
             Client::Reject(d) => {
                 let _ = self.port.reject_proposal(s::RejectProposal {
@@ -593,7 +583,44 @@ impl App {
         });
     }
 
-    fn propose(&mut self, by: &str, utterance: String, target: Option<NodePath>) {
+    /// Applies a waiting proposal. `automatic` when review is off and nobody pressed accept.
+    fn accept(&mut self, by: &str, proposal_id: &str, automatic: bool) {
+        let id = proposal(proposal_id);
+        let outcome = self.port.accept_proposal(s::AcceptProposal {
+            proposal_id: id.clone(),
+        });
+        self.pending = None;
+        match outcome {
+            Ok(s::AcceptProposalOutcome::Accepted { .. }) => {
+                self.revision += 1;
+                self.journal.write(
+                    "accepted",
+                    json!({"by": by, "proposal_id": proposal_id, "revision": self.revision, "automatic": automatic}),
+                );
+                self.announce_change(by, &id);
+            }
+            Ok(s::AcceptProposalOutcome::Stale { error }) => self.send(Server::refused(
+                error.check,
+                "the document changed since the proposal",
+                Some(by),
+            )),
+            Ok(_) => self.send(Server::refused(
+                "wrong_state",
+                "that proposal is not waiting",
+                Some(by),
+            )),
+            Err(e) => self.send(Server::failed(e.to_string(), Some(by))),
+        }
+    }
+
+    fn propose(
+        &mut self,
+        by: &str,
+        utterance: String,
+        target: Option<NodePath>,
+        review: Option<bool>,
+    ) {
+        let review = review.unwrap_or(self.review);
         if self.busy {
             self.send(Server::failed(
                 "still working on the last instruction",
@@ -631,12 +658,13 @@ impl App {
                 utterance,
                 result,
                 ms,
+                review,
             });
         });
     }
 
     /// Records the agent's patch as a proposal and shows it.
-    fn record(&mut self, by: &str, utterance: String, patch: Patch) {
+    fn record(&mut self, by: &str, utterance: String, patch: Patch, review: bool) {
         let body = match &patch {
             Patch::Insert { child, .. } => Some(body_from_json(
                 &serde_json::to_value(child).expect("a child serializes"),
@@ -703,6 +731,9 @@ impl App {
             target: wire::node_path(&patch.target().to_string()),
             utterance,
         }));
+        if !review {
+            self.accept(by, &proposal_id.0.0, true);
+        }
     }
 }
 

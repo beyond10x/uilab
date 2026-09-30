@@ -76,6 +76,14 @@ types:
         type: String
       - name: target
         type: Optional<uilab.session.NodePath>
+      - name: review
+        type: Optional<Boolean>
+
+  - name: uilab.wire.Settings
+    kind: struct
+    fields:
+      - name: review
+        type: Boolean
 
   - name: uilab.wire.OperatorKind
     kind: enum
@@ -120,6 +128,7 @@ types:
       rows: uilab.wire.ReadRows
       hello: uilab.wire.Hello
       resync: uilab.wire.Resync
+      settings: uilab.wire.Settings
 
   # Server to client.
   - name: uilab.wire.Operator
@@ -179,6 +188,8 @@ types:
         type: Optional<uilab.session.ProposalId>
       - name: revision
         type: Integer
+      - name: review
+        type: Boolean
 
   - name: uilab.wire.Transcript
     kind: struct

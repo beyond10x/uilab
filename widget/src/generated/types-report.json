@@ -1,12 +1,12 @@
 {
   "format": "ess-types-report/3",
-  "source_digest": "671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf",
+  "source_digest": "3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e",
   "input": {
     "kind": "model",
     "system": "uilab",
     "specification_version": "v1",
-    "contract_digest": "slice-sha256/2:20b3327dd7faee37ca9ff51935d3b548651bfa3d2110ce6498bd61f3b97cf11a",
-    "projection_digest": "b2f786a2949465341bcfeabfa55130835734754bb994ed7320099e0605593c15"
+    "contract_digest": "slice-sha256/2:b4361a5e6fb4e3978c44af3558a5400f48139805ddcd387562ecde0445119ad1",
+    "projection_digest": "1d316a4fbae1dafc7b4f970a7a4c280f3ef338e5daf7838b43e425c72ac3cd18"
   },
   "generator_version": "0.44.0",
   "target": "typescript",
@@ -43,6 +43,7 @@
     "uilab.wire.Say": "UilabWireSay",
     "uilab.wire.Select": "UilabWireSelect",
     "uilab.wire.ServerMessage": "UilabWireServerMessage",
+    "uilab.wire.Settings": "UilabWireSettings",
     "uilab.wire.Severity": "UilabWireSeverity",
     "uilab.wire.Thinking": "UilabWireThinking",
     "uilab.wire.Transcript": "UilabWireTranscript"
@@ -175,6 +176,11 @@
     },
     {
       "pointer": "/$defs/uilab.wire.ClientMessage/oneOf/8/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ClientMessage/oneOf/9/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
     },
@@ -534,6 +540,21 @@
       "detail": "model identity and wire mapping retained in source.schema.json"
     },
     {
+      "pointer": "/$defs/uilab.wire.Settings/title",
+      "rule": "title",
+      "detail": "retained in source.schema.json; no decoder behavior inferred"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Settings/x-ess-kind",
+      "rule": "x-ess-kind",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Settings/x-ess-name",
+      "rule": "x-ess-name",
+      "detail": "model identity and wire mapping retained in source.schema.json"
+    },
+    {
       "pointer": "/$defs/uilab.wire.Severity/title",
       "rule": "title",
       "detail": "retained in source.schema.json; no decoder behavior inferred"
@@ -672,6 +693,11 @@
     },
     {
       "pointer": "/$defs/uilab.wire.ClientMessage/oneOf/8",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ClientMessage/oneOf/9",
       "rule": "closed_object",
       "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
     },
@@ -852,6 +878,11 @@
     },
     {
       "pointer": "/$defs/uilab.wire.ServerMessage/oneOf/8",
+      "rule": "closed_object",
+      "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Settings",
       "rule": "closed_object",
       "detail": "TypeScript structural assignability does not enforce exact object keys; validate additionalProperties at runtime"
     },

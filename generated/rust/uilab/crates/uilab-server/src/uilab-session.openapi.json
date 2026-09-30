@@ -8,7 +8,7 @@
     "x-ess-provenance": {
       "system": "uilab",
       "specification_version": "v1",
-      "source_digest": "671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf",
+      "source_digest": "3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e",
       "contract_digest": "slice-sha256/2:efb7b0f3ed15c411619f395acaebf4f25c8688f35200d2b779dc1dfd35b1ebcd"
     },
     "x-ess-reached-by": "network"

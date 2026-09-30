@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf
-// contract digest 989bc1e79ee0eb257a75b80b6e076c650ce3b2d5d73883df0f19629de0ee462c
+// model digest 3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e
+// contract digest 797f8eeba742036695e9acbd13349f58b85ac02ab93c0a62197940b5d1883646
 // do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
@@ -285,6 +285,14 @@ pub fn encode_uilab_wire_client_message(value: &uilab_types::wire::ClientMessage
             encode_uilab_wire_select(&*held, out);
             out.push('}');
         }
+        uilab_types::wire::ClientMessage::Settings(held) => {
+            out.push('{');
+            json::member(out, "type");
+            json::push_text(out, "settings");
+            json::member(out, "value");
+            encode_uilab_wire_settings(&*held, out);
+            out.push('}');
+        }
         uilab_types::wire::ClientMessage::Undo(held) => {
             out.push('{');
             json::member(out, "type");
@@ -304,7 +312,7 @@ pub fn encode_uilab_wire_client_message(value: &uilab_types::wire::ClientMessage
 pub fn decode_uilab_wire_client_message(value: &json::Value, at: &str) -> Result<uilab_types::wire::ClientMessage, json::DecodeError> {
     let tag = json::member_at(value, at, "type")?;
     let at_tag = json::nested(at, "type");
-    Ok(match json::text_at(tag, &at_tag, "one of `accept`, `hello`, `mic`, `reject`, `resync`, `rows`, `say`, `select`, `undo`")? {
+    Ok(match json::text_at(tag, &at_tag, "one of `accept`, `hello`, `mic`, `reject`, `resync`, `rows`, `say`, `select`, `settings`, `undo`")? {
         "accept" => uilab_types::wire::ClientMessage::Accept({
             let at0 = json::nested(at, "value");
             let member0 = json::member_at(value, at, "value")?;
@@ -345,12 +353,17 @@ pub fn decode_uilab_wire_client_message(value: &json::Value, at: &str) -> Result
             let member7 = json::member_at(value, at, "value")?;
             decode_uilab_wire_select(member7, &at7)?
         }),
-        "undo" => uilab_types::wire::ClientMessage::Undo({
+        "settings" => uilab_types::wire::ClientMessage::Settings({
             let at8 = json::nested(at, "value");
             let member8 = json::member_at(value, at, "value")?;
-            decode_uilab_wire_decide(member8, &at8)?
+            decode_uilab_wire_settings(member8, &at8)?
         }),
-        other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `accept`, `hello`, `mic`, `reject`, `resync`, `rows`, `say`, `select`, `undo`".to_owned(), found: format!("`{other}`") }),
+        "undo" => uilab_types::wire::ClientMessage::Undo({
+            let at9 = json::nested(at, "value");
+            let member9 = json::member_at(value, at, "value")?;
+            decode_uilab_wire_decide(member9, &at9)?
+        }),
+        other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `accept`, `hello`, `mic`, `reject`, `resync`, `rows`, `say`, `select`, `settings`, `undo`".to_owned(), found: format!("`{other}`") }),
     })
 }
 
@@ -407,6 +420,8 @@ pub fn encode_uilab_wire_document_state(value: &uilab_types::wire::DocumentState
     }
     json::member(out, "revision");
     json::push_integer(out, value.revision);
+    json::member(out, "review");
+    json::push_bool(out, value.review);
     out.push('}');
 }
 
@@ -467,6 +482,11 @@ pub fn decode_uilab_wire_document_state(value: &json::Value, at: &str) -> Result
             let at7 = json::nested(at, "revision");
             let member7 = json::member_at(value, at, "revision")?;
             json::integer_at(member7, &at7, "an integer")?
+        },
+        review: {
+            let at8 = json::nested(at, "review");
+            let member8 = json::member_at(value, at, "review")?;
+            json::bool_at(member8, &at8, "a boolean")?
         },
     })
 }
@@ -1089,6 +1109,10 @@ pub fn encode_uilab_wire_say(value: &uilab_types::wire::Say, out: &mut String) {
         json::member(out, "target");
         encode_uilab_session_node_path(&*held0, out);
     }
+    if let Some(held0) = &value.review {
+        json::member(out, "review");
+        json::push_bool(out, *held0);
+    }
     out.push('}');
 }
 
@@ -1109,6 +1133,13 @@ pub fn decode_uilab_wire_say(value: &json::Value, at: &str) -> Result<uilab_type
             Some(member1) => {
                 let at1 = json::nested(at, "target");
                 Some(decode_uilab_session_node_path(member1, &at1)?)
+            }
+        },
+        review: match value.member("review") {
+            None | Some(json::Value::Null) => None,
+            Some(member2) => {
+                let at2 = json::nested(at, "review");
+                Some(json::bool_at(member2, &at2, "a boolean")?)
             }
         },
     })
@@ -1270,6 +1301,29 @@ pub fn decode_uilab_wire_server_message(value: &json::Value, at: &str) -> Result
             decode_uilab_wire_transcript(member8, &at8)?
         }),
         other => return Err(json::DecodeError { at: at_tag.clone(), expected: "one of `changed`, `document`, `failed`, `presence`, `proposal`, `refused`, `rows`, `thinking`, `transcript`".to_owned(), found: format!("`{other}`") }),
+    })
+}
+
+/// Writes `uilab.wire.Settings` as JSON.
+pub fn encode_uilab_wire_settings(value: &uilab_types::wire::Settings, out: &mut String) {
+    out.push('{');
+    json::member(out, "review");
+    json::push_bool(out, value.review);
+    out.push('}');
+}
+
+/// Reads `uilab.wire.Settings` from JSON.
+///
+/// # Errors
+///
+/// [`json::DecodeError`] naming the path and what the declaration says belongs there.
+pub fn decode_uilab_wire_settings(value: &json::Value, at: &str) -> Result<uilab_types::wire::Settings, json::DecodeError> {
+    Ok(uilab_types::wire::Settings {
+        review: {
+            let at0 = json::nested(at, "review");
+            let member0 = json::member_at(value, at, "review")?;
+            json::bool_at(member0, &at0, "a boolean")?
+        },
     })
 }
 

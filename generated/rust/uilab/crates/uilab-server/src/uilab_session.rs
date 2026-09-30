@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf
-// contract digest 989bc1e79ee0eb257a75b80b6e076c650ce3b2d5d73883df0f19629de0ee462c
+// model digest 3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e
+// contract digest 797f8eeba742036695e9acbd13349f58b85ac02ab93c0a62197940b5d1883646
 // do not edit: regenerate with `ess synthesize`
 
 //! The `uilab-session` component of `uilab` v1, on the wire.
@@ -49,7 +49,7 @@ pub const ROUTES: &[(&str, &str)] = &[
 /// Everything outside `runtime` is the same in every language this plan is emitted into, and
 /// `cargo xtask synth --check` starts both and compares them.
 pub const STARTUP: &[&str] = &[
-    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"uilab\",\"version\":\"v1\",\"model_digest\":\"671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf\",\"contract_digest\":\"989bc1e79ee0eb257a75b80b6e076c650ce3b2d5d73883df0f19629de0ee462c\",\"components\":[\"uilab-session\"],\"capabilities\":{\"generated\":55,\"obligations\":9,\"refused\":2}",
+    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"uilab\",\"version\":\"v1\",\"model_digest\":\"3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e\",\"contract_digest\":\"797f8eeba742036695e9acbd13349f58b85ac02ab93c0a62197940b5d1883646\",\"components\":[\"uilab-session\"],\"capabilities\":{\"generated\":56,\"obligations\":9,\"refused\":2}",
     "{\"log\":\"ess/1\",\"event\":\"surface.serving\",\"component\":\"uilab-session\",\"reached_by\":\"network\",\"transport\":\"http/1.1\",\"routes\":11,\"paths\":[{\"method\":\"GET\",\"path\":\"/docs\",\"serves\":\"documentation\",\"name\":\"docs\"},{\"method\":\"GET\",\"path\":\"/openapi.json\",\"serves\":\"contract\",\"name\":\"openapi\"},{\"method\":\"POST\",\"path\":\"/session/commands/accept-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.AcceptProposal\"},{\"method\":\"POST\",\"path\":\"/session/commands/open-document\",\"serves\":\"command\",\"name\":\"uilab.session.OpenDocument\"},{\"method\":\"POST\",\"path\":\"/session/commands/propose-patch\",\"serves\":\"command\",\"name\":\"uilab.session.ProposePatch\"},{\"method\":\"POST\",\"path\":\"/session/commands/reject-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.RejectProposal\"},{\"method\":\"POST\",\"path\":\"/session/commands/select-node\",\"serves\":\"command\",\"name\":\"uilab.session.SelectNode\"},{\"method\":\"POST\",\"path\":\"/session/commands/undo-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.UndoProposal\"},{\"method\":\"GET\",\"path\":\"/session/views/documents\",\"serves\":\"view\",\"name\":\"uilab.session.Documents\"},{\"method\":\"GET\",\"path\":\"/session/views/pending\",\"serves\":\"view\",\"name\":\"uilab.session.Pending\"},{\"method\":\"GET\",\"path\":\"/session/views/proposals\",\"serves\":\"view\",\"name\":\"uilab.session.Proposals\"}]",
     "{\"log\":\"ess/1\",\"event\":\"system.ready\",\"system\":\"uilab\",\"surfaces\":1",
 ];

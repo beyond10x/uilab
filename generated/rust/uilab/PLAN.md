@@ -1,14 +1,14 @@
 <!--
   generated from uilab v1
-  model digest 671836a8392f9ff5e57e7fc2b988468dc076692b9031754b5c33c0622ff876cf
-  contract digest 989bc1e79ee0eb257a75b80b6e076c650ce3b2d5d73883df0f19629de0ee462c
+  model digest 3919335fd597a821e3c47c4dc4c8da6be9f962bf7f0876feaaf144e96873fc8e
+  contract digest 797f8eeba742036695e9acbd13349f58b85ac02ab93c0a62197940b5d1883646
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — uilab v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-66 capabilities: **55 generated**, **9 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+67 capabilities: **56 generated**, **9 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -42,6 +42,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `uilab.wire.Say` |
 | domain type | `uilab.wire.Select` |
 | domain type | `uilab.wire.ServerMessage` |
+| domain type | `uilab.wire.Settings` |
 | domain type | `uilab.wire.Severity` |
 | domain type | `uilab.wire.Thinking` |
 | domain type | `uilab.wire.Transcript` |

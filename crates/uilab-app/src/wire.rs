@@ -13,7 +13,7 @@ use uilab_wire::{
     UilabWireFailed, UilabWireFinding, UilabWireHello, UilabWireMic, UilabWireMicState,
     UilabWireOperator, UilabWireOperatorKind, UilabWireOutlineNode, UilabWirePresence,
     UilabWireProposalShown, UilabWireReadRows, UilabWireRefused, UilabWireResync, UilabWireRows,
-    UilabWireSay, UilabWireSelect, UilabWireThinking, UilabWireTranscript,
+    UilabWireSay, UilabWireSelect, UilabWireSettings, UilabWireThinking, UilabWireTranscript,
 };
 
 /// Browser (or operator API) to server.
@@ -38,6 +38,8 @@ pub enum Client {
     Hello(UilabWireHello),
     /// Send a full snapshot; the sender missed a revision.
     Resync(UilabWireResync),
+    /// Change the session settings for everybody.
+    Settings(UilabWireSettings),
 }
 
 /// Server to browser.
@@ -199,6 +201,7 @@ pub struct DocumentParts<'a> {
     pub findings: &'a [Finding],
     pub undoable: Option<String>,
     pub revision: u64,
+    pub review: bool,
 }
 
 pub fn document(parts: DocumentParts<'_>) -> Server {
@@ -208,6 +211,7 @@ pub fn document(parts: DocumentParts<'_>) -> Server {
         findings: findings(parts.findings),
         outline: outline(parts.outline),
         revision: Number::from(parts.revision),
+        review: parts.review,
         selected: node_path(parts.selected),
         title: present(parts.title),
         undoable: present(parts.undoable.map(|id| proposal_id(&id))),
@@ -318,6 +322,7 @@ mod tests {
                 findings: std::slice::from_ref(&finding),
                 undoable: Some("p".into()),
                 revision: 3,
+                review: true,
             }),
             document(DocumentParts {
                 document_id: "d",
@@ -328,6 +333,7 @@ mod tests {
                 findings: &[],
                 undoable: None,
                 revision: 0,
+                review: false,
             }),
             transcript("add a table", 2100, 340, Some("op-1")),
             transcript("add a table", 2100, 340, None),
@@ -417,6 +423,8 @@ mod tests {
             r#"{"type":"rows","value":{"view":"loans.All"}}"#,
             r#"{"type":"hello","value":{"name":"Claude","kind":"agent"}}"#,
             r#"{"type":"resync","value":{"revision":2}}"#,
+            r#"{"type":"settings","value":{"review":true}}"#,
+            r#"{"type":"say","value":{"text":"t","target":"page:loans","review":true}}"#,
         ];
         for text in texts {
             let ours = Client::from_text(text).unwrap_or_else(|e| panic!("{text}: {e}"));

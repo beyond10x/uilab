@@ -90,7 +90,21 @@ pub fn judge(case: &Case, messages: &[Server], ms: u64) -> Outcome {
                 .unwrap_or_default();
             got = format!("{op} {} -> {}", p.target.0, p.changed.0);
             after = p.after.clone();
-            if let Some(want) = &case.expect.op
+            // A batch may do what was asked plus the wiring it needs (a dialog and the row action
+            // that opens it). It meets the case when its result holds a node of the expected
+            // layer and kind; op, layer and component are then judged by that node.
+            let node: Value = serde_yaml::from_str(&p.after).unwrap_or(Value::Null);
+            let batch_judged = op == "Batch" && case.expect.op.as_deref() != Some("Batch");
+            if batch_judged {
+                match (&case.expect.layer, &case.expect.component) {
+                    (Some(layer), component) if holds(&node, layer, component.as_deref()) => {}
+                    (layer, component) => reasons.push(format!(
+                        "batch holds no {} {}",
+                        layer.as_deref().unwrap_or("node"),
+                        component.as_deref().unwrap_or("")
+                    )),
+                }
+            } else if let Some(want) = &case.expect.op
                 && want != &op
             {
                 reasons.push(format!("op {op}, expected {want}"));
@@ -103,13 +117,13 @@ pub fn judge(case: &Case, messages: &[Server], ms: u64) -> Outcome {
                 .and_then(|s| s.split(':').next())
                 .unwrap_or("root")
                 .to_owned();
-            if let Some(want) = &case.expect.layer
+            if !batch_judged
+                && let Some(want) = &case.expect.layer
                 && want != &layer
             {
                 reasons.push(format!("layer {layer}, expected {want}"));
             }
-            if let Some(want) = &case.expect.component {
-                let node: Value = serde_yaml::from_str(&p.after).unwrap_or(Value::Null);
+            if !batch_judged && let Some(want) = &case.expect.component {
                 let component = node["component"].as_str().unwrap_or("none");
                 if want != component {
                     reasons.push(format!("component {component}, expected {want}"));
@@ -200,6 +214,35 @@ pub fn elapsed(started: Instant) -> u64 {
     started.elapsed().as_millis() as u64
 }
 
+/// Whether `node` (a YAML subtree read into JSON) holds, at any depth, a node of `layer` whose
+/// component is `component` (any component when `None`).
+fn holds(node: &Value, layer: &str, component: Option<&str>) -> bool {
+    let key = match layer {
+        "section" => "sections",
+        "overlay" => "overlays",
+        "widget" => "widgets",
+        "item" => "item",
+        "page" => "pages",
+        "region" => "regions",
+        _ => return false,
+    };
+    let Value::Object(map) = node else {
+        return match node {
+            Value::Array(items) => items.iter().any(|v| holds(v, layer, component)),
+            _ => false,
+        };
+    };
+    let here = map
+        .get(key)
+        .and_then(Value::as_object)
+        .is_some_and(|children| {
+            children
+                .values()
+                .any(|c| component.is_none_or(|want| c["component"].as_str() == Some(want)))
+        });
+    here || map.values().any(|v| holds(v, layer, component))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,6 +266,30 @@ mod tests {
             }
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn a_batch_passes_when_it_holds_the_expected_node() {
+        let expect = Expect {
+            op: Some("Insert".into()),
+            layer: Some("overlay".into()),
+            component: Some("confirm".into()),
+            max_ms: None,
+        };
+        let page = "kind: list_page\nsections:\n  list: {component: collection}\noverlays:\n  cancel: {kind: dialog, component: confirm}\n";
+        let out = judge(
+            &case(expect.clone()),
+            &[proposal(page, "page:loans", "Batch")],
+            10,
+        );
+        assert!(out.pass, "{:?}", out.reasons);
+        let without = "kind: list_page\nsections:\n  list: {component: collection}\n";
+        let out = judge(
+            &case(expect),
+            &[proposal(without, "page:loans", "Batch")],
+            10,
+        );
+        assert_eq!(out.reasons, ["batch holds no overlay confirm"]);
     }
 
     #[test]
