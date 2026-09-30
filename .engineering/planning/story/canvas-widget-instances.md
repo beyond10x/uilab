@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:canvas-widget-instances
 kind: story
-status: active
+status: implemented
 title: Widget instances render their body on the canvas
 relations:
 - decomposes: epic:ux-fidelity
@@ -12,10 +12,13 @@ scope:
   path: widget/src/components/CanvasView.vue
 - confidence: cited
   path: widget/src/components/CompositeView.vue
-revision: 4
+- confidence: cited
+  path: widget/src/lib/instance.ts
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-09-30T13:08:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-09-30T13:08:12Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-09-30T15:38:06Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"review_outcome":2}}}
 ---
 ## Outcome
 

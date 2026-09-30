@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-01T01:00:00Z",
+  "actor": "human:timo",
+  "artifact": "story:canvas-widget-instances",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "coordinator correction 7fc170c",
+    "review": "review-result:canvas-widget-instances-adversary-2",
+    "outcome": "fixed"
+  }
+}
