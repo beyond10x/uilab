@@ -2134,3 +2134,69 @@ fn every_kind_of_child_and_list_entry_a_replace_drops_is_named() {
         "entries match by name before label, and by the whole value last"
     );
 }
+
+#[test]
+fn children_and_menu_pages_are_matched_each_once() {
+    let mut doubled = library();
+    doubled.pages["members"].sections["list"]
+        .as_mut()
+        .unwrap()
+        .item = composite(json!({"component": "collection", "item": [
+        {"name": "tag", "primitive": "badge", "text": "row.standing"},
+        {"name": "tag", "primitive": "text", "text": "row.name"},
+    ]}))
+    .item;
+    let one = replace(
+        "page:members/section:list",
+        json!({"component": "collection", "reads": {"view": "members.All"},
+            "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"},
+                {"field": "standing", "as": "tag"}],
+            "item": [{"name": "tag", "primitive": "badge", "text": "row.standing"}]}),
+    );
+    assert_eq!(
+        drops(&doubled, &one),
+        [(
+            "page:members/section:list".to_owned(),
+            "replace at page:members/section:list drops item tag".to_owned()
+        )]
+    );
+
+    let mut listed_twice = library();
+    listed_twice.navigation.sections[1].pages =
+        uilab_doc::model::NavPages::Fixed(vec!["members".into(), "members".into()]);
+    let once = replace(
+        "nav/nav_section:people",
+        json!({"label": "People", "icon": "members", "pages": ["members"]}),
+    );
+    assert_eq!(
+        drops(&listed_twice, &once),
+        [(
+            "nav/nav_section:people".to_owned(),
+            "replace at nav/nav_section:people drops page members".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_batch_replacing_a_node_and_its_child_names_each_drop_once() {
+    let doc = library();
+    let list = json!({"component": "collection", "reads": {"view": "members.All"},
+        "columns": [{"field": "name"}]});
+    let batch = Patch::Batch {
+        target: path("page:members"),
+        patches: vec![
+            replace(
+                "page:members",
+                json!({"kind": "list_page", "title": "Members", "sections": {"list": list.clone()}}),
+            ),
+            replace("page:members/section:list", list),
+        ],
+    };
+    assert_eq!(
+        drops(&doc, &batch),
+        [(
+            "page:members/section:list".to_owned(),
+            "replace at page:members/section:list drops columns joined, loans, standing".to_owned()
+        )]
+    );
+}

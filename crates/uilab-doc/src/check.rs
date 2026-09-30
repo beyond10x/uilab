@@ -153,30 +153,33 @@ fn drops_at(out: &mut Findings, before: &Document, after: &Document, at: &NodePa
         None => groups.push((what.to_owned(), vec![name])),
     };
 
-    let kept_children = children(after, at).unwrap_or_default();
-    let mut stayed = Vec::new();
-    for (layer, name) in children(before, at).unwrap_or_default() {
-        if kept_children.contains(&(layer, name.clone())) {
-            stayed.push(at.child(layer, &name));
-        } else {
-            add(layer.as_str(), name);
-        }
+    let (stayed, gone) = compare(
+        children(before, at).unwrap_or_default(),
+        children(after, at).unwrap_or_default(),
+    );
+    for (layer, name) in gone {
+        add(layer.as_str(), name);
     }
+    let mut stayed: Vec<NodePath> = stayed
+        .into_iter()
+        .map(|(layer, name)| at.child(layer, &name))
+        .collect();
+    stayed.dedup();
     if let (NodeRef::NavSection(old), NodeRef::NavSection(new)) = (old, new)
         && let (NavPages::Fixed(old), NavPages::Fixed(new)) = (&old.pages, &new.pages)
     {
-        for page in old.iter().filter(|p| !new.contains(p)) {
-            add("page", page.clone());
+        for page in compare(old.clone(), new.clone()).1 {
+            add("page", page);
         }
     }
     if let (Some(old), Some(new)) = (old.composite(), new.composite()) {
         for key in LIST_PROPS {
-            let kept: Vec<(&str, String)> = entries(new, key).map(identity).collect();
-            for entry in entries(old, key) {
-                let id = identity(entry);
-                if !kept.contains(&id) {
-                    add(key, id.1);
-                }
+            let (_, gone) = compare(
+                entries(old, key).map(identity).collect(),
+                entries(new, key).map(identity).collect(),
+            );
+            for id in gone {
+                add(key, id);
             }
         }
     }
@@ -204,20 +207,34 @@ fn entries<'a>(composite: &'a Composite, key: &str) -> impl Iterator<Item = &'a 
         .flatten()
 }
 
-/// What an entry of a list prop is known by, with the key it is known by: its `field`, else its
-/// `name`, else its `label`, else the whole value (a string as written, anything else as JSON).
-fn identity(entry: &Value) -> (&'static str, String) {
+/// Matches `old` against `new` as multisets, in `old`'s order: each item of `new` answers for one
+/// item of `old` only. Returns the items of `old` that are matched and those that are not.
+fn compare<T: PartialEq>(old: Vec<T>, mut new: Vec<T>) -> (Vec<T>, Vec<T>) {
+    let mut kept = Vec::new();
+    let mut gone = Vec::new();
+    for item in old {
+        match new.iter().position(|n| *n == item) {
+            Some(i) => {
+                new.swap_remove(i);
+                kept.push(item);
+            }
+            None => gone.push(item),
+        }
+    }
+    (kept, gone)
+}
+
+/// What an entry of a list prop is known by: its `field`, else its `name`, else its `label`,
+/// else the whole value (a string as written, anything else as JSON). Only the value counts, not
+/// the key it came from, so `due` and `{field: due}` are the same field, as the renderer and
+/// [`crate::fixtures`] read them.
+fn identity(entry: &Value) -> String {
     ["field", "name", "label"]
         .into_iter()
-        .find_map(|k| {
-            entry
-                .get(k)
-                .and_then(Value::as_str)
-                .map(|v| (k, v.to_owned()))
-        })
+        .find_map(|k| entry.get(k).and_then(Value::as_str).map(str::to_owned))
         .unwrap_or_else(|| match entry {
-            Value::String(s) => ("", s.clone()),
-            other => ("", other.to_string()),
+            Value::String(s) => s.clone(),
+            other => other.to_string(),
         })
 }
 

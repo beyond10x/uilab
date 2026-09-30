@@ -164,27 +164,33 @@ pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), 
     Ok((next, findings))
 }
 
-/// What the replaces of an applied patch remove, each measured against the document as it was
-/// just before that replace ran.
+/// What the replaces of an admitted patch remove: at each replace target, what the stored
+/// document has and the admitted one lacks. A batch is judged by its result, so what a later
+/// patch puts back, or what an earlier insert added, is never named. A target under another
+/// replaced target is covered by that one's comparison.
 fn drops(doc: &Document, next: &Document, patch: &Patch) -> Vec<Finding> {
-    match patch {
-        Patch::Replace { target, .. } => replace_drops(doc, next, target),
-        Patch::Batch { patches, .. } => {
-            let mut state = doc.clone();
-            let mut out = Vec::new();
-            for patch in patches {
-                let prior = matches!(patch, Patch::Replace { .. }).then(|| state.clone());
-                if apply_unchecked(&mut state, patch).is_err() {
-                    break;
-                }
-                if let Some(prior) = prior {
-                    out.extend(replace_drops(&prior, &state, patch.target()));
-                }
-            }
-            out
-        }
+    let targets: Vec<&NodePath> = match patch {
+        Patch::Replace { target, .. } => vec![target],
+        Patch::Batch { patches, .. } => patches
+            .iter()
+            .filter_map(|p| match p {
+                Patch::Replace { target, .. } => Some(target),
+                _ => None,
+            })
+            .collect(),
         Patch::Insert { .. } | Patch::Remove { .. } => Vec::new(),
+    };
+    let mut out = Vec::new();
+    for (i, target) in targets.iter().enumerate() {
+        let covered = targets.iter().enumerate().any(|(j, other)| {
+            (other.0.len() < target.0.len() && target.0.starts_with(&other.0))
+                || (j < i && *other == *target)
+        });
+        if !covered {
+            out.extend(replace_drops(doc, next, target));
+        }
     }
+    out
 }
 
 fn parse<T: serde::de::DeserializeOwned>(layer: Layer, node: &Value) -> Result<T, Refusal> {
