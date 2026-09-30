@@ -698,7 +698,7 @@ node has `summary` (one line, required), `params` (each `{type: …, required: t
 constructor map), optional `arrange` (`row`, `column` or `grid`) and a `body`: a list of named \
 nodes, each with `name`. A body node is a built-in composite, an instance of another widget, or a \
 primitive `{name: …, primitive: <kind>, …}`. The primitive kinds are `text` (`text` or `field`, \
-optional `style: heading`), `badge` (`text`), `icon` (`label`), `button` \
+optional `style: heading`), `badge` (`text`, `tone`), `icon` (`label`), `button` \
 (`label`, `action`), `link` (`to` or `href`), `input` (`binds`), `toggle`, `image` (`src`, \
 required `alt`) and `divider`. In a body, `args.<param>` refers to a param: `text: \
 args.member.name`. Add a body node with layer `node` under `component:<widget>`; change a widget \
@@ -899,19 +899,48 @@ fn outline_lines(node: &uilab_doc::OutlineNode, depth: usize, out: &mut String) 
     }
 }
 
+/// The lower-case words of `text`; anything not a letter or digit, `_` included, separates them.
+fn words(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether two words name the same thing: equal, or one is the other's plural by `s`, `es` or
+/// `ies` for `y`. A plural counts only when the singular has at least four letters, so `news` is
+/// not the plural of `new`; an exact word has no minimum.
+fn same_word(a: &str, b: &str) -> bool {
+    let plural_of = |plural: &str, singular: &str| {
+        singular.chars().count() >= 4
+            && (plural.strip_suffix('s') == Some(singular)
+                || plural.strip_suffix("es") == Some(singular)
+                || singular
+                    .strip_suffix('y')
+                    .is_some_and(|stem| plural.strip_suffix("ies") == Some(stem)))
+    };
+    a == b || plural_of(a, b) || plural_of(b, a)
+}
+
 /// The pages a request at `target` is about: the target page, then every other page whose name
-/// or title the utterance names (a trailing `s` optional). None below a page.
+/// or title the utterance says as whole words, in order (underscores as spaces, plurals as
+/// [`same_word`]). None below a page.
 fn named_pages<'a>(doc: &'a Document, target: &NodePath, utterance: &str) -> Vec<&'a str> {
     let own = match target.layer() {
         Layer::Root => None,
         Layer::Page => target.0.first().map(|segment| segment.name.as_str()),
         _ => return Vec::new(),
     };
-    let said = utterance.to_lowercase();
-    let names = |needle: &str| {
-        let needle = needle.to_lowercase().replace('_', " ");
-        let stem = needle.strip_suffix('s').unwrap_or(&needle);
-        stem.len() >= 3 && said.contains(stem)
+    let said = words(utterance);
+    let names = |name: &str| {
+        let name = words(name);
+        !name.is_empty()
+            && said.windows(name.len()).any(|run| {
+                run.iter()
+                    .zip(&name)
+                    .all(|(spoken, word)| same_word(spoken, word))
+            })
     };
     doc.pages
         .iter()

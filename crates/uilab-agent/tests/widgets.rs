@@ -387,3 +387,28 @@ fn a_request_at_a_section_lists_no_other_places() {
     let user = texts(&seen.lock().unwrap()[0]);
     assert!(!user.contains("Existing nodes of"), "{user}");
 }
+
+/// Pages match whole words: `art` is not said in "chart"; `due_soon` is said as "due soon".
+#[test]
+fn a_page_is_named_by_whole_words_with_underscores_as_spaces() {
+    let mut text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library/library.ui.yaml"),
+    )
+    .unwrap();
+    for name in ["art", "due_soon"] {
+        text.push_str(&format!(
+            "  {name}:\n    kind: list_page\n    sections:\n      queue:\n        component: collection\n        reads: {{view: loans.All}}\n"
+        ));
+    }
+    let doc = Document::from_yaml(&text).unwrap();
+    let request = |utterance: &str| {
+        let (mut proposer, seen) = proposer(vec![json!({"op": "decline", "reason": "scripted"})]);
+        let _ = proposer.propose(&doc, &NodePath::root(), utterance);
+        texts(&seen.lock().unwrap()[0])
+    };
+    let chart = request("add a chart card to the loans page");
+    assert!(!chart.contains("page:art/"), "{chart}");
+    assert!(chart.contains("page:loans/section:list"), "{chart}");
+    let due = request("use the card on the due soon page");
+    assert!(due.contains("page:due_soon/section:queue"), "{due}");
+}
