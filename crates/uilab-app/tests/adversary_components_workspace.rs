@@ -114,3 +114,89 @@ fn the_outline_tells_a_primitive_from_an_instance_of_a_widget_named_like_it() {
         ["page:overview/section:latest"]
     );
 }
+
+/// The use sites the docs print for `widget`, one entry per instance, in the outline's format.
+fn docs_sites(doc: &Document, widget: &str) -> Vec<String> {
+    let line = docs_uses(doc, widget);
+    let Some(list) = line.strip_prefix("Used at: ") else {
+        return Vec::new();
+    };
+    list.split(", ").map(|site| site.replace('`', "")).collect()
+}
+
+/// The library example with `loan_card` and `badge` placed in every kind of spot `widget_uses`
+/// walks: a board widget, a collection's item, an item action's `choice`, a widget body, two
+/// toolbar entries of one section (one path, two trails), and a page header whose `metrics`
+/// list holds two instances written with the same `name` (untyped data: no check refuses it).
+fn everywhere() -> Document {
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library/library.ui.yaml");
+    let text = std::fs::read_to_string(file).unwrap();
+    assert!(
+        text.contains("\npages:\n") && text.contains(OVERVIEW),
+        "fixture anchors are missing"
+    );
+    let widgets = "widgets:
+  loan_card:
+    summary: A loan as a card.
+    params:
+      loan: {type: Loan, required: true}
+    body:
+      - {name: title, primitive: text, text: args.loan.title, style: heading}
+      - {name: state, component: badge, args: {label: args.loan.state}}
+  badge:
+    summary: A toned tag.
+    params:
+      label: {type: string, required: true}
+    body:
+      - {name: tag, primitive: badge, text: args.label}
+pages:
+";
+    let overview = "  overview:
+    kind: dashboard_page
+    title: Overview
+    header:
+      metrics:
+        - {name: due, component: loan_card, args: {loan: rows.first}}
+        - {name: due, component: loan_card, args: {loan: rows.last}}
+    sections:
+      tiles:
+        component: board
+        widgets:
+          first: {component: loan_card, args: {loan: rows.first}}
+      cards:
+        component: collection
+        reads: {view: loans.All}
+        toolbar:
+          - {name: a, component: badge, args: {label: one}}
+          - {name: b, component: badge, args: {label: two}}
+        item:
+          - {name: card, component: loan_card, args: {loan: row}}
+          - {name: go, primitive: button, label: Go, choice: {component: badge, args: {label: row.state}}}
+";
+    let text = text
+        .replacen("\npages:\n", &format!("\n{widgets}"), 1)
+        .replacen(OVERVIEW, overview, 1);
+    Document::from_yaml(&text).unwrap()
+}
+
+/// Every instance `widget_uses` finds is one use site in the docs, and the Components tab lists
+/// the outline's `uses`: the two must agree in number as well as in paths, or the tab's count
+/// ("used N times") is not the docs' count.
+#[test]
+fn the_outline_lists_every_instance_the_docs_list_one_entry_each() {
+    let doc = everywhere();
+    let mut differ = Vec::new();
+    for widget in ["loan_card", "badge"] {
+        let docs = docs_sites(&doc, widget);
+        assert!(!docs.is_empty(), "`{widget}`: the fixture places it");
+        let listed = outline_uses(&doc, widget);
+        if listed != docs {
+            differ.push(format!("`{widget}`: outline {listed:?}, docs {docs:?}"));
+        }
+    }
+    assert!(
+        differ.is_empty(),
+        "the outline's uses and the docs' use sites differ:\n{}",
+        differ.join("\n")
+    );
+}
