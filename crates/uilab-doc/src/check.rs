@@ -3,13 +3,15 @@
 
 use std::collections::HashSet;
 
+use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::model::{
-    BUILTIN_PAGE_KINDS, Composite, CompositeKind, Document, FORMAT, NavPages, Node, Widget,
+    BUILTIN_PAGE_KINDS, Composite, CompositeKind, Document, FORMAT, NavPages, Node, NodeBody,
+    Widget,
 };
-use crate::path::{Layer, NodePath};
+use crate::path::{Layer, NodePath, NodeRef};
 
 /// How much a finding matters. An error refuses a patch that introduces it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -428,6 +430,8 @@ pub(crate) struct Instance<'a> {
 /// It covers every place `ui-spec/1` puts a Node:
 /// - each composite [`composites`] lists (sections, overlays, board widgets, items, widget-body
 ///   composites), itself and its untyped props (see [`instances_in`]);
+/// - each primitive of an `item` list or a widget body, its props (an action's `choice`), held
+///   at the primitive;
 /// - a page's untyped `header` (`metrics`, an action's `choice`), held at the page;
 /// - every page kind in `page_kinds` (its `sections` and `header`), held at the root with a trail
 ///   from `page_kinds/<kind>`.
@@ -435,10 +439,13 @@ pub(crate) struct Instance<'a> {
 /// Shells and regions hold no Node outside their typed overlays.
 pub(crate) fn widget_uses(doc: &Document) -> Vec<(NodePath, Instance<'_>)> {
     let mut out = Vec::new();
-    for (path, composite) in composites(doc) {
-        for instance in instances_in(composite) {
-            out.push((path.clone(), instance));
-        }
+    for (path, node) in nodes(doc) {
+        let found = match node {
+            NodeRef::Composite(composite) => instances_in(composite),
+            NodeRef::Primitive(primitive) => instances_in_props(&primitive.props),
+            _ => Vec::new(),
+        };
+        out.extend(found.into_iter().map(|i| (path.clone(), i)));
     }
     let root = NodePath::root();
     for (name, page) in &doc.pages {
@@ -471,7 +478,14 @@ fn instances_in(composite: &Composite) -> Vec<Instance<'_>> {
             args: composite.args(),
         });
     }
-    for (key, value) in &composite.props {
+    out.extend(instances_in_props(&composite.props));
+    out
+}
+
+/// Every widget instance in a node's untyped props, however deep; `args` is data and is skipped.
+fn instances_in_props(props: &IndexMap<String, Value>) -> Vec<Instance<'_>> {
+    let mut out = Vec::new();
+    for (key, value) in props {
         if key != "args" {
             walk_value(value, key.clone(), &mut out);
         }
@@ -553,14 +567,25 @@ fn check_args(
     }
 }
 
-/// The widgets a widget's body instantiates, however deep, typed or held in props.
+/// The widgets a widget's body instantiates, however deep, typed or held in the props of a
+/// composite or a primitive.
 fn uses(widget: &Widget) -> Vec<&str> {
-    let mut stack: Vec<&Composite> = widget.body.iter().filter_map(Node::composite).collect();
+    let mut stack: Vec<&Node> = widget.body.iter().collect();
     let mut out = Vec::new();
-    while let Some(composite) = stack.pop() {
-        out.extend(instances_in(composite).into_iter().map(|i| i.widget));
-        stack.extend(composite.widgets.values());
-        stack.extend(composite.item_composites());
+    while let Some(node) = stack.pop() {
+        let composite = match &node.body {
+            NodeBody::Primitive(p) => {
+                out.extend(instances_in_props(&p.props).into_iter().map(|i| i.widget));
+                continue;
+            }
+            NodeBody::Composite(c) => c.as_ref(),
+        };
+        let mut composites = vec![composite];
+        while let Some(composite) = composites.pop() {
+            out.extend(instances_in(composite).into_iter().map(|i| i.widget));
+            composites.extend(composite.widgets.values());
+            stack.extend(&composite.item);
+        }
     }
     out
 }
@@ -589,19 +614,32 @@ pub(crate) fn reaches(doc: &Document, from: &str, to: &str) -> bool {
 /// Every composite of the document with its path, in document order: sections, overlays and what
 /// nests in them, then the composites and widget instances of each widget body.
 pub fn composites(doc: &Document) -> Vec<(NodePath, &Composite)> {
-    fn walk<'a>(
-        path: NodePath,
-        composite: &'a Composite,
-        out: &mut Vec<(NodePath, &'a Composite)>,
-    ) {
-        out.push((path.clone(), composite));
+    nodes(doc)
+        .into_iter()
+        .filter_map(|(path, node)| match node {
+            NodeRef::Composite(c) => Some((path, c)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Every composite and every primitive of the document with its path, in document order: the
+/// order of [`composites`], each primitive of an `item` list or a widget body in its place. A
+/// check that reads a node's props reads them from here, so a primitive node is not skipped.
+pub(crate) fn nodes(doc: &Document) -> Vec<(NodePath, NodeRef<'_>)> {
+    fn walk<'a>(path: NodePath, composite: &'a Composite, out: &mut Vec<(NodePath, NodeRef<'a>)>) {
+        out.push((path.clone(), NodeRef::Composite(composite)));
         for (name, widget) in &composite.widgets {
             walk(path.child(Layer::Widget, name), widget, out);
         }
         for node in &composite.item {
-            if let Some(item) = node.composite() {
-                walk(path.child(Layer::Item, &node.name), item, out);
-            }
+            walk_node(path.child(Layer::Item, &node.name), node, out);
+        }
+    }
+    fn walk_node<'a>(path: NodePath, node: &'a Node, out: &mut Vec<(NodePath, NodeRef<'a>)>) {
+        match &node.body {
+            NodeBody::Composite(c) => walk(path, c, out),
+            NodeBody::Primitive(p) => out.push((path, NodeRef::Primitive(p))),
         }
     }
     let root = NodePath::root();
@@ -636,9 +674,7 @@ pub fn composites(doc: &Document) -> Vec<(NodePath, &Composite)> {
     for (name, widget) in &doc.widgets {
         let at = root.child(Layer::Component, name);
         for node in &widget.body {
-            if let Some(composite) = node.composite() {
-                walk(at.child(Layer::Node, &node.name), composite, &mut out);
-            }
+            walk_node(at.child(Layer::Node, &node.name), node, &mut out);
         }
     }
     out
@@ -651,16 +687,7 @@ fn check_composite(
     overlays: &[&str],
     siblings: &[&str],
 ) {
-    let props = Value::Object(composite.props.clone().into_iter().collect());
-    for opened in opens(&props) {
-        if !overlays.contains(&opened.as_str()) {
-            out.push(
-                "opens_resolves",
-                path,
-                format!("opens `{opened}`, which neither the page nor its shell declares"),
-            );
-        }
-    }
+    opens_resolve(out, path, &composite.props, overlays);
     if let Some(depends_on) = composite.props.get("depends_on").and_then(Value::as_str)
         && path.layer() == Layer::Section
         && (!siblings.contains(&depends_on) || depends_on == path.name())
@@ -675,13 +702,28 @@ fn check_composite(
         check_composite(out, &path.child(Layer::Widget, name), widget, overlays, &[]);
     }
     for node in &composite.item {
-        if let Some(item) = node.composite() {
-            check_composite(
-                out,
-                &path.child(Layer::Item, &node.name),
-                item,
-                overlays,
-                &[],
+        let at = path.child(Layer::Item, &node.name);
+        match &node.body {
+            NodeBody::Composite(item) => check_composite(out, &at, item, overlays, &[]),
+            NodeBody::Primitive(item) => opens_resolve(out, &at, &item.props, overlays),
+        }
+    }
+}
+
+/// `opens_resolves` over one node's props.
+fn opens_resolve(
+    out: &mut Findings,
+    path: &NodePath,
+    props: &IndexMap<String, Value>,
+    overlays: &[&str],
+) {
+    let props = Value::Object(props.clone().into_iter().collect());
+    for opened in opens(&props) {
+        if !overlays.contains(&opened.as_str()) {
+            out.push(
+                "opens_resolves",
+                path,
+                format!("opens `{opened}`, which neither the page nor its shell declares"),
             );
         }
     }

@@ -1736,3 +1736,96 @@ fn item_nodes_are_patched_by_path() {
         json!("array")
     );
 }
+
+/// Every check that reads a node's props reads a primitive node's props too: `opens_resolves` at
+/// a primitive item at any depth, and the widget checks at a primitive item and at a primitive of
+/// a widget body, whose props may hold a Node (an action's `choice`).
+#[test]
+fn checks_over_props_hold_primitive_nodes_too() {
+    let button = |opens: &str| {
+        format!("{{name: go, primitive: button, label: Go, action: {{name: go, opens: {opens}}}}}")
+    };
+    let nested = |node: &str| {
+        with_item(&ITEM_LIST.replace(
+            "[{name: due, primitive: text, text: row.due}]",
+            &format!("[{{name: due, primitive: text, text: row.due}}, {node}]"),
+        ))
+    };
+    let inner_go = "page:overview/section:list/item:inner/item:go".to_owned();
+
+    assert_eq!(errors(&nested(&button("detail"))), [], "a page overlay");
+    assert_eq!(errors(&nested(&button("loan"))), [], "a shell overlay");
+    assert_eq!(
+        errors(&nested(&button("nowhere"))),
+        [("opens_resolves", inner_go.clone())]
+    );
+
+    let choosing = |component: &str| {
+        format!(
+            "{{name: go, primitive: button, label: Go, action: {{name: go, does: loans.Pick, \
+             choice: {{component: {component}, args: {{state: row.state}}}}}}}}"
+        )
+    };
+    assert_eq!(errors(&nested(&choosing("state_badge"))), []);
+    assert_eq!(
+        errors(&nested(&choosing("nowhere"))),
+        [("widget_resolves", inner_go.clone())]
+    );
+    let finding = check(&nested(&choosing("nowhere")))
+        .into_iter()
+        .find(|f| f.check == "widget_resolves")
+        .unwrap();
+    assert!(
+        finding.message.starts_with("`action/choice`: "),
+        "{}",
+        finding.message
+    );
+    let docs =
+        uilab_doc::docs_markdown(&nested(&choosing("state_badge")), &Fixtures::default(), &[]);
+    assert!(
+        docs.contains(&format!("`{inner_go}` (`action/choice`)")),
+        "{docs}"
+    );
+
+    let body_choice = WIDGETS.replace(
+        "      - {name: extend, primitive: button, label: Extend, action: {name: extend, does: loans.ExtendLoan}}",
+        "      - {name: extend, primitive: button, label: Extend, action: {name: extend, does: loans.ExtendLoan, choice: {component: nowhere}}}",
+    );
+    assert_ne!(body_choice, WIDGETS, "the fixture changed");
+    assert_eq!(
+        errors(&Document::from_yaml(&body_choice).unwrap()),
+        [(
+            "widget_resolves",
+            "component:loan_card/node:extend".to_owned()
+        )]
+    );
+
+    let recursive = WIDGETS.replace(
+        "      - {name: badge, primitive: badge, text: args.state,",
+        "      - {name: rows, component: collection, reads: {view: loans.All}, item: [{name: go, primitive: button, label: Go, action: {name: go, does: loans.Pick, choice: {component: state_badge, args: {state: row.state}}}}]}\n      - {name: badge, primitive: badge, text: args.state,",
+    );
+    assert_ne!(recursive, WIDGETS, "the fixture changed");
+    assert!(
+        errors(&Document::from_yaml(&recursive).unwrap()).contains(&(
+            "widget_recursion",
+            "component:state_badge/node:rows/item:go".to_owned()
+        )),
+        "{:?}",
+        errors(&Document::from_yaml(&recursive).unwrap())
+    );
+
+    let insert = Patch::Insert {
+        target: path("page:overview/section:list/item:inner"),
+        child: Child {
+            layer: Layer::Item,
+            name: "go".into(),
+            node: json!({"primitive": "button", "label": "Go",
+                "action": {"name": "go", "does": "loans.Pick", "choice": {"component": "nowhere"}}}),
+            nav_section: None,
+        },
+    };
+    assert_eq!(
+        admit(&with_item(ITEM_LIST), &insert).unwrap_err().check,
+        "widget_resolves"
+    );
+}
