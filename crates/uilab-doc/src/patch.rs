@@ -167,8 +167,15 @@ pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), 
 /// What the replaces of an admitted patch remove: at each replace target, what the stored
 /// document has and the admitted one lacks. A batch is judged by its result, so what a later
 /// patch puts back, or what an earlier insert added, is never named. A target under another
-/// replaced target is covered by that one's comparison.
+/// replaced target is covered by that one's comparison. What a `remove` of the same batch takes is
+/// that remove's doing, so the stored side is read with those removes already applied.
 fn drops(doc: &Document, next: &Document, patch: &Patch) -> Vec<Finding> {
+    let mut base = doc.clone();
+    if let Patch::Batch { patches, .. } = patch {
+        for p in patches.iter().filter(|p| matches!(p, Patch::Remove { .. })) {
+            let _ = apply_unchecked(&mut base, p);
+        }
+    }
     let targets: Vec<&NodePath> = match patch {
         Patch::Replace { target, .. } => vec![target],
         Patch::Batch { patches, .. } => patches
@@ -187,7 +194,7 @@ fn drops(doc: &Document, next: &Document, patch: &Patch) -> Vec<Finding> {
                 || (j < i && *other == *target)
         });
         if !covered {
-            out.extend(replace_drops(doc, next, target));
+            out.extend(replace_drops(&base, next, target));
         }
     }
     out
