@@ -35,6 +35,9 @@ pub struct Document {
     pub model: String,
     /// Default state placement for the whole document.
     pub placement_profile: PlacementProfile,
+    /// Sample data so renderers run without a backend.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixtures: Option<FixtureIndex>,
     /// Application frames.
     pub shells: IndexMap<String, Shell>,
     /// Menu structure and home page.
@@ -44,9 +47,6 @@ pub struct Document {
     pub page_kinds: IndexMap<String, Value>,
     /// Every route of the app.
     pub pages: IndexMap<String, Page>,
-    /// Sample data so renderers run without a backend.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fixtures: Option<FixtureIndex>,
     /// Keys this subset does not type.
     #[serde(flatten)]
     pub extra: IndexMap<String, Value>,
@@ -359,9 +359,46 @@ impl Document {
 
     /// Writes the document as YAML.
     pub fn to_yaml(&self) -> Result<String, serde_yaml::Error> {
-        serde_yaml::to_string(self)
+        to_yaml(self)
     }
+}
 
+/// Writes a value as YAML through a `serde_json::Value`, so numbers stay numbers whatever features
+/// the build unified onto `serde_json`: with `arbitrary_precision` (the generated wire crate turns
+/// it on) serde_yaml writes a `serde_json::Number` as a private map instead of a number.
+pub fn to_yaml<T: Serialize>(value: &T) -> Result<String, serde_yaml::Error> {
+    let json =
+        serde_json::to_value(value).map_err(<serde_yaml::Error as serde::ser::Error>::custom)?;
+    serde_yaml::to_string(&yaml_of(json))
+}
+
+fn yaml_of(value: Value) -> serde_yaml::Value {
+    use serde_yaml::Value as Y;
+    match value {
+        Value::Null => Y::Null,
+        Value::Bool(b) => Y::Bool(b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Y::Number(i.into())
+            } else if let Some(u) = n.as_u64() {
+                Y::Number(u.into())
+            } else if let Some(f) = n.as_f64() {
+                Y::Number(f.into())
+            } else {
+                Y::String(n.to_string())
+            }
+        }
+        Value::String(s) => Y::String(s),
+        Value::Array(items) => Y::Sequence(items.into_iter().map(yaml_of).collect()),
+        Value::Object(map) => Y::Mapping(
+            map.into_iter()
+                .map(|(k, v)| (Y::String(k), yaml_of(v)))
+                .collect(),
+        ),
+    }
+}
+
+impl Document {
     /// The shell a page renders in: its own, or the first shell of the document.
     pub fn shell_of<'a>(&'a self, page: &'a Page) -> Option<&'a str> {
         page.shell

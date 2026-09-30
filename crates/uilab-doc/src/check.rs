@@ -34,29 +34,81 @@ pub struct Finding {
 
 /// Every check id, with its severity and what it holds.
 pub const CHECKS: [(&str, Severity, &str); 12] = [
-    ("format_marker", Severity::Error, "the document says `format: ui-spec/1`"),
-    ("nav_resolves", Severity::Error, "the home page, every menu page and every hidden page exist"),
-    ("page_reachable", Severity::Error, "every page is in the menu or hidden"),
-    ("nav_unique", Severity::Error, "every page is listed once and menu section names are unique"),
+    (
+        "format_marker",
+        Severity::Error,
+        "the document says `format: ui-spec/1`",
+    ),
+    (
+        "nav_resolves",
+        Severity::Error,
+        "the home page, every menu page and every hidden page exist",
+    ),
+    (
+        "page_reachable",
+        Severity::Error,
+        "every page is in the menu or hidden",
+    ),
+    (
+        "nav_unique",
+        Severity::Error,
+        "every page is listed once and menu section names are unique",
+    ),
     ("shell_refs", Severity::Error, "a page's shell exists"),
-    ("page_kind_known", Severity::Error, "a page's kind is built in or declared in page_kinds"),
-    ("page_outlet", Severity::Error, "a shell a page renders in has a page_outlet region"),
-    ("opens_resolves", Severity::Error, "`opens` names an overlay of the page or of its shell"),
-    ("section_refs", Severity::Error, "`depends_on` names a sibling section"),
-    ("fixture_per_view", Severity::Warning, "a read's view has a fixture"),
-    ("draft_read", Severity::Warning, "a read is a `draft.` placeholder with no model binding yet"),
-    ("unmapped_reported", Severity::Warning, "a value is an `UNMAPPED:` marker"),
+    (
+        "page_kind_known",
+        Severity::Error,
+        "a page's kind is built in or declared in page_kinds",
+    ),
+    (
+        "page_outlet",
+        Severity::Error,
+        "a shell a page renders in has a page_outlet region",
+    ),
+    (
+        "opens_resolves",
+        Severity::Error,
+        "`opens` names an overlay of the page or of its shell",
+    ),
+    (
+        "section_refs",
+        Severity::Error,
+        "`depends_on` names a sibling section",
+    ),
+    (
+        "fixture_per_view",
+        Severity::Warning,
+        "a read's view has a fixture",
+    ),
+    (
+        "draft_read",
+        Severity::Warning,
+        "a read is a `draft.` placeholder with no model binding yet",
+    ),
+    (
+        "unmapped_reported",
+        Severity::Warning,
+        "a value is an `UNMAPPED:` marker",
+    ),
 ];
 
 fn severity_of(id: &str) -> Severity {
-    CHECKS.iter().find(|(c, _, _)| *c == id).map_or(Severity::Error, |(_, s, _)| *s)
+    CHECKS
+        .iter()
+        .find(|(c, _, _)| *c == id)
+        .map_or(Severity::Error, |(_, s, _)| *s)
 }
 
 struct Findings(Vec<Finding>);
 
 impl Findings {
     fn push(&mut self, check: &'static str, path: impl ToString, message: impl Into<String>) {
-        self.0.push(Finding { check, severity: severity_of(check), path: path.to_string(), message: message.into() });
+        self.0.push(Finding {
+            check,
+            severity: severity_of(check),
+            path: path.to_string(),
+            message: message.into(),
+        });
     }
 }
 
@@ -67,19 +119,31 @@ pub fn check(doc: &Document) -> Vec<Finding> {
     let nav = root.child(Layer::Nav, "");
 
     if doc.format != FORMAT {
-        out.push("format_marker", &root, format!("format is `{}`, not `{FORMAT}`", doc.format));
+        out.push(
+            "format_marker",
+            &root,
+            format!("format is `{}`, not `{FORMAT}`", doc.format),
+        );
     }
 
     // Navigation.
     if !doc.pages.contains_key(&doc.navigation.home) {
-        out.push("nav_resolves", &nav, format!("home page `{}` does not exist", doc.navigation.home));
+        out.push(
+            "nav_resolves",
+            &nav,
+            format!("home page `{}` does not exist", doc.navigation.home),
+        );
     }
     let mut listed: Vec<&str> = Vec::new();
     let mut section_names = HashSet::new();
     for section in &doc.navigation.sections {
         let at = nav.child(Layer::NavSection, &section.name);
         if !section_names.insert(section.name.as_str()) {
-            out.push("nav_unique", &at, format!("menu section `{}` is declared twice", section.name));
+            out.push(
+                "nav_unique",
+                &at,
+                format!("menu section `{}` is declared twice", section.name),
+            );
         }
         match &section.pages {
             NavPages::Fixed(pages) => {
@@ -102,14 +166,22 @@ pub fn check(doc: &Document) -> Vec<Finding> {
     }
     for page in &doc.navigation.hidden {
         if !doc.pages.contains_key(page) {
-            out.push("nav_resolves", &nav, format!("hidden page `{page}` does not exist"));
+            out.push(
+                "nav_resolves",
+                &nav,
+                format!("hidden page `{page}` does not exist"),
+            );
         }
         listed.push(page);
     }
     let mut seen = HashSet::new();
     for page in &listed {
         if !seen.insert(*page) {
-            out.push("nav_unique", &nav, format!("page `{page}` is listed more than once"));
+            out.push(
+                "nav_unique",
+                &nav,
+                format!("page `{page}` is listed more than once"),
+            );
         }
     }
 
@@ -125,7 +197,11 @@ pub fn check(doc: &Document) -> Vec<Finding> {
             let path = at.child(Layer::Region, region_name);
             for opened in opens(&serde_json::to_value(region).unwrap_or_default()) {
                 if !overlays.contains(&opened.as_str()) {
-                    out.push("opens_resolves", &path, format!("opens `{opened}`, which shell `{name}` does not declare"));
+                    out.push(
+                        "opens_resolves",
+                        &path,
+                        format!("opens `{opened}`, which shell `{name}` does not declare"),
+                    );
                 }
             }
         }
@@ -135,17 +211,39 @@ pub fn check(doc: &Document) -> Vec<Finding> {
     for (name, page) in &doc.pages {
         let at = root.child(Layer::Page, name);
         if !listed.contains(&name.as_str()) {
-            out.push("page_reachable", &at, format!("page `{name}` is neither in the menu nor hidden"));
+            out.push(
+                "page_reachable",
+                &at,
+                format!("page `{name}` is neither in the menu nor hidden"),
+            );
         }
-        if !BUILTIN_PAGE_KINDS.contains(&page.kind.as_str()) && !doc.page_kinds.contains_key(&page.kind) {
-            out.push("page_kind_known", &at, format!("page kind `{}` is not built in and not declared", page.kind));
+        if !BUILTIN_PAGE_KINDS.contains(&page.kind.as_str())
+            && !doc.page_kinds.contains_key(&page.kind)
+        {
+            out.push(
+                "page_kind_known",
+                &at,
+                format!("page kind `{}` is not built in and not declared", page.kind),
+            );
         }
-        let shell = doc.shell_of(page).and_then(|s| doc.shells.get(s).map(|shell| (s, shell)));
+        let shell = doc
+            .shell_of(page)
+            .and_then(|s| doc.shells.get(s).map(|shell| (s, shell)));
         match (&page.shell, shell) {
-            (Some(named), None) => out.push("shell_refs", &at, format!("shell `{named}` does not exist")),
+            (Some(named), None) => {
+                out.push("shell_refs", &at, format!("shell `{named}` does not exist"))
+            }
             (_, Some((shell_name, shell))) => {
-                if !shell.regions.values().any(|r| r.kind == crate::model::RegionKind::PageOutlet) {
-                    out.push("page_outlet", &at, format!("shell `{shell_name}` has no page_outlet region to render it in"));
+                if !shell
+                    .regions
+                    .values()
+                    .any(|r| r.kind == crate::model::RegionKind::PageOutlet)
+                {
+                    out.push(
+                        "page_outlet",
+                        &at,
+                        format!("shell `{shell_name}` has no page_outlet region to render it in"),
+                    );
                 }
             }
             (None, None) => out.push("shell_refs", &at, "the document declares no shell"),
@@ -158,29 +256,60 @@ pub fn check(doc: &Document) -> Vec<Finding> {
         let siblings: Vec<&str> = page.sections.keys().map(String::as_str).collect();
         for opened in opens(&Value::Object(page.extra.clone().into_iter().collect())) {
             if !reachable.contains(&opened.as_str()) {
-                out.push("opens_resolves", &at, format!("opens `{opened}`, which neither the page nor its shell declares"));
+                out.push(
+                    "opens_resolves",
+                    &at,
+                    format!("opens `{opened}`, which neither the page nor its shell declares"),
+                );
             }
         }
         for (section_name, section) in &page.sections {
             if let Some(section) = section {
-                check_composite(&mut out, &at.child(Layer::Section, section_name), section, &reachable, &siblings);
+                check_composite(
+                    &mut out,
+                    &at.child(Layer::Section, section_name),
+                    section,
+                    &reachable,
+                    &siblings,
+                );
             }
         }
         for (overlay_name, overlay) in &page.overlays {
             if let Some(overlay) = overlay {
-                check_composite(&mut out, &at.child(Layer::Overlay, overlay_name), &overlay.body, &reachable, &siblings);
+                check_composite(
+                    &mut out,
+                    &at.child(Layer::Overlay, overlay_name),
+                    &overlay.body,
+                    &reachable,
+                    &siblings,
+                );
             }
         }
     }
 
     // Fixtures.
-    let fixtures: HashSet<&str> = doc.fixtures.iter().flat_map(|f| f.views.keys().map(String::as_str)).collect();
+    let fixtures: HashSet<&str> = doc
+        .fixtures
+        .iter()
+        .flat_map(|f| f.views.keys().map(String::as_str))
+        .collect();
     for (path, composite) in composites(doc) {
         if let Some(reads) = &composite.reads {
             if reads.is_draft() {
-                out.push("draft_read", &path, format!("reads `{}`, a placeholder with no model binding yet", reads.view));
+                out.push(
+                    "draft_read",
+                    &path,
+                    format!(
+                        "reads `{}`, a placeholder with no model binding yet",
+                        reads.view
+                    ),
+                );
             } else if !fixtures.contains(reads.view.as_str()) {
-                out.push("fixture_per_view", &path, format!("view `{}` has no fixture", reads.view));
+                out.push(
+                    "fixture_per_view",
+                    &path,
+                    format!("view `{}` has no fixture", reads.view),
+                );
             }
         }
     }
@@ -199,7 +328,11 @@ pub fn check(doc: &Document) -> Vec<Finding> {
 /// Every composite of the document with its path, in document order: sections, overlays and what
 /// nests in them.
 pub fn composites(doc: &Document) -> Vec<(NodePath, &Composite)> {
-    fn walk<'a>(path: NodePath, composite: &'a Composite, out: &mut Vec<(NodePath, &'a Composite)>) {
+    fn walk<'a>(
+        path: NodePath,
+        composite: &'a Composite,
+        out: &mut Vec<(NodePath, &'a Composite)>,
+    ) {
         out.push((path.clone(), composite));
         for (name, widget) in &composite.widgets {
             walk(path.child(Layer::Widget, name), widget, out);
@@ -212,7 +345,12 @@ pub fn composites(doc: &Document) -> Vec<(NodePath, &Composite)> {
     let mut out = Vec::new();
     for (name, shell) in &doc.shells {
         for (overlay_name, overlay) in &shell.overlays {
-            walk(root.child(Layer::Shell, name).child(Layer::Overlay, overlay_name), &overlay.body, &mut out);
+            walk(
+                root.child(Layer::Shell, name)
+                    .child(Layer::Overlay, overlay_name),
+                &overlay.body,
+                &mut out,
+            );
         }
     }
     for (name, page) in &doc.pages {
@@ -224,25 +362,43 @@ pub fn composites(doc: &Document) -> Vec<(NodePath, &Composite)> {
         }
         for (overlay_name, overlay) in &page.overlays {
             if let Some(overlay) = overlay {
-                walk(at.child(Layer::Overlay, overlay_name), &overlay.body, &mut out);
+                walk(
+                    at.child(Layer::Overlay, overlay_name),
+                    &overlay.body,
+                    &mut out,
+                );
             }
         }
     }
     out
 }
 
-fn check_composite(out: &mut Findings, path: &NodePath, composite: &Composite, overlays: &[&str], siblings: &[&str]) {
+fn check_composite(
+    out: &mut Findings,
+    path: &NodePath,
+    composite: &Composite,
+    overlays: &[&str],
+    siblings: &[&str],
+) {
     let props = Value::Object(composite.props.clone().into_iter().collect());
     for opened in opens(&props) {
         if !overlays.contains(&opened.as_str()) {
-            out.push("opens_resolves", path, format!("opens `{opened}`, which neither the page nor its shell declares"));
+            out.push(
+                "opens_resolves",
+                path,
+                format!("opens `{opened}`, which neither the page nor its shell declares"),
+            );
         }
     }
     if let Some(depends_on) = composite.props.get("depends_on").and_then(Value::as_str)
         && path.layer() == Layer::Section
         && (!siblings.contains(&depends_on) || depends_on == path.name())
     {
-        out.push("section_refs", path, format!("depends_on `{depends_on}`, which is not a sibling section"));
+        out.push(
+            "section_refs",
+            path,
+            format!("depends_on `{depends_on}`, which is not a sibling section"),
+        );
     }
     for (name, widget) in &composite.widgets {
         check_composite(out, &path.child(Layer::Widget, name), widget, overlays, &[]);

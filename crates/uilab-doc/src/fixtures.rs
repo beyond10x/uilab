@@ -23,8 +23,14 @@ pub struct ViewRows {
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum ViewFile {
-    Many { views: IndexMap<String, ViewRows> },
-    One { view: String, #[serde(flatten)] rows: ViewRows },
+    Many {
+        views: IndexMap<String, ViewRows>,
+    },
+    One {
+        view: String,
+        #[serde(flatten)]
+        rows: ViewRows,
+    },
 }
 
 #[derive(Deserialize)]
@@ -62,7 +68,9 @@ impl Fixtures {
             let parsed: IndexFile = read_yaml(&path)?;
             let base = path.parent().unwrap_or(&dir).to_path_buf();
             for (view, file) in parsed.views {
-                files.entry(view).or_insert_with(|| base.join(file).to_string_lossy().into_owned());
+                files
+                    .entry(view)
+                    .or_insert_with(|| base.join(file).to_string_lossy().into_owned());
             }
         }
         let mut views = IndexMap::new();
@@ -99,7 +107,10 @@ impl Fixtures {
 }
 
 fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, FixtureError> {
-    let err = |message: String| FixtureError { path: path.display().to_string(), message };
+    let err = |message: String| FixtureError {
+        path: path.display().to_string(),
+        message,
+    };
     let text = std::fs::read_to_string(path).map_err(|e| err(e.to_string()))?;
     serde_yaml::from_str(&text).map_err(|e| err(e.to_string()))
 }

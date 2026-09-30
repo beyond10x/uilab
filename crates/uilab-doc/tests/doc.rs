@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 use uilab_doc::{
-    CHECKS, Child, Document, Fixtures, Layer, NodePath, Patch, Severity, admit, check, node_context, outline,
-    patch_schema, resolve,
+    CHECKS, Child, Document, Fixtures, Layer, NodePath, Patch, Severity, admit, check,
+    node_context, outline, patch_schema, resolve,
 };
 
 fn examples() -> PathBuf {
@@ -45,11 +45,21 @@ fn round_trip_keeps_section_order_and_untyped_props() {
     let recent = yaml.find("recent:").unwrap();
     assert!(on_loan < recent, "section order is layout order");
     assert!(yaml.contains("row_actions"), "an untyped prop survives");
+    assert!(yaml.contains("size: 5"), "a number is written as a number");
+    assert!(
+        !yaml.contains("serde_json"),
+        "no serde_json internals in the file"
+    );
 }
 
 #[test]
 fn paths_parse_print_and_refuse_misplaced_layers() {
-    for text in ["/", "shell:app/region:nav", "nav/nav_section:sales", "page:loans/section:list/item:status"] {
+    for text in [
+        "/",
+        "shell:app/region:nav",
+        "nav/nav_section:sales",
+        "page:loans/section:list/item:status",
+    ] {
         assert_eq!(path(text).to_string(), text);
     }
     assert!("page:loans/page:other".parse::<NodePath>().is_err());
@@ -65,7 +75,12 @@ fn a_path_survives_a_sibling_insert() {
     let before = format!("{:?}", resolve(&doc, &recent).unwrap());
     let patch = Patch::Insert {
         target: path("page:overview"),
-        child: Child { layer: Layer::Section, name: "alerts".into(), node: json!({"component": "record"}), nav_section: None },
+        child: Child {
+            layer: Layer::Section,
+            name: "alerts".into(),
+            node: json!({"component": "record"}),
+            nav_section: None,
+        },
     };
     let (next, _) = admit(&doc, &patch).unwrap();
     assert_eq!(format!("{:?}", resolve(&next, &recent).unwrap()), before);
@@ -78,7 +93,16 @@ fn patch_schema_offers_only_what_the_node_can_take() {
     let layers = |schema: serde_json::Value| -> Vec<String> {
         schema["properties"]["child"]["oneOf"]
             .as_array()
-            .map(|v| v.iter().map(|c| c["properties"]["layer"]["const"].as_str().unwrap().to_owned()).collect())
+            .map(|v| {
+                v.iter()
+                    .map(|c| {
+                        c["properties"]["layer"]["const"]
+                            .as_str()
+                            .unwrap()
+                            .to_owned()
+                    })
+                    .collect()
+            })
             .unwrap_or_default()
     };
     let page = patch_schema(&doc, &path("page:loans")).unwrap();
@@ -89,7 +113,10 @@ fn patch_schema_offers_only_what_the_node_can_take() {
 
     let metric = patch_schema(&doc, &path("page:overview/section:on_loan")).unwrap();
     assert!(metric["properties"].get("child").is_none());
-    assert_eq!(metric["properties"]["op"]["enum"], json!(["replace", "remove"]));
+    assert_eq!(
+        metric["properties"]["op"]["enum"],
+        json!(["replace", "remove"])
+    );
 
     let root = patch_schema(&doc, &NodePath::root()).unwrap();
     assert_eq!(root["properties"]["op"]["enum"], json!(["insert"]));
@@ -103,11 +130,21 @@ fn admit_refuses_by_check_id() {
     let doc = library();
     let refused = |patch: Patch| admit(&doc, &patch).unwrap_err().check;
 
-    assert_eq!(refused(Patch::Remove { target: path("page:overview") }), "nav_resolves");
+    assert_eq!(
+        refused(Patch::Remove {
+            target: path("page:overview")
+        }),
+        "nav_resolves"
+    );
     assert_eq!(
         refused(Patch::Insert {
             target: path("page:loans"),
-            child: Child { layer: Layer::Section, name: "list".into(), node: json!({"component": "record"}), nav_section: None },
+            child: Child {
+                layer: Layer::Section,
+                name: "list".into(),
+                node: json!({"component": "record"}),
+                nav_section: None
+            },
         }),
         "name_unique"
     );
@@ -126,16 +163,34 @@ fn admit_refuses_by_check_id() {
     assert_eq!(
         refused(Patch::Insert {
             target: path("page:loans/section:list"),
-            child: Child { layer: Layer::Widget, name: "w".into(), node: json!({"component": "chart"}), nav_section: None },
+            child: Child {
+                layer: Layer::Widget,
+                name: "w".into(),
+                node: json!({"component": "chart"}),
+                nav_section: None
+            },
         }),
         "layer_allowed"
     );
     assert_eq!(
-        refused(Patch::Replace { target: path("page:loans/section:list"), node: json!({"component": "carousel"}) }),
+        refused(Patch::Replace {
+            target: path("page:loans/section:list"),
+            node: json!({"component": "carousel"})
+        }),
         "node_shape"
     );
-    assert_eq!(refused(Patch::Remove { target: path("page:nowhere") }), "path_resolves");
-    assert_eq!(refused(Patch::Remove { target: NodePath::root() }), "op_allowed");
+    assert_eq!(
+        refused(Patch::Remove {
+            target: path("page:nowhere")
+        }),
+        "path_resolves"
+    );
+    assert_eq!(
+        refused(Patch::Remove {
+            target: NodePath::root()
+        }),
+        "op_allowed"
+    );
 }
 
 #[test]
@@ -152,46 +207,114 @@ fn admit_accepts_a_page_and_lists_it() {
     };
     let (next, findings) = admit(&doc, &patch).unwrap();
     assert!(next.navigation.hidden.contains(&"books".to_owned()));
-    assert_eq!(findings.iter().map(|f| (f.check, f.severity)).collect::<Vec<_>>(), [("draft_read", Severity::Warning)]);
+    assert_eq!(
+        findings
+            .iter()
+            .map(|f| (f.check, f.severity))
+            .collect::<Vec<_>>(),
+        [("draft_read", Severity::Warning)]
+    );
 
-    let removed = admit(&next, &Patch::Remove { target: path("page:books") }).unwrap().0;
-    assert_eq!(removed, doc, "removing the page undoes the insert, menu included");
+    let removed = admit(
+        &next,
+        &Patch::Remove {
+            target: path("page:books"),
+        },
+    )
+    .unwrap()
+    .0;
+    assert_eq!(
+        removed, doc,
+        "removing the page undoes the insert, menu included"
+    );
 }
+
+type Breaks = Box<dyn Fn(&mut Document)>;
 
 /// One broken document per check id: every check can fail.
 #[test]
 fn every_check_fails_on_its_own_fixture() {
     let base = library();
-    let broken: Vec<(&str, Box<dyn Fn(&mut Document)>)> = vec![
+    let broken: Vec<(&str, Breaks)> = vec![
         ("format_marker", Box::new(|d| d.format = "ui-spec/0".into())),
-        ("nav_resolves", Box::new(|d| d.navigation.home = "nowhere".into())),
-        ("page_reachable", Box::new(|d| d.navigation.sections[1].pages = uilab_doc::model::NavPages::Fixed(vec![]))),
-        ("nav_unique", Box::new(|d| d.navigation.hidden.push("loans".into()))),
-        ("shell_refs", Box::new(|d| d.pages["loans"].shell = Some("print".into()))),
-        ("page_kind_known", Box::new(|d| d.pages["loans"].kind = "wizard_page".into())),
-        ("page_outlet", Box::new(|d| {
-            d.shells["app"].regions.shift_remove("main");
-        })),
-        ("opens_resolves", Box::new(|d| {
-            d.pages["loans"].overlays.shift_remove("edit");
-        })),
-        ("section_refs", Box::new(|d| {
-            let list = d.pages["loans"].sections["list"].as_mut().unwrap();
-            list.props.insert("depends_on".into(), json!("filters"));
-        })),
-        ("fixture_per_view", Box::new(|d| {
-            d.fixtures.as_mut().unwrap().views.shift_remove("members.All");
-        })),
-        ("draft_read", Box::new(|d| {
-            d.pages["members"].sections["list"].as_mut().unwrap().reads.as_mut().unwrap().view = "draft.Members".into();
-        })),
-        ("unmapped_reported", Box::new(|d| {
-            d.pages["loans"].extra.insert("note".into(), json!("UNMAPPED: nobody said"));
-        })),
+        (
+            "nav_resolves",
+            Box::new(|d| d.navigation.home = "nowhere".into()),
+        ),
+        (
+            "page_reachable",
+            Box::new(|d| {
+                d.navigation.sections[1].pages = uilab_doc::model::NavPages::Fixed(vec![])
+            }),
+        ),
+        (
+            "nav_unique",
+            Box::new(|d| d.navigation.hidden.push("loans".into())),
+        ),
+        (
+            "shell_refs",
+            Box::new(|d| d.pages["loans"].shell = Some("print".into())),
+        ),
+        (
+            "page_kind_known",
+            Box::new(|d| d.pages["loans"].kind = "wizard_page".into()),
+        ),
+        (
+            "page_outlet",
+            Box::new(|d| {
+                d.shells["app"].regions.shift_remove("main");
+            }),
+        ),
+        (
+            "opens_resolves",
+            Box::new(|d| {
+                d.pages["loans"].overlays.shift_remove("edit");
+            }),
+        ),
+        (
+            "section_refs",
+            Box::new(|d| {
+                let list = d.pages["loans"].sections["list"].as_mut().unwrap();
+                list.props.insert("depends_on".into(), json!("filters"));
+            }),
+        ),
+        (
+            "fixture_per_view",
+            Box::new(|d| {
+                d.fixtures
+                    .as_mut()
+                    .unwrap()
+                    .views
+                    .shift_remove("members.All");
+            }),
+        ),
+        (
+            "draft_read",
+            Box::new(|d| {
+                d.pages["members"].sections["list"]
+                    .as_mut()
+                    .unwrap()
+                    .reads
+                    .as_mut()
+                    .unwrap()
+                    .view = "draft.Members".into();
+            }),
+        ),
+        (
+            "unmapped_reported",
+            Box::new(|d| {
+                d.pages["loans"]
+                    .extra
+                    .insert("note".into(), json!("UNMAPPED: nobody said"));
+            }),
+        ),
     ];
     assert_eq!(broken.len(), CHECKS.len());
     for (id, breaks) in &broken {
-        assert!(CHECKS.iter().any(|(c, _, _)| c == id), "{id} is not a declared check");
+        assert!(
+            CHECKS.iter().any(|(c, _, _)| c == id),
+            "{id} is not a declared check"
+        );
         let mut doc = base.clone();
         breaks(&mut doc);
         assert!(ids(&doc).contains(id), "{id} did not fire: {:?}", ids(&doc));
@@ -217,5 +340,17 @@ fn context_names_what_can_go_here() {
     assert_eq!(context.children, ["section:list", "overlay:edit"]);
     assert_eq!(context.ancestors, ["/ (document)"]);
     let tree = outline(&doc);
-    assert_eq!(tree.children.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), ["shell:app", "nav", "page:overview", "page:loans", "page:members"]);
+    assert_eq!(
+        tree.children
+            .iter()
+            .map(|c| c.path.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "shell:app",
+            "nav",
+            "page:overview",
+            "page:loans",
+            "page:members"
+        ]
+    );
 }

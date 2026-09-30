@@ -37,19 +37,41 @@ pub fn outline(doc: &Document) -> OutlineNode {
 
 fn node(doc: &Document, path: &NodePath) -> Result<OutlineNode, PathError> {
     let found = resolve(doc, path)?;
-    let props = found.composite().filter(|c| !c.props.is_empty()).map(|c| {
-        serde_json::Value::Object(c.props.clone().into_iter().collect())
-    });
+    // Composites carry their own props. The menu, its sections and pages carry what a renderer
+    // needs to place them: the home page, a section's pages, a page's shell.
+    let props = match found {
+        NodeRef::Nav(n) => Some(serde_json::json!({"home": n.home})),
+        NodeRef::NavSection(s) => Some(match &s.pages {
+            crate::model::NavPages::Fixed(pages) => serde_json::json!({"pages": pages}),
+            crate::model::NavPages::Dynamic(entries) => {
+                serde_json::json!({"from_view": entries.get("from_view"), "page": entries.get("page")})
+            }
+        }),
+        NodeRef::Page(p) => doc
+            .shell_of(p)
+            .map(|shell| serde_json::json!({"shell": shell})),
+        _ => found
+            .composite()
+            .filter(|c| !c.props.is_empty())
+            .map(|c| serde_json::Value::Object(c.props.clone().into_iter().collect())),
+    };
     let (title, view) = match found {
         NodeRef::Root(d) => (d.title.clone(), None),
         NodeRef::Page(p) => (p.title.clone(), None),
         NodeRef::NavSection(s) => (s.label.clone(), None),
         NodeRef::Overlay(o) => (
-            o.body.props.get("title").and_then(|v| v.as_str()).map(str::to_owned),
+            o.body
+                .props
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
             o.body.reads.as_ref().map(|r| r.view.clone()),
         ),
         NodeRef::Composite(c) => (
-            c.props.get("title").and_then(|v| v.as_str()).map(str::to_owned),
+            c.props
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned),
             c.reads.as_ref().map(|r| r.view.clone()),
         ),
         _ => (None, None),
@@ -101,13 +123,27 @@ pub fn node_context(doc: &Document, path: &NodePath) -> Result<NodeContext, Path
         Vec::new()
     };
     let mut ancestors = Vec::new();
-    for ancestor in path.lineage().into_iter().rev().skip(1).collect::<Vec<_>>().into_iter().rev() {
+    for ancestor in path
+        .lineage()
+        .into_iter()
+        .rev()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
         let kind = resolve(doc, &ancestor)?.kind_label();
         ancestors.push(format!("{ancestor} ({kind})"));
     }
     let children = children(doc, path)?
         .into_iter()
-        .map(|(layer, name)| if layer == Layer::Nav { "nav".to_owned() } else { format!("{layer}:{name}") })
+        .map(|(layer, name)| {
+            if layer == Layer::Nav {
+                "nav".to_owned()
+            } else {
+                format!("{layer}:{name}")
+            }
+        })
         .collect();
     Ok(NodeContext {
         path: path.to_string(),
@@ -128,18 +164,18 @@ pub fn yaml_at(doc: &Document, path: &NodePath) -> Option<String> {
 
 fn node_yaml(node: NodeRef<'_>) -> String {
     let text = match node {
-        NodeRef::Root(d) => serde_yaml::to_string(&serde_json::json!({
+        NodeRef::Root(d) => crate::model::to_yaml(&serde_json::json!({
             "app": d.app, "title": d.title, "model": d.model,
             "shells": d.shells.keys().collect::<Vec<_>>(),
             "pages": d.pages.keys().collect::<Vec<_>>(),
         })),
-        NodeRef::Shell(s) => serde_yaml::to_string(s),
-        NodeRef::Region(r) => serde_yaml::to_string(r),
-        NodeRef::Nav(n) => serde_yaml::to_string(n),
-        NodeRef::NavSection(s) => serde_yaml::to_string(s),
-        NodeRef::Page(p) => serde_yaml::to_string(p),
-        NodeRef::Overlay(o) => serde_yaml::to_string(o),
-        NodeRef::Composite(c) => serde_yaml::to_string(c),
+        NodeRef::Shell(s) => crate::model::to_yaml(s),
+        NodeRef::Region(r) => crate::model::to_yaml(r),
+        NodeRef::Nav(n) => crate::model::to_yaml(n),
+        NodeRef::NavSection(s) => crate::model::to_yaml(s),
+        NodeRef::Page(p) => crate::model::to_yaml(p),
+        NodeRef::Overlay(o) => crate::model::to_yaml(o),
+        NodeRef::Composite(c) => crate::model::to_yaml(c),
     };
     text.unwrap_or_default()
 }
@@ -155,7 +191,10 @@ pub fn vocabulary(doc: &Document, path: &NodePath) -> Vec<String> {
         }
     };
     if let Ok(context) = node_context(doc, path) {
-        context.allowed_children.iter().for_each(|l| add(l.as_str()));
+        context
+            .allowed_children
+            .iter()
+            .for_each(|l| add(l.as_str()));
         context.composite_kinds.iter().for_each(|k| add(k));
         for child in &context.children {
             add(child.split_once(':').map_or(child.as_str(), |(_, n)| n));

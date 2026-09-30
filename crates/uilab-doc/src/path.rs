@@ -15,7 +15,9 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Composite, CompositeKind, Document, NavSection, Navigation, Overlay, Page, Region, Shell};
+use crate::model::{
+    Composite, CompositeKind, Document, NavSection, Navigation, Overlay, Page, Region, Shell,
+};
 
 /// The layer a node belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -77,7 +79,10 @@ impl Layer {
 
     /// Whether a node of this layer is a composite (and may hold widgets or items).
     pub fn is_composite(self) -> bool {
-        matches!(self, Layer::Section | Layer::Overlay | Layer::Widget | Layer::Item)
+        matches!(
+            self,
+            Layer::Section | Layer::Overlay | Layer::Widget | Layer::Item
+        )
     }
 }
 
@@ -148,14 +153,20 @@ impl NodePath {
         let mut segments = self.0.clone();
         segments.push(Segment {
             layer,
-            name: if layer == Layer::Nav { String::new() } else { name.to_owned() },
+            name: if layer == Layer::Nav {
+                String::new()
+            } else {
+                name.to_owned()
+            },
         });
         NodePath(segments)
     }
 
     /// Every path from the root down to this one, root first, this one last.
     pub fn lineage(&self) -> Vec<NodePath> {
-        (0..=self.0.len()).map(|n| NodePath(self.0[..n].to_vec())).collect()
+        (0..=self.0.len())
+            .map(|n| NodePath(self.0[..n].to_vec()))
+            .collect()
     }
 }
 
@@ -191,20 +202,28 @@ impl FromStr for NodePath {
             let (layer, name) = if part == "nav" {
                 (Layer::Nav, "")
             } else {
-                let (layer, name) = part
-                    .split_once(':')
-                    .ok_or(PathError::Malformed(text.to_owned(), "a segment is not `<layer>:<name>`"))?;
+                let (layer, name) = part.split_once(':').ok_or(PathError::Malformed(
+                    text.to_owned(),
+                    "a segment is not `<layer>:<name>`",
+                ))?;
                 let layer = Layer::parse(layer)
                     .filter(|l| *l != Layer::Nav)
                     .ok_or(PathError::Malformed(text.to_owned(), "unknown layer"))?;
                 if name.is_empty() {
-                    return Err(PathError::Malformed(text.to_owned(), "a segment has no name"));
+                    return Err(PathError::Malformed(
+                        text.to_owned(),
+                        "a segment has no name",
+                    ));
                 }
                 (layer, name)
             };
             let parent = path.layer();
             if !may_contain(parent, layer) {
-                return Err(PathError::Misplaced { path: text.to_owned(), parent, child: layer });
+                return Err(PathError::Misplaced {
+                    path: text.to_owned(),
+                    parent,
+                    child: layer,
+                });
             }
             path = path.child(layer, name);
         }
@@ -280,7 +299,9 @@ impl<'a> NodeRef<'a> {
             NodeRef::Nav(_) => "navigation".into(),
             NodeRef::NavSection(_) => "nav_section".into(),
             NodeRef::Page(p) => p.kind.clone(),
-            NodeRef::Overlay(o) => format!("{:?} {}", o.kind, o.body.component.as_str()).to_lowercase(),
+            NodeRef::Overlay(o) => {
+                format!("{:?} {}", o.kind, o.body.component.as_str()).to_lowercase()
+            }
             NodeRef::Composite(c) => c.component.as_str().into(),
         }
     }
@@ -293,26 +314,49 @@ pub fn resolve<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeRef<'a>, Pa
     for segment in &path.0 {
         let name = segment.name.as_str();
         node = match (node, segment.layer) {
-            (NodeRef::Root(d), Layer::Shell) => NodeRef::Shell(d.shells.get(name).ok_or_else(not_found)?),
+            (NodeRef::Root(d), Layer::Shell) => {
+                NodeRef::Shell(d.shells.get(name).ok_or_else(not_found)?)
+            }
             (NodeRef::Root(d), Layer::Nav) => NodeRef::Nav(&d.navigation),
-            (NodeRef::Root(d), Layer::Page) => NodeRef::Page(d.pages.get(name).ok_or_else(not_found)?),
-            (NodeRef::Shell(s), Layer::Region) => NodeRef::Region(s.regions.get(name).ok_or_else(not_found)?),
-            (NodeRef::Shell(s), Layer::Overlay) => NodeRef::Overlay(s.overlays.get(name).ok_or_else(not_found)?),
-            (NodeRef::Nav(n), Layer::NavSection) => {
-                NodeRef::NavSection(n.sections.iter().find(|s| s.name == name).ok_or_else(not_found)?)
+            (NodeRef::Root(d), Layer::Page) => {
+                NodeRef::Page(d.pages.get(name).ok_or_else(not_found)?)
             }
-            (NodeRef::Page(p), Layer::Section) => {
-                NodeRef::Composite(p.sections.get(name).and_then(Option::as_ref).ok_or_else(not_found)?)
+            (NodeRef::Shell(s), Layer::Region) => {
+                NodeRef::Region(s.regions.get(name).ok_or_else(not_found)?)
             }
-            (NodeRef::Page(p), Layer::Overlay) => {
-                NodeRef::Overlay(p.overlays.get(name).and_then(Option::as_ref).ok_or_else(not_found)?)
+            (NodeRef::Shell(s), Layer::Overlay) => {
+                NodeRef::Overlay(s.overlays.get(name).ok_or_else(not_found)?)
             }
-            (parent, Layer::Widget) => {
-                NodeRef::Composite(parent.composite().and_then(|c| c.widgets.get(name)).ok_or_else(not_found)?)
-            }
-            (parent, Layer::Item) => {
-                NodeRef::Composite(parent.composite().and_then(|c| c.item.get(name)).ok_or_else(not_found)?)
-            }
+            (NodeRef::Nav(n), Layer::NavSection) => NodeRef::NavSection(
+                n.sections
+                    .iter()
+                    .find(|s| s.name == name)
+                    .ok_or_else(not_found)?,
+            ),
+            (NodeRef::Page(p), Layer::Section) => NodeRef::Composite(
+                p.sections
+                    .get(name)
+                    .and_then(Option::as_ref)
+                    .ok_or_else(not_found)?,
+            ),
+            (NodeRef::Page(p), Layer::Overlay) => NodeRef::Overlay(
+                p.overlays
+                    .get(name)
+                    .and_then(Option::as_ref)
+                    .ok_or_else(not_found)?,
+            ),
+            (parent, Layer::Widget) => NodeRef::Composite(
+                parent
+                    .composite()
+                    .and_then(|c| c.widgets.get(name))
+                    .ok_or_else(not_found)?,
+            ),
+            (parent, Layer::Item) => NodeRef::Composite(
+                parent
+                    .composite()
+                    .and_then(|c| c.item.get(name))
+                    .ok_or_else(not_found)?,
+            ),
             _ => return Err(not_found()),
         };
     }
@@ -330,11 +374,13 @@ pub fn allowed_children(doc: &Document, path: &NodePath) -> Result<Vec<Layer>, P
         NodeRef::Nav(_) => vec![Layer::NavSection],
         NodeRef::Page(_) => vec![Layer::Section, Layer::Overlay],
         NodeRef::Region(_) | NodeRef::NavSection(_) => vec![],
-        NodeRef::Overlay(_) | NodeRef::Composite(_) => match node.composite().map(|c| c.component) {
-            Some(CompositeKind::Board) => vec![Layer::Widget],
-            Some(CompositeKind::Collection) => vec![Layer::Item],
-            _ => vec![],
-        },
+        NodeRef::Overlay(_) | NodeRef::Composite(_) => {
+            match node.composite().map(|c| c.component) {
+                Some(CompositeKind::Board) => vec![Layer::Widget],
+                Some(CompositeKind::Collection) => vec![Layer::Item],
+                _ => vec![],
+            }
+        }
     })
 }
 
@@ -353,14 +399,36 @@ pub fn children(doc: &Document, path: &NodePath) -> Result<Vec<(Layer, String)>,
         NodeRef::Shell(s) => names(Layer::Region, s.regions.keys().collect())
             .chain(names(Layer::Overlay, s.overlays.keys().collect()))
             .collect(),
-        NodeRef::Nav(n) => n.sections.iter().map(|s| (Layer::NavSection, s.name.clone())).collect(),
-        NodeRef::Page(p) => names(Layer::Section, p.sections.iter().filter(|(_, v)| v.is_some()).map(|(k, _)| k).collect())
-            .chain(names(Layer::Overlay, p.overlays.iter().filter(|(_, v)| v.is_some()).map(|(k, _)| k).collect()))
+        NodeRef::Nav(n) => n
+            .sections
+            .iter()
+            .map(|s| (Layer::NavSection, s.name.clone()))
             .collect(),
+        NodeRef::Page(p) => names(
+            Layer::Section,
+            p.sections
+                .iter()
+                .filter(|(_, v)| v.is_some())
+                .map(|(k, _)| k)
+                .collect(),
+        )
+        .chain(names(
+            Layer::Overlay,
+            p.overlays
+                .iter()
+                .filter(|(_, v)| v.is_some())
+                .map(|(k, _)| k)
+                .collect(),
+        ))
+        .collect(),
         NodeRef::Region(_) | NodeRef::NavSection(_) => vec![],
         node @ (NodeRef::Overlay(_) | NodeRef::Composite(_)) => {
-            let c = node.composite().expect("overlays and composites carry a composite");
-            names(Layer::Widget, c.widgets.keys().collect()).chain(names(Layer::Item, c.item.keys().collect())).collect()
+            let c = node
+                .composite()
+                .expect("overlays and composites carry a composite");
+            names(Layer::Widget, c.widgets.keys().collect())
+                .chain(names(Layer::Item, c.item.keys().collect()))
+                .collect()
         }
     })
 }

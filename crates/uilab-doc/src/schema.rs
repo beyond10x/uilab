@@ -27,10 +27,16 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
     properties.insert("target".into(), json!({"const": path.to_string()}));
     if !children.is_empty() {
         let variants: Vec<Value> = children.iter().map(|l| child_variant(doc, *l)).collect();
-        properties.insert("child".into(), json!({"description": "the new node, for insert", "oneOf": variants}));
+        properties.insert(
+            "child".into(),
+            json!({"description": "the new node, for insert", "oneOf": variants}),
+        );
     }
     if changeable {
-        properties.insert("node".into(), json!({"description": "the replacement node, for replace", "$ref": def_ref(layer)}));
+        properties.insert(
+            "node".into(),
+            json!({"description": "the replacement node, for replace", "$ref": def_ref(layer)}),
+        );
     }
 
     Ok(json!({
@@ -54,11 +60,19 @@ fn def_ref(layer: Layer) -> String {
 fn child_variant(doc: &Document, layer: Layer) -> Value {
     let mut properties = serde_json::Map::new();
     properties.insert("layer".into(), json!({"const": layer.as_str()}));
-    properties.insert("name".into(), json!({"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"}));
+    properties.insert(
+        "name".into(),
+        json!({"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"}),
+    );
     properties.insert("node".into(), json!({"$ref": def_ref(layer)}));
     let mut required = vec!["layer", "name", "node"];
     if layer == Layer::Page {
-        let sections: Vec<&str> = doc.navigation.sections.iter().map(|s| s.name.as_str()).collect();
+        let sections: Vec<&str> = doc
+            .navigation
+            .sections
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
         let mut nav = json!({"type": "string", "description": "menu section to list the page in; omit to list it as hidden"});
         if !sections.is_empty() {
             nav["enum"] = json!(sections);
@@ -73,8 +87,13 @@ fn child_variant(doc: &Document, layer: Layer) -> Value {
 fn defs(doc: &Document) -> Value {
     let composite_kinds: Vec<&str> = CompositeKind::ALL.iter().map(|k| k.as_str()).collect();
     let region_kinds: Vec<&str> = RegionKind::ALL.iter().map(|k| k.as_str()).collect();
-    let overlay_kinds = [OverlayKind::Drawer, OverlayKind::Dialog, OverlayKind::Fullscreen, OverlayKind::Popover]
-        .map(|k| serde_json::to_value(k).expect("an enum serializes"));
+    let overlay_kinds = [
+        OverlayKind::Drawer,
+        OverlayKind::Dialog,
+        OverlayKind::Fullscreen,
+        OverlayKind::Popover,
+    ]
+    .map(|k| serde_json::to_value(k).expect("an enum serializes"));
     let mut page_kinds: Vec<&str> = BUILTIN_PAGE_KINDS.to_vec();
     page_kinds.extend(doc.page_kinds.keys().map(String::as_str));
     let shells: Vec<&str> = doc.shells.keys().map(String::as_str).collect();

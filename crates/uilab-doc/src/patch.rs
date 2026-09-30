@@ -50,7 +50,9 @@ impl Patch {
     /// The node the patch acts on: the parent for an insert.
     pub fn target(&self) -> &NodePath {
         match self {
-            Patch::Insert { target, .. } | Patch::Replace { target, .. } | Patch::Remove { target } => target,
+            Patch::Insert { target, .. }
+            | Patch::Replace { target, .. }
+            | Patch::Remove { target } => target,
         }
     }
 
@@ -84,7 +86,10 @@ pub struct Refusal {
 
 impl Refusal {
     fn new(check: &str, message: impl Into<String>) -> Self {
-        Refusal { check: check.to_owned(), message: message.into() }
+        Refusal {
+            check: check.to_owned(),
+            message: message.into(),
+        }
     }
 }
 
@@ -106,8 +111,14 @@ pub fn admit(doc: &Document, patch: &Patch) -> Result<(Document, Vec<Finding>), 
     let mut next = doc.clone();
     apply_unchecked(&mut next, patch)?;
     let after = check(&next);
-    if let Some(new) = after.iter().find(|f| f.severity == Severity::Error && !before.contains(f)) {
-        return Err(Refusal::new(new.check, format!("{}: {}", new.path, new.message)));
+    if let Some(new) = after
+        .iter()
+        .find(|f| f.severity == Severity::Error && !before.contains(f))
+    {
+        return Err(Refusal::new(
+            new.check,
+            format!("{}: {}", new.path, new.message),
+        ));
     }
     Ok((next, after))
 }
@@ -143,15 +154,26 @@ fn apply_unchecked(doc: &mut Document, patch: &Patch) -> Result<(), Refusal> {
 }
 
 fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Refusal> {
-    let allowed = allowed_children(doc, target).map_err(|e| Refusal::new("path_resolves", e.to_string()))?;
+    let allowed =
+        allowed_children(doc, target).map_err(|e| Refusal::new("path_resolves", e.to_string()))?;
     if !allowed.contains(&child.layer) {
         return Err(Refusal::new(
             "layer_allowed",
-            format!("a {} cannot be added under `{target}`; allowed: {}", child.layer, list(&allowed)),
+            format!(
+                "a {} cannot be added under `{target}`; allowed: {}",
+                child.layer,
+                list(&allowed)
+            ),
         ));
     }
     if !valid_name(&child.name) {
-        return Err(Refusal::new("name_valid", format!("`{}` is not a name: use a-z, 0-9, `_`, `-` and `.`", child.name)));
+        return Err(Refusal::new(
+            "name_valid",
+            format!(
+                "`{}` is not a name: use a-z, 0-9, `_`, `-` and `.`",
+                child.name
+            ),
+        ));
     }
     let taken = children(doc, target)
         .map_err(|e| Refusal::new("path_resolves", e.to_string()))?
@@ -167,27 +189,44 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
         _ => false,
     };
     if taken || nulled {
-        return Err(Refusal::new("name_unique", format!("`{target}` already has a {} named `{}`", child.layer, child.name)));
+        return Err(Refusal::new(
+            "name_unique",
+            format!(
+                "`{target}` already has a {} named `{}`",
+                child.layer, child.name
+            ),
+        ));
     }
 
     let name = child.name.clone();
     match child.layer {
         Layer::Shell => {
-            doc.shells.insert(name, parse::<Shell>(child.layer, &child.node)?);
+            doc.shells
+                .insert(name, parse::<Shell>(child.layer, &child.node)?);
         }
         Layer::Page => {
             let page: Page = parse(child.layer, &child.node)?;
             match &child.nav_section {
                 Some(section) => {
-                    let entry = doc.navigation.sections.iter_mut().find(|s| &s.name == section).ok_or_else(|| {
-                        Refusal::new("nav_resolves", format!("the menu has no section `{section}`"))
-                    })?;
+                    let entry = doc
+                        .navigation
+                        .sections
+                        .iter_mut()
+                        .find(|s| &s.name == section)
+                        .ok_or_else(|| {
+                            Refusal::new(
+                                "nav_resolves",
+                                format!("the menu has no section `{section}`"),
+                            )
+                        })?;
                     match &mut entry.pages {
                         NavPages::Fixed(pages) => pages.push(name.clone()),
                         NavPages::Dynamic(_) => {
                             return Err(Refusal::new(
                                 "nav_resolves",
-                                format!("menu section `{section}` lists pages from a view and takes no fixed page"),
+                                format!(
+                                    "menu section `{section}` lists pages from a view and takes no fixed page"
+                                ),
                             ));
                         }
                     }
@@ -198,7 +237,12 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
         }
         Layer::NavSection => {
             let body: NavSectionBody = parse(child.layer, &child.node)?;
-            doc.navigation.sections.push(NavSection { name, label: body.label, icon: body.icon, pages: body.pages });
+            doc.navigation.sections.push(NavSection {
+                name,
+                label: body.label,
+                icon: body.icon,
+                pages: body.pages,
+            });
         }
         Layer::Region => {
             let region: Region = parse(child.layer, &child.node)?;
@@ -237,38 +281,71 @@ fn replace(doc: &mut Document, target: &NodePath, node: &Value) -> Result<(), Re
     let name = target.name().to_owned();
     match layer {
         Layer::Root | Layer::Nav => {
-            return Err(Refusal::new("op_allowed", format!("`{target}` cannot be replaced, only edited below")));
+            return Err(Refusal::new(
+                "op_allowed",
+                format!("`{target}` cannot be replaced, only edited below"),
+            ));
         }
         Layer::Shell => *doc.shells.get_mut(&name).expect("resolved") = parse(layer, node)?,
         Layer::Page => *doc.pages.get_mut(&name).expect("resolved") = parse(layer, node)?,
         Layer::NavSection => {
             let body: NavSectionBody = parse(layer, node)?;
-            let entry = doc.navigation.sections.iter_mut().find(|s| s.name == name).expect("resolved");
-            *entry = NavSection { name, label: body.label, icon: body.icon, pages: body.pages };
+            let entry = doc
+                .navigation
+                .sections
+                .iter_mut()
+                .find(|s| s.name == name)
+                .expect("resolved");
+            *entry = NavSection {
+                name,
+                label: body.label,
+                icon: body.icon,
+                pages: body.pages,
+            };
         }
         Layer::Region => {
             let parent = target.parent().expect("a region has a shell");
             let region = parse(layer, node)?;
-            *shell_mut(doc, &parent)?.regions.get_mut(&name).expect("resolved") = region;
+            *shell_mut(doc, &parent)?
+                .regions
+                .get_mut(&name)
+                .expect("resolved") = region;
         }
         Layer::Overlay => {
             let parent = target.parent().expect("an overlay has a parent");
             let overlay: Overlay = parse(layer, node)?;
             match parent.layer() {
-                Layer::Shell => *shell_mut(doc, &parent)?.overlays.get_mut(&name).expect("resolved") = overlay,
-                _ => *page_mut(doc, &parent)?.overlays.get_mut(&name).expect("resolved") = Some(overlay),
+                Layer::Shell => {
+                    *shell_mut(doc, &parent)?
+                        .overlays
+                        .get_mut(&name)
+                        .expect("resolved") = overlay
+                }
+                _ => {
+                    *page_mut(doc, &parent)?
+                        .overlays
+                        .get_mut(&name)
+                        .expect("resolved") = Some(overlay)
+                }
             }
         }
         Layer::Section => {
             let parent = target.parent().expect("a section has a page");
             let section = parse(layer, node)?;
-            *page_mut(doc, &parent)?.sections.get_mut(&name).expect("resolved") = Some(section);
+            *page_mut(doc, &parent)?
+                .sections
+                .get_mut(&name)
+                .expect("resolved") = Some(section);
         }
         Layer::Widget | Layer::Item => {
             let parent = target.parent().expect("a nested composite has a parent");
             let composite = parse(layer, node)?;
             let holder = composite_mut(doc, &parent)?;
-            let map = if layer == Layer::Widget { &mut holder.widgets } else { &mut holder.item };
+            let map = if layer == Layer::Widget {
+                &mut holder.widgets
+            } else {
+                &mut holder.item
+            };
             *map.get_mut(&name).expect("resolved") = composite;
         }
     }
@@ -280,7 +357,10 @@ fn remove(doc: &mut Document, target: &NodePath) -> Result<(), Refusal> {
     let name = target.name().to_owned();
     match layer {
         Layer::Root | Layer::Nav => {
-            return Err(Refusal::new("op_allowed", format!("`{target}` cannot be removed")));
+            return Err(Refusal::new(
+                "op_allowed",
+                format!("`{target}` cannot be removed"),
+            ));
         }
         Layer::Shell => {
             doc.shells.shift_remove(&name);
@@ -317,7 +397,11 @@ fn remove(doc: &mut Document, target: &NodePath) -> Result<(), Refusal> {
         Layer::Widget | Layer::Item => {
             let parent = target.parent().expect("a nested composite has a parent");
             let holder = composite_mut(doc, &parent)?;
-            let map = if layer == Layer::Widget { &mut holder.widgets } else { &mut holder.item };
+            let map = if layer == Layer::Widget {
+                &mut holder.widgets
+            } else {
+                &mut holder.item
+            };
             map.shift_remove(&name);
         }
     }
@@ -325,7 +409,10 @@ fn remove(doc: &mut Document, target: &NodePath) -> Result<(), Refusal> {
 }
 
 fn missing(path: &NodePath) -> Refusal {
-    Refusal::new("path_resolves", format!("the document has no node at `{path}`"))
+    Refusal::new(
+        "path_resolves",
+        format!("the document has no node at `{path}`"),
+    )
 }
 
 fn shell_mut<'a>(doc: &'a mut Document, path: &NodePath) -> Result<&'a mut Shell, Refusal> {
@@ -378,12 +465,17 @@ fn composite_mut<'a>(doc: &'a mut Document, path: &NodePath) -> Result<&'a mut C
 pub fn valid_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-' | '.'))
+        && chars
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-' | '.'))
 }
 
 fn list(layers: &[Layer]) -> String {
     if layers.is_empty() {
         return "nothing".into();
     }
-    layers.iter().map(|l| l.as_str()).collect::<Vec<_>>().join(", ")
+    layers
+        .iter()
+        .map(|l| l.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
