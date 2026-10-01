@@ -1,7 +1,8 @@
 # AGENTS.md — uilab
 
-uilab edits a `ui-spec/1` UI document by voice in the browser. What it is and how to run it is in
-[README.md](README.md); this file is what an agent changing it must know.
+uilab edits an `ess-ui/1` UI document by voice in the browser. What it is and how to run it is in
+[README.md](README.md); this file is what an agent changing it must know. The format's reference
+is https://beyond10x.github.io/ess/docs/reference/ess-ui.
 
 ## Serves
 
@@ -24,9 +25,12 @@ uilab edits a `ui-spec/1` UI document by voice in the browser. What it is and ho
   messages (`uilab.wire`). Change the specification first, then `task generate`; never edit
   `generated/` or `widget/src/generated/` by hand. `task drift` fails when they differ from what
   the specification determines.
-- `crates/uilab-doc` is a hand-written reader of the `ui-spec/1` subset, because `ess generate
-  types` cannot read `ui-spec/1` as written yet (ordered maps, inline composite props). It follows
-  `ui-spec/1` as the `ess` repository publishes it.
+- `crates/uilab-doc` is uilab's editing layer over `ess-ui/1`: node paths, patches, the outline,
+  sample rows and the agent's patch schema. ESS's `ess-ui` crate loads and expands the document
+  and `ess-ui-check` checks it; both are git dependencies of `crates/uilab-doc` only, on ess tag
+  `0.48.0`, re-exported from `uilab_doc` so no other crate adds them. A patch is refused when its
+  result has an ESS error the document did not already have. uilab writes the authored document
+  back, never what a page kind or widget contributes.
 - Work is planned in the AEP store under `.engineering/`, written only through `aep plan artifact`.
   Body drafts go in `.engineering/drafts/` (ignored).
 - No company or customer names in this repository. Examples use the lending-library app in
@@ -49,7 +53,7 @@ uilab edits a `ui-spec/1` UI document by voice in the browser. What it is and ho
 | `generated/rust/uilab/` | synthesized component: types, port, obligations (`PLAN.md`) |
 | `generated/rust/uilab-wire/`, `widget/src/generated/` | wire types for Rust and TypeScript |
 | `generated/suite.json` | the synthesized conformance suite |
-| `crates/uilab-doc` | `ui-spec/1` subset: model, node paths, patches, checks, patch schema |
+| `crates/uilab-doc` | `ess-ui/1` editing layer: node paths, patches, outline, patch schema; ESS loads and checks |
 | `crates/uilab-behaviour` | the session obligations, held to `generated/suite.json` |
 | `crates/uilab-stt` | speech to text on the GPU (whisper.cpp) |
 | `crates/uilab-agent` | one patch per instruction through the harness agent loop |

@@ -18,6 +18,7 @@ widgets:
       member:
         type: Member
         required: true
+        note: the member row
     arrange: column
     body:
       - name: name
@@ -29,21 +30,25 @@ widgets:
         text: args.member.standing
       - name: members_link
         primitive: link
-        to: members
+        text: Members
+        to: {to: members}
 ```
 
-This declaration is what the agent proposed for *"a member card widget with the member's name,
-their standing as a badge and a link to the members page"*, given on the Components tab.
+This is the shape of an answer to *"a member card widget with the member's name, their standing as
+a badge and a link to the members page"*, given on the Components tab.
 
 ## The parts
 
+Widgets are part of `ess-ui/1`; its [reference](https://beyond10x.github.io/ess/docs/reference/ess-ui)
+lists every field under *Widget*.
+
 | Key | What it holds |
 |---|---|
-| `summary` | one line, shown in pickers and in the generated docs |
+| `summary` | one line, shown in pickers and in the generated docs (required) |
 | `doc` | optional longer description for authors |
-| `params` | typed parameters; each has a `type`, and may be `required`, have a `default` and a `note` |
+| `params` | typed parameters; each has a `type` and a one-line `note`, and may be `required` and have a `default` |
 | `arrange` | how the body is laid out: `column` (the default), `row` or `grid` |
-| `body` | named nodes in order: composites, other widget instances, or primitives |
+| `body` | a list of named nodes in order: composites, other widget instances, or primitives |
 
 Inside the body, `args.<param>` refers to a parameter: `text: args.member.name`.
 
@@ -68,14 +73,17 @@ A body node — or a node of a collection's item list — can be one of nine pri
 An instance names the widget as its `component` and supplies `args`:
 
 ```yaml
+name: card
 component: member_card
 args: {member: row}
 ```
 
 It goes wherever a composite goes: a section, an overlay, a board's widget, or a collection's item,
-where the current row is `row`. The checks hold that an instance supplies every required param and
-no undeclared one (`widget_args`), that a widget is never named like a built-in kind
-(`widget_named_like_builtin`) and that no widget contains itself (`widget_recursion`).
+where the current row is `row`. ESS expands each instance at its use site — the widget's body with
+the args substituted — and checks the result like built-in nodes. The `widget_expands` check holds
+that the widget exists, that an instance supplies every required param with an arg of the param's
+type, and that no widget contains itself. On the canvas the expanded body nodes of an instance are
+marked as inherited; the file keeps only the instance.
 
 ## The Components tab
 

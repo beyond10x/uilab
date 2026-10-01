@@ -8,11 +8,13 @@ description: What uilab is, who it is for, and what it does and does not do.
 # Introduction
 
 uilab is a browser workbench for writing a UI specification together with an agent. It opens one
-`ui-spec/1` document — a YAML file that describes an application's shell, menu, pages, sections and
+`ess-ui/1` document — a YAML file that describes an application's shell, menu, pages, sections and
 overlays — and shows it two ways at once: as a rendered canvas on the left and as a tree on the
 right. You select a node, say or type what you want there, and the agent answers with **one
 proposed change** at that node. You see the change as a diff and as a highlighted preview on the
-canvas, and nothing is written to the file until you accept it.
+canvas, and nothing is written to the file until you accept it. The format belongs to ESS, whose
+[reference](https://beyond10x.github.io/ess/docs/reference/ess-ui) defines it, and ESS's own checker
+decides what a document may hold.
 
 ![uilab with a proposal waiting for review: the diff in the sidebar, the new section highlighted on the canvas](/img/screens/proposal.png)
 
@@ -40,8 +42,8 @@ It does not replace your component library, your design system or your framework
 
 | Verb | What uilab does |
 |---|---|
-| Edit | one `ui-spec/1` document per server: shells, regions, menu, pages, sections, overlays, widgets |
-| Render | a canvas of 14 built-in composite kinds and 9 primitives, fed by fixture rows or made-up sample rows |
+| Edit | one `ess-ui/1` document per server: shells, regions, menu, pages, sections, overlays, widgets |
+| Render | a canvas of the 12 composite kinds, the header, overlays and 9 primitives, with the sections a page kind contributes marked as inherited, fed by fixture rows or made-up sample rows |
 | Propose | insert, replace, remove, or a batch of those, at the selected node; checked before you see it |
 | Decide | accept (Enter), reject (Esc), undo (Ctrl+Z); accepted changes are written back to the file |
 | Plan | goals: a typed request the agent splits into steps (8 at most unless the goal sets another cap), proposed one at a time |
@@ -53,7 +55,8 @@ It does not replace your component library, your design system or your framework
 - It does not generate React, Vue or any other framework code. The canvas is uilab's own
   renderer of the specification, not your application.
 - It does not change your data model. Views and commands are referenced by name; when a view does
-  not exist yet the agent uses a `draft.` placeholder and the document says so.
+  not exist yet the agent writes a placeholder read, `reads: {placeholder, fixture}`, and the
+  document says so.
 - It does not act without you. The agent has no tools, cannot read your source tree and cannot
   write files. The server writes the document only when a proposal is accepted — unless you start
   it with `--auto-apply`, which you choose explicitly.
@@ -63,5 +66,5 @@ It does not replace your component library, your design system or your framework
 - [Getting started](./getting-started.md) — run uilab over the example lending-library app.
 - [Concepts](./concepts/the-document.md) — the document, nodes, proposals, widgets, goals, drafts.
 - [Working with the agent](./working-with-the-agent.md) — how to phrase instructions, and the limits.
-- [The specification](./specification.md) — `ui-spec/1`, read line by line.
+- [The specification](./specification.md) — `ess-ui/1`, read line by line.
 - [FAQ](./faq.md)
