@@ -59,10 +59,13 @@ uilab edits a `ui-spec/1` UI document by voice in the browser. What it is and ho
 ## Gate
 
 ```console
-task check     # validate, drift, widget build, cargo test/clippy/fmt
+task check     # validate, drift, ui, widget build and tests, cargo test/clippy/fmt
+task check CARGO_FEATURES=--no-default-features   # the same with CPU speech, as CI runs it
 ```
 
-No paid model call is part of the gate.
+No paid model call is part of the gate. `.github/workflows/check.yml` runs `task check` with CPU
+speech on every pull request and every push to `main` (GitHub runners have no Vulkan), with ess
+0.48.0 from its GitHub Release, checked against the release's `SHA256SUMS`.
 
 ## Common Gates
 
@@ -81,14 +84,37 @@ Direct commits, tags and pushes use `b10x-gates bot` as `b10x-bot[bot]`; `check`
 ## Delivery to main
 
 `main` takes changes only through pull requests: the ruleset "Required shared and repository gates"
-requires `common / Security and privacy` on an up-to-date branch, with no bypass (operator,
-2026-10-01). Every step is the bot's; `gh` stays read-only.
+requires `common / Security and privacy` and `uilab / task check` (`.github/workflows/check.yml`)
+on an up-to-date branch, with no bypass (operator, 2026-10-01). Every step is the bot's; `gh` stays
+read-only.
 
 1. Commit on a branch with `b10x-gates bot --repo . -- commit -F -`, run `task check`.
 2. `b10x-gates --repository beyond10x/uilab check --head <sha> --receipt <file>`, then
    `publish --head <sha> --receipt <file> --remote-ref refs/heads/<branch>`.
 3. Open the pull request: `b10x-gates api --method POST --path /repos/beyond10x/uilab/pulls`
    with `{title, head, base: "main", body}`; `--output` in a `mktemp -d` under `$HOME`.
-4. When the shared check is green, merge with `PUT /repos/beyond10x/uilab/pulls/<n>/merge`
+4. When both required checks are green, merge with `PUT /repos/beyond10x/uilab/pulls/<n>/merge`
    (`merge_method: merge`) through the same `b10x-gates api` route, then pull `main` and delete the
    branch.
+
+## Releases
+
+Cut a release whenever a wave lands on `main` (operator, 2026-10-01: "cut releases often"). A
+release is an annotated tag `v<x.y.z>` made by the bot on a `main` commit whose required checks are
+green. `[workspace.package] version` in `Cargo.toml` must already read `<x.y.z>`; change it through
+a pull request first.
+
+1. On an up-to-date `main`: `b10x-gates bot --repo . -- tag -a v<x.y.z> -m "uilab v<x.y.z>"`.
+2. Push the tag: `b10x-gates --repository beyond10x/uilab bot -- push origin refs/tags/v<x.y.z>`.
+3. `.github/workflows/release.yml` refuses a lightweight tag, a tag whose commit is not on `main`
+   and a tag that differs from the `Cargo.toml` version. It runs `task check`, builds `uilab` with
+   CPU speech and `widget/dist` for x86_64 Linux, smoke-runs the archive, and publishes
+   `uilab-<x.y.z>-x86_64-unknown-linux-gnu.tar.gz` (binary, `widget/dist`, `examples/library`)
+   and `SHA256SUMS`. Follow it with `b10x-gh-run-summary beyond10x/uilab <run-id>`.
+4. Verify: `gh release view v<x.y.z> -R beyond10x/uilab` lists both assets. Download them with
+   `gh release download v<x.y.z> -R beyond10x/uilab` into a `mktemp -d` under `$HOME`, run
+   `sha256sum --check SHA256SUMS`, unpack, and in the unpacked directory run `./uilab serve
+   --assets widget/dist --doc examples/library/library.ui.yaml --no-stt`: `GET /api/state`
+   answers 200 and `GET /api/document.yaml` starts with `format: ess-ui/1`.
+
+A pushed tag whose release run has not finished is queued, not released.
