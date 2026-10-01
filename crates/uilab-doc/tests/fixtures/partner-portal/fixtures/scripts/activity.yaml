@@ -1,0 +1,9 @@
+channel: activity
+loop: true
+events:
+  - {at: 0s,  event: activity.ActivityRecorded, payload: {id: ev-10, at: "2026-09-30T10:00:00Z", actor: Dana Example, type: deal,    summary: "Moved 'Renewal 2027' to won"}}
+  - {at: 4s,  event: activity.ActivityRecorded, payload: {id: ev-11, at: "2026-09-30T10:00:04Z", actor: Lee Sample,   type: invoice, summary: "Invoice INV-1051 marked paid"}}
+  - {at: 9s,  event: activity.ActivityRecorded, payload: {id: ev-12, at: "2026-09-30T10:00:09Z", actor: Kai Demo,     type: ticket,  summary: "Closed ticket 'SSO login fails'"}}
+  - {at: 12s, lifecycle: reconnecting}
+  - {at: 20s, lifecycle: live}
+  - {at: 20s, event: activity.ActivityRecorded, payload: {id: ev-13, at: "2026-09-30T10:00:15Z", actor: Sam Test, type: partner, summary: "Upgraded Cedar Partners to gold"}}

@@ -99,7 +99,7 @@ fn declare_member_card() -> Value {
                 "summary": CARD_SUMMARY,
                 "params": {
                     "member": {"type": "Member", "required": true, "note": "the member row"},
-                    "compact": {"type": "boolean", "default": false}
+                    "compact": {"type": "boolean", "default": false, "note": "hides the details"}
                 },
                 "arrange": "column",
                 "body": [
@@ -374,8 +374,7 @@ fn a_request_at_a_section_lists_no_other_places() {
         "op": "replace",
         "target": "page:members/section:list",
         "node": {"component": "collection", "reads": {"view": "members.All"},
-                 "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"}, {"field": "standing", "as": "tag"}],
-                 "title": "Members"}
+                 "columns": [{"field": "name", "label": "Member"}, {"field": "joined"}, {"field": "loans"}, {"field": "standing", "as": "tag"}]}
     })]);
     proposer
         .propose(
@@ -397,7 +396,7 @@ fn a_page_is_named_by_whole_words_with_underscores_as_spaces() {
     .unwrap();
     for name in ["art", "due_soon"] {
         text.push_str(&format!(
-            "  {name}:\n    kind: list_page\n    sections:\n      queue:\n        component: collection\n        reads: {{view: loans.All}}\n"
+            "  {name}:\n    kind: list_page\n    sections:\n      - name: queue\n        component: collection\n        reads: {{view: loans.All}}\n"
         ));
     }
     let doc = Document::from_yaml(&text).unwrap();

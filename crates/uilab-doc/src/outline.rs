@@ -95,14 +95,14 @@ fn node(
                 .get("title")
                 .and_then(|v| v.as_str())
                 .map(str::to_owned),
-            o.body.reads.as_ref().map(|r| r.view.clone()),
+            o.body.reads.as_ref().map(|r| r.name().to_owned()),
         ),
         NodeRef::Composite(c) => (
             c.props
                 .get("title")
                 .and_then(|v| v.as_str())
                 .map(str::to_owned),
-            c.reads.as_ref().map(|r| r.view.clone()),
+            c.reads.as_ref().map(|r| r.name().to_owned()),
         ),
         NodeRef::Region(r) => (
             None,
@@ -280,14 +280,14 @@ mod tests {
   loan_card:
     summary: A loan as a card.
     params:
-      loan: {type: Loan, required: true}
+      loan: {type: Loan, required: true, note: the loan row}
     body:
       - {name: title, primitive: text, text: args.loan.title, style: heading}
       - {name: due, primitive: badge, text: args.loan.due}
   badge:
     summary: A toned tag.
     params:
-      label: {type: string, required: true}
+      label: {type: string, required: true, note: the tag text}
     body:
       - {name: tag, primitive: badge, text: args.label}
   unused:

@@ -12,14 +12,14 @@ const WIDGETS: &str = "widgets:
   loan_card:
     summary: A loan as a card.
     params:
-      loan: {type: Loan, required: true}
+      loan: {type: Loan, required: true, note: loan param}
     body:
       - {name: title, primitive: text, text: args.loan.title, style: heading}
       - {name: due, primitive: badge, text: args.loan.due}
   badge:
     summary: A toned tag.
     params:
-      label: {type: string, required: true}
+      label: {type: string, required: true, note: label param}
     body:
       - {name: tag, primitive: badge, text: args.label}
 pages:
@@ -40,7 +40,7 @@ fn library() -> Document {
     );
     let text = text.replacen("\npages:\n", &format!("\n{WIDGETS}"), 1).replacen(
         OVERVIEW,
-        "  overview:\n    kind: dashboard_page\n    title: Overview\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}]}\n    sections:\n      latest: {component: badge, args: {label: rows.first}}\n",
+        "  overview:\n    kind: dashboard_page\n    title: Overview\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}]}\n    sections:\n      - {name: latest, component: badge, args: {label: rows.first}}\n",
         1,
     );
     Document::from_yaml(&text).unwrap()
@@ -126,8 +126,8 @@ fn docs_sites(doc: &Document, widget: &str) -> Vec<String> {
 
 /// The library example with `loan_card` and `badge` placed in every kind of spot `widget_uses`
 /// walks: a board widget, a collection's item, an item action's `choice`, a widget body, two
-/// toolbar entries of one section (one path, two trails), and a page header whose `metrics`
-/// list holds two instances written with the same `name` (untyped data: no check refuses it).
+/// toolbar entries of one section, and a page header whose `metrics` list holds two instances
+/// (named apart: ess-ui/1 refuses two metrics with one `name`).
 fn everywhere() -> Document {
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library/library.ui.yaml");
     let text = std::fs::read_to_string(file).unwrap();
@@ -139,14 +139,14 @@ fn everywhere() -> Document {
   loan_card:
     summary: A loan as a card.
     params:
-      loan: {type: Loan, required: true}
+      loan: {type: Loan, required: true, note: loan param}
     body:
       - {name: title, primitive: text, text: args.loan.title, style: heading}
       - {name: state, component: badge, args: {label: args.loan.state}}
   badge:
     summary: A toned tag.
     params:
-      label: {type: string, required: true}
+      label: {type: string, required: true, note: label param}
     body:
       - {name: tag, primitive: badge, text: args.label}
 pages:
@@ -157,21 +157,25 @@ pages:
     header:
       metrics:
         - {name: due, component: loan_card, args: {loan: rows.first}}
-        - {name: due, component: loan_card, args: {loan: rows.last}}
+        - {name: due_last, component: loan_card, args: {loan: rows.last}}
     sections:
-      tiles:
+      - name: tiles
         component: board
+        reads: {view: loans.All}
         widgets:
           first: {component: loan_card, args: {loan: rows.first}}
-      cards:
-        component: collection
+      - name: flow
+        component: graph_editor
         reads: {view: loans.All}
         toolbar:
           - {name: a, component: badge, args: {label: one}}
           - {name: b, component: badge, args: {label: two}}
+      - name: cards
+        component: collection
+        reads: {view: loans.All}
         item:
           - {name: card, component: loan_card, args: {loan: row}}
-          - {name: go, primitive: button, label: Go, choice: {component: badge, args: {label: row.state}}}
+          - {name: go, primitive: button, label: Go, action: {name: go, does: loans.Pick, choice: {component: badge, args: {label: row.state}}}}
 ";
     let text = text
         .replacen("\npages:\n", &format!("\n{widgets}"), 1)

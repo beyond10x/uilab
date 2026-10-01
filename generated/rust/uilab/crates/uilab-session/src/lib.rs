@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
-// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
+// model digest 8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455
+// contract digest c789fcd30e3ffcc51487d00315741eca272a88a53a2be1e3be26a919b30c4bfb
 // do not edit: regenerate with `ess synthesize`
 
 //! uilab-session — the `uilab-session` component of `uilab` v1.

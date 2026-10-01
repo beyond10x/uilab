@@ -1,4 +1,5 @@
-//! Fixture rows per view, read from the files a document's `fixtures` index names.
+//! Fixture rows per view, read the way ESS reads them: the `fixtures` index (`dir`, the `index`
+//! file and `views`), and each placeholder read's own `fixture` file.
 
 use std::path::Path;
 
@@ -6,7 +7,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::model::{CompositeKind, DRAFT_VIEW_PREFIX, Document};
+use crate::model::{CompositeKind, Document};
 
 /// Sample rows of one view.
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
@@ -17,6 +18,9 @@ pub struct ViewRows {
     /// The rows.
     #[serde(default)]
     pub rows: Vec<Value>,
+    /// Whether the rows are made up ([`sample_rows`]) because no fixture answers the view.
+    #[serde(skip)]
+    pub sample: bool,
 }
 
 /// A fixture file: one view, or several.
@@ -56,48 +60,67 @@ pub struct FixtureError {
 }
 
 impl Fixtures {
-    /// Reads every fixture the document's index names, relative to `doc_dir`.
+    /// Reads every fixture the document names, relative to `doc_dir`, as ESS does: the index file
+    /// relative to the document, the files it and `views` name relative to `dir`, and each
+    /// placeholder's `fixture` relative to the document. A placeholder whose file is missing has
+    /// no fixture (its rows are made up); any other file that cannot be read is an error.
     pub fn load(doc: &Document, doc_dir: &Path) -> Result<Self, FixtureError> {
-        let Some(index) = &doc.fixtures else {
-            return Ok(Self::default());
-        };
-        let dir = doc_dir.join(index.dir.as_deref().unwrap_or("."));
-        let mut files = index.views.clone();
-        if let Some(index_file) = &index.index {
-            let path = doc_dir.join(index_file);
-            let parsed: IndexFile = read_yaml(&path)?;
-            let base = path.parent().unwrap_or(&dir).to_path_buf();
-            for (view, file) in parsed.views {
-                files
-                    .entry(view)
-                    .or_insert_with(|| base.join(file).to_string_lossy().into_owned());
+        let mut files: IndexMap<String, std::path::PathBuf> = IndexMap::new();
+        if let Some(index) = &doc.fixtures {
+            let dir = doc_dir.join(index.dir.as_deref().unwrap_or("."));
+            for (view, file) in &index.views {
+                files.insert(view.clone(), dir.join(file));
+            }
+            if let Some(index_file) = &index.index {
+                let parsed: IndexFile = read_yaml(&doc_dir.join(index_file))?;
+                for (view, file) in parsed.views {
+                    files.entry(view).or_insert_with(|| dir.join(file));
+                }
+            }
+        }
+        for (_, composite) in crate::check::composites(doc) {
+            if let Some(reads) = &composite.reads
+                && let (Some(name), Some(file)) = (&reads.placeholder, &reads.fixture)
+            {
+                let path = doc_dir.join(file);
+                if path.is_file() {
+                    files.entry(name.clone()).or_insert(path);
+                }
             }
         }
         let mut views = IndexMap::new();
-        let mut cache: IndexMap<String, IndexMap<String, ViewRows>> = IndexMap::new();
-        for (view, file) in files {
-            let path = dir.join(&file);
-            let key = path.to_string_lossy().into_owned();
-            if !cache.contains_key(&key) {
+        let mut cache: IndexMap<std::path::PathBuf, IndexMap<String, ViewRows>> = IndexMap::new();
+        for (view, path) in files {
+            if !cache.contains_key(&path) {
                 let parsed: ViewFile = read_yaml(&path)?;
                 let map = match parsed {
                     ViewFile::Many { views } => views,
                     ViewFile::One { view, rows } => IndexMap::from([(view, rows)]),
                 };
-                cache.insert(key.clone(), map);
+                cache.insert(path.clone(), map);
             }
-            let rows = cache[&key].get(&view).cloned().unwrap_or_default();
+            let rows = cache[&path].get(&view).cloned().unwrap_or_default();
             views.insert(view, rows);
         }
         Ok(Fixtures { views })
     }
 
-    /// The rows of a view: none for a `draft.` placeholder or a view without a fixture.
+    /// The fixture rows of a view or placeholder: none for one without a fixture.
     pub fn rows(&self, view: &str) -> ViewRows {
-        if view.starts_with(DRAFT_VIEW_PREFIX) {
-            return ViewRows::default();
-        }
         self.views.get(view).cloned().unwrap_or_default()
+    }
+
+    /// The rows a renderer shows for a view or placeholder of `doc`: its fixture's, or, where no
+    /// fixture answers it, rows made up from what reads it ([`sample_rows`]), marked as samples.
+    pub fn rows_for(&self, doc: &Document, view: &str) -> ViewRows {
+        match self.views.get(view) {
+            Some(rows) => rows.clone(),
+            None => ViewRows {
+                total: None,
+                rows: sample_rows(doc, view),
+                sample: true,
+            },
+        }
     }
 
     /// Whether the view has a fixture.
@@ -133,7 +156,7 @@ pub fn field_findings(doc: &Document, fixtures: &Fixtures) -> Vec<crate::Finding
         let Some(reads) = &composite.reads else {
             continue;
         };
-        let Some(fields) = known.get(&reads.view).filter(|f| !f.is_empty()) else {
+        let Some(fields) = known.get(reads.name()).filter(|f| !f.is_empty()) else {
             continue;
         };
         let mut named: Vec<String> = Vec::new();
@@ -168,7 +191,7 @@ pub fn field_findings(doc: &Document, fixtures: &Fixtures) -> Vec<crate::Finding
                 path: path.to_string(),
                 message: format!(
                     "`{field}` is not a field of `{}` rows ({})",
-                    reads.view,
+                    reads.name(),
                     fields.join(", ")
                 ),
             });
@@ -186,7 +209,7 @@ fn read_yaml<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, FixtureEr
     serde_yaml::from_str(&text).map_err(|e| err(e.to_string()))
 }
 
-/// Made-up rows for a view that has no fixture, most often a `draft.` placeholder, so the canvas
+/// Made-up rows for a view that has no fixture, most often a placeholder, so the canvas
 /// shows the composites that read it with data of the right shape. The fields are the ones those
 /// composites name (columns, fields, a metric's `from`, a chart's `x` and `series`). A field read
 /// as a quantity (a metric's `from`, a chart's `series`) is a number whatever its name; any other
@@ -201,7 +224,7 @@ pub fn sample_rows(doc: &Document, view: &str) -> Vec<Value> {
         }
     };
     for (_, composite) in crate::check::composites(doc) {
-        if composite.reads.as_ref().is_none_or(|r| r.view != view) {
+        if composite.reads.as_ref().is_none_or(|r| r.name() != view) {
             continue;
         }
         let kind = composite.component.kind();

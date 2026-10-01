@@ -11,10 +11,10 @@ use uilab_doc::{Document, Fixtures, NodePath};
 #[derive(Debug, Parser)]
 #[command(
     name = "uilab-plan",
-    about = "Plan a goal for a ui-spec/1 document as ordered instructions, one patch each"
+    about = "Plan a goal for an ess-ui/1 document as ordered instructions, one patch each"
 )]
 struct Args {
-    /// The `ui-spec/1` document.
+    /// The `ess-ui/1` document.
     #[arg(long)]
     doc: PathBuf,
     /// The node the goal is about, for example `page:members`.
@@ -57,7 +57,7 @@ fn run(args: Args) -> Result<(), String> {
         .map_err(|error| format!("reading `{}`: {error}", args.doc.display()))?;
     let doc = Document::from_yaml(&text).map_err(|error| {
         format!(
-            "`{}` is not a ui-spec/1 document: {error}",
+            "`{}` is not an ess-ui/1 document: {error}",
             args.doc.display()
         )
     })?;

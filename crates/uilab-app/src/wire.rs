@@ -458,7 +458,7 @@ mod tests {
                 Some(4),
                 vec![serde_json::json!({"title": "x"})],
             ),
-            rows("draft.X", None, vec![]),
+            rows("loans.X", None, vec![]),
             presence(
                 vec![
                     OperatorParts {

@@ -14,30 +14,41 @@ tasks:
 
   validate:
     desc: Validate the specification.
+    dir: '{{.SPEC}}'
     cmds:
-      - ess validate --path {{.SPEC}}
+      - ess specify validate --path .
 
   generate:
     desc: Regenerate every tree the specification determines.
     cmds:
       - rm -rf {{.GEN}} widget/src/generated
       - mkdir -p {{.GEN}}/rust widget/src/generated
-      - ess generate synthesize --path {{.SPEC}} --target rust --out {{.GEN}}/rust/uilab
-      - ess generate types --path {{.SPEC}} {{.WIRE_ROOTS}} --target rust --package uilab-wire --out {{.GEN}}/rust/uilab-wire
-      - ess generate types --path {{.SPEC}} {{.WIRE_ROOTS}} --target typescript --out widget/src/generated
-      - ess verify conform synthesize --path {{.SPEC}} --out {{.GEN}}/suite.json
+      - cd {{.SPEC}} && ess generate synthesize --path . --target rust --out ../{{.GEN}}/rust/uilab
+      - cd {{.SPEC}} && ess generate types --path . {{.WIRE_ROOTS}} --target rust --package uilab-wire --out ../{{.GEN}}/rust/uilab-wire
+      - cd {{.SPEC}} && ess generate types --path . {{.WIRE_ROOTS}} --target typescript --out ../widget/src/generated
+      - cd {{.SPEC}} && ess verify conform synthesize --path . --out ../{{.GEN}}/suite.json
 
   drift:
     desc: Fail when a committed generated tree is not what the specification determines.
     cmds:
       - rm -rf .build/drift && mkdir -p .build/drift/rust
-      - ess generate synthesize --path {{.SPEC}} --target rust --out .build/drift/rust/uilab
-      - ess generate types --path {{.SPEC}} {{.WIRE_ROOTS}} --target rust --package uilab-wire --out .build/drift/rust/uilab-wire
-      - ess generate types --path {{.SPEC}} {{.WIRE_ROOTS}} --target typescript --out .build/drift/ts
-      - ess verify conform synthesize --path {{.SPEC}} --out .build/drift/suite.json
+      - cd {{.SPEC}} && ess generate synthesize --path . --target rust --out ../.build/drift/rust/uilab
+      - cd {{.SPEC}} && ess generate types --path . {{.WIRE_ROOTS}} --target rust --package uilab-wire --out ../.build/drift/rust/uilab-wire
+      - cd {{.SPEC}} && ess generate types --path . {{.WIRE_ROOTS}} --target typescript --out ../.build/drift/ts
+      - cd {{.SPEC}} && ess verify conform synthesize --path . --out ../.build/drift/suite.json
       - diff -r --exclude=.ess-output .build/drift/rust {{.GEN}}/rust
       - diff -r --exclude=.ess-output .build/drift/ts widget/src/generated
       - diff .build/drift/suite.json {{.GEN}}/suite.json
+
+  ui:
+    desc: Check every example UI document with ESS's `ess ui check`; any error fails.
+    dir: '{{.SPEC}}'
+    cmds:
+      - for: {var: DOCS}
+        cmd: ess ui check --path ../{{.ITEM}}
+    vars:
+      DOCS:
+        sh: find examples -name '*.ui.yaml' | sort
 
   widget:
     desc: Build the browser app into widget/dist, which the server embeds.
@@ -58,6 +69,7 @@ tasks:
     cmds:
       - task: validate
       - task: drift
+      - task: ui
       - task: widget
       - task: rust
 

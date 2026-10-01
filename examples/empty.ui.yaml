@@ -1,4 +1,4 @@
-format: ui-spec/1
+format: ess-ui/1
 app: app
 title: New app
 model: app
@@ -18,6 +18,6 @@ navigation:
   hidden: [home]
 pages:
   home:
-    kind: form_page
+    kind: static_page
     title: Home
-    sections: {}
+    sections: []
