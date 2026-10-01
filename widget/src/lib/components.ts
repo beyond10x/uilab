@@ -291,9 +291,14 @@ export function substitute(value: unknown, args: Record<string, unknown>): unkno
   return value;
 }
 
-/** A body node, and its children, as a preview draws it: props and title read from `args`. */
+/**
+ * A body node, and its children, as a preview draws it: props and title read from `args`. The
+ * body a nested instance holds (its inherited `node` children, as the server sends them) is that
+ * instance's: its own args bind it when it is drawn, so it is left as written here.
+ */
 export function previewNode(node: OutlineNode, args: Record<string, unknown>): OutlineNode {
-  const out: OutlineNode = { ...node, children: node.children.map((c) => previewNode(c, args)) };
+  const nested = (c: OutlineNode) => c.layer === 'node' && c.inherited === true;
+  const out: OutlineNode = { ...node, children: node.children.map((c) => (nested(c) ? c : previewNode(c, args))) };
   if (node.props !== undefined) out.props = substitute(node.props, args) as OutlineNode['props'];
   if (node.title !== undefined) out.title = displayValue(substitute(node.title, args));
   return out;

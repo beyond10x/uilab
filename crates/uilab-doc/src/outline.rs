@@ -216,6 +216,9 @@ struct Expanded<'a> {
     /// Every node ESS renders under `pages/` and `shells/` that names a uilab node, in ESS's
     /// order (parents before children), with its ESS canonical path.
     nodes: Vec<(NodePath, Vec<String>)>,
+    /// What ESS renders each section, overlay and node of [`Self::nodes`] as, by uilab path: its
+    /// kind label as uilab spells it and the view it reads ([`ess_fields`]).
+    fields: HashMap<String, (String, Option<String>)>,
     /// The document as written, as JSON.
     written: Value,
     /// Per page kind a page uses, its `sections` and `overlays` as ESS resolves the kind over
@@ -228,18 +231,22 @@ impl<'a> Expanded<'a> {
     fn of(doc: &'a Document) -> Option<Self> {
         let text = doc.to_yaml().ok()?;
         let ess = ess_ui::load_str(&text).ok()?;
-        let nodes = ess
-            .nodes()
-            .iter()
-            .filter_map(|located| {
-                let segments = located.path.segments();
-                let top = segments.first().map(String::as_str);
-                if !matches!(top, Some("pages" | "shells")) {
-                    return None;
-                }
-                uilab_of(segments).map(|path| (path, segments.to_vec()))
-            })
-            .collect();
+        let mut nodes = Vec::new();
+        let mut fields = HashMap::new();
+        for located in ess.nodes() {
+            let segments = located.path.segments();
+            let top = segments.first().map(String::as_str);
+            if !matches!(top, Some("pages" | "shells")) {
+                continue;
+            }
+            let Some(path) = uilab_of(segments) else {
+                continue;
+            };
+            if let Some(found) = ess_fields(located.node) {
+                fields.insert(path.to_string(), found);
+            }
+            nodes.push((path, segments.to_vec()));
+        }
         let json = |v: Option<&serde_yaml::Value>| {
             v.and_then(|v| serde_json::to_value(v).ok())
                 .unwrap_or(Value::Null)
@@ -264,6 +271,7 @@ impl<'a> Expanded<'a> {
             doc,
             uses: widget_uses(doc),
             nodes,
+            fields,
             written: serde_json::to_value(doc).ok()?,
             kinds,
         })
@@ -271,8 +279,30 @@ impl<'a> Expanded<'a> {
 
     /// Adds to the authored tree every node ESS renders that it does not hold, inherited, under
     /// its parent; then puts each list's nodes in ESS's order. Nodes of a map (shells, regions,
-    /// overlays, pages, board widgets) keep the author's order, inherited ones after.
+    /// overlays, pages, board widgets) keep the author's order, inherited ones after. Last, every
+    /// section, overlay and node, the author's included, takes the kind and the view ESS renders
+    /// it with: a section refining its page kind's, an overlay `same_as` another.
     fn add_to(&self, root: &mut OutlineNode) {
+        self.add_nodes(root);
+        self.merge_fields(root);
+    }
+
+    /// Each node's kind and view as ESS renders it, where ESS gives them; a view only where ESS
+    /// reads one.
+    fn merge_fields(&self, node: &mut OutlineNode) {
+        if let Some((kind, view)) = self.fields.get(&node.path) {
+            node.kind.clone_from(kind);
+            if view.is_some() {
+                node.view.clone_from(view);
+            }
+        }
+        for child in &mut node.children {
+            self.merge_fields(child);
+        }
+    }
+
+    /// [`Self::add_to`]'s first part: the nodes, in ESS's order.
+    fn add_nodes(&self, root: &mut OutlineNode) {
         let mut order: HashMap<String, usize> = HashMap::new();
         for (i, (path, segments)) in self.nodes.iter().enumerate() {
             let text = path.to_string();
@@ -330,12 +360,44 @@ impl<'a> Expanded<'a> {
         }
         for step in segments.get(2..)?.chunks(2) {
             let [key, child] = step else { return None };
-            candidates = candidates
+            let found: Vec<&Value> = candidates
                 .into_iter()
                 .filter_map(|c| self.child_of(c, key, child))
                 .collect();
+            candidates = Vec::new();
+            for value in found {
+                self.with_same_as(value, &mut candidates, 0);
+            }
         }
         candidates.first().copied()
+    }
+
+    /// `value`, then, where it is an overlay written `same_as: <page>.<overlay>`, the overlay it
+    /// copies (as the author wrote it, then as that page's kind contributes it), as ESS copies it
+    /// (`resolve_same_as`, at most 8 deep).
+    fn with_same_as<'v>(&'v self, value: &'v Value, out: &mut Vec<&'v Value>, depth: usize) {
+        out.push(value);
+        let Some((page, overlay)) = value
+            .get("same_as")
+            .and_then(Value::as_str)
+            .and_then(|target| target.rsplit_once('.'))
+        else {
+            return;
+        };
+        if depth >= 8 {
+            return;
+        }
+        let kind = self
+            .doc
+            .pages
+            .get(page)
+            .and_then(|p| self.kinds.get(&p.kind));
+        let sources = [self.written.get("pages").and_then(|p| p.get(page)), kind];
+        for source in sources.into_iter().flatten() {
+            if let Some(copied) = source.get("overlays").and_then(|o| o.get(overlay)) {
+                self.with_same_as(copied, out, depth + 1);
+            }
+        }
     }
 
     /// The written child `name` under `key` of `value`: an entry of a list by its `name`, a value
@@ -353,6 +415,71 @@ impl<'a> Expanded<'a> {
                 .find(|e| e.get("name").and_then(Value::as_str) == Some(name)),
             Value::Object(entries) => entries.get(name),
             _ => None,
+        }
+    }
+}
+
+/// What ESS renders a section, an overlay or a node as: its kind label as uilab spells it (a
+/// composite kind, the widget an instance uses, a primitive kind; an overlay's presentation before
+/// its body's, `drawer form`) and the view its `reads` names. `None` for any other node.
+fn ess_fields(node: ess_ui::NodeRef<'_>) -> Option<(String, Option<String>)> {
+    match node {
+        ess_ui::NodeRef::Section(section) => Some(body_fields(&section.body)),
+        ess_ui::NodeRef::Node(node) => Some(body_fields(&node.body)),
+        ess_ui::NodeRef::Overlay(overlay) => {
+            let (kind, view) = body_fields(&overlay.body);
+            let presentation = match &overlay.kind {
+                ess_ui::OverlayKind::Drawer => "drawer",
+                ess_ui::OverlayKind::Dialog => "dialog",
+                ess_ui::OverlayKind::Fullscreen => "fullscreen",
+                ess_ui::OverlayKind::Popover => "popover",
+                ess_ui::OverlayKind::Unmapped(_) => return Some((kind, view)),
+            };
+            Some((format!("{presentation} {kind}"), view))
+        }
+        _ => None,
+    }
+}
+
+/// [`ess_fields`] of what a section, an overlay or a node holds.
+fn body_fields(body: &ess_ui::Body) -> (String, Option<String>) {
+    use ess_ui::Composite as C;
+    use ess_ui::Primitive as P;
+    let named = |reads: Option<&ess_ui::Reads>| {
+        reads.and_then(|r| r.view.clone().or_else(|| r.placeholder.clone()))
+    };
+    match body {
+        ess_ui::Body::Widget(instance) => (instance.component.clone(), None),
+        ess_ui::Body::Primitive(primitive) => {
+            let kind = match primitive {
+                P::Text(_) => "text",
+                P::Badge(_) => "badge",
+                P::Icon(_) => "icon",
+                P::Button(_) => "button",
+                P::Link(_) => "link",
+                P::Input(_) => "input",
+                P::Toggle(_) => "toggle",
+                P::Image(_) => "image",
+                P::Divider(_) => "divider",
+            };
+            (kind.to_owned(), None)
+        }
+        ess_ui::Body::Composite(composite) => {
+            let (kind, view) = match composite {
+                C::Collection(c) => ("collection", named(c.reads.as_ref())),
+                C::Record(c) => ("record", named(c.reads.as_ref())),
+                C::Form(_) => ("form", None),
+                C::Choice(c) => ("choice", named(c.reads.as_ref())),
+                C::FilterBar(_) => ("filter_bar", None),
+                C::Confirm(_) => ("confirm", None),
+                C::Metric(c) => ("metric", named(c.reads.as_ref())),
+                C::Chart(c) => ("chart", named(Some(&c.reads))),
+                C::Board(c) => ("board", named(Some(&c.reads))),
+                C::GraphEditor(c) => ("graph_editor", named(Some(&c.reads))),
+                C::RichText(_) => ("rich_text", None),
+                C::References(c) => ("references", named(Some(&c.reads))),
+            };
+            (kind.to_owned(), view)
         }
     }
 }

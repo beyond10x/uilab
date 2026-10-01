@@ -381,9 +381,15 @@ impl<'a> NodeRef<'a> {
             NodeRef::Nav(_) => "navigation".into(),
             NodeRef::NavSection(_) => "nav_section".into(),
             NodeRef::Page(p) => p.kind.clone(),
-            NodeRef::Overlay(o) => {
-                format!("{:?} {}", o.kind, o.body.component.as_str()).to_lowercase()
-            }
+            // As the document spells it (`drawer form`); an overlay that writes no `kind` takes
+            // it from its page kind or the overlay it is `same_as` ([`crate::outline::rendered`]
+            // shows the one ESS gives it).
+            NodeRef::Overlay(o) => match o.kind.and_then(|k| serde_json::to_value(k).ok()) {
+                Some(serde_json::Value::String(kind)) => {
+                    format!("{kind} {}", o.body.component.as_str())
+                }
+                _ => o.body.component.as_str().to_owned(),
+            },
             NodeRef::Composite(c) => c.component.as_str().into(),
             NodeRef::Component(_) => "widget".into(),
             NodeRef::Primitive(p) => p.primitive.as_str().into(),

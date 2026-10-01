@@ -47,7 +47,7 @@ fn chain() -> String {
 
 #[test]
 fn a_document_ess_does_not_read_within_the_deadline_is_refused_on_load_and_on_admit() {
-    assert_eq!(uilab_doc::ess::ESS_DEADLINE, Duration::from_secs(10));
+    assert_eq!(uilab_doc::ess::ESS_DEADLINE, Duration::from_secs(30));
     assert_eq!(uilab_doc::ess::deadline(), uilab_doc::ess::ESS_DEADLINE);
 
     // Within the default deadline the document without a use loads.
@@ -92,5 +92,23 @@ fn a_document_ess_does_not_read_within_the_deadline_is_refused_on_load_and_on_ad
     assert!(
         took < DEADLINE + Duration::from_secs(2),
         "refused after {took:?}"
+    );
+
+    // On check: never silent. A document read past the loader (as a patch's result is checked)
+    // that ESS does not check in time has one `expansion_bound` error, not no findings.
+    let unread: Document = serde_yaml::from_str(&used).unwrap();
+    let started = Instant::now();
+    let found = uilab_doc::check(&unread);
+    let took = started.elapsed();
+    let bound: Vec<_> = found
+        .iter()
+        .filter(|f| f.check == "expansion_bound")
+        .collect();
+    assert_eq!(bound.len(), 1, "{found:?}");
+    assert_eq!(bound[0].severity, uilab_doc::Severity::Error);
+    assert!(bound[0].message.contains("beyond10x/ess#300"), "{found:?}");
+    assert!(
+        took < DEADLINE + Duration::from_secs(2),
+        "checked after {took:?}"
     );
 }
