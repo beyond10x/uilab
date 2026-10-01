@@ -65,12 +65,16 @@ that each carry a `name`; maps are used only where order means nothing, such as 
 A page's `kind` is a template that contributes sections, state, a header and overlays. A
 `list_page` contributes a `filters` section (a `filter_bar` on the page's search) and a `list`
 section (a `collection`); the Loans page above writes its own `list`, which is merged over the
-kind's by name, and inherits `filters`. ESS expands the document before anything is shown, so the
-canvas shows what ESS renders: the sections a page kind contributes and the bodies of widget
-instances are included and marked as inherited.
+kind's by name, and inherits `filters`. A page leaves out a section its kind contributes with
+`{name: <section>, remove: true}` in its `sections` list. ESS expands the document before anything
+is shown, so the canvas and the tree show what ESS renders: the sections a page kind contributes and
+the bodies of widget instances are included and marked as inherited.
 
-uilab writes back only what you wrote. Nothing a page kind or a widget contributes is saved to the
-file.
+An inherited node is not in your file, so an instruction given with one selected is asked at the
+nearest node you wrote: the page for a section its kind contributes, the widget instance for a node
+of the widget's body. The canvas has no remove button for any node; removing is an instruction
+("remove this"). uilab writes back only what you wrote: nothing a page kind or a widget contributes
+is saved to the file.
 
 ## Read, render, write back
 
@@ -89,7 +93,8 @@ diffs show only the changes you accepted.
 ESS's checker, `ess-ui-check`, decides what a document may hold. Every document is checked
 continuously, and every proposal is checked before you see it: a proposal whose result has an ESS
 error the document did not already have is refused. Warnings are listed in the sidebar and in the
-Docs view. Every finding names the node it is about. Among the checks:
+Docs view. Every finding carries its ESS check id and names the uilab node it is about. Among
+ESS's checks:
 
 | Check | Holds that |
 |---|---|
@@ -103,8 +108,22 @@ Docs view. Every finding names the node it is about. Among the checks:
 | `fixture_per_view` (warning) | a view that is read has a fixture |
 | `unbound_placeholder` (warning) | a read is a placeholder not yet bound to a model view |
 
-uilab keeps a check of its own only where ESS has none. Run the same checks from a shell with
-`ess ui check --path <file>`.
+Run ESS's checks from a shell with `ess ui check --path <file>`.
+
+uilab keeps a check of its own only where ESS 0.48.0 has none; the three document checks are
+requested in ESS ([beyond10x/ess#303](https://github.com/beyond10x/ess/issues/303)):
+
+| Check | Holds that |
+|---|---|
+| `nav_unique` | every page is listed once and menu section names are unique |
+| `shell_refs` | a page's shell exists |
+| `page_outlet` | a shell a page renders in has a `page_outlet` region |
+| `replace_drops` (warning) | a proposed replace keeps every child and every `columns`, `fields`, `row_actions` and `actions` entry the node had; it is checked on proposals only |
+
+One guard sits in front of ESS. ESS 0.48.0 expands every widget use in full
+([beyond10x/ess#300](https://github.com/beyond10x/ess/issues/300)), so a document whose widget uses
+would expand past 100,000 maps, or that ESS does not load or check within 30 seconds, is refused
+with an `expansion_bound` error instead.
 
 ## The generated Docs view
 

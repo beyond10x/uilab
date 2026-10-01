@@ -53,7 +53,9 @@ file under version control, while you try things.
 
 ![The canvas on the left renders the document; the sidebar holds the talk button, the instruction field and the tree](/img/screens/canvas.png)
 
-- **Left: the canvas.** The document rendered with sample rows. Click anything to select it.
+- **Left: the canvas.** The document rendered with sample rows. Click anything to select it. A
+  section the page's kind contributes, such as the Loans page's `filters`, is drawn with a dashed
+  outline and marked **inherited** in the tree.
 - **Top: four views.** `1` UI, `2` YAML, `3` Docs, `4` Components. **Export YAML** downloads the
   current document.
 - **Structure or preview.** On the UI tab, `p` (or the **Preview** button) switches the canvas

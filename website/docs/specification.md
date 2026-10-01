@@ -92,9 +92,10 @@ refuse a page nobody can reach and a menu entry for a page that does not exist.
 ```yaml
 pages:
   overview:
-    kind: detail_page
+    kind: dashboard_page
     title: Overview
     sections:
+      - {name: board, remove: true}
       - name: on_loan
         component: metric
         label: Copies on loan
@@ -112,10 +113,10 @@ caption.
 A `collection` shows rows; `params` are fixed parameters of the read. A section has no title of its
 own in `ess-ui/1` (requested in [beyond10x/ess#281](https://github.com/beyond10x/ess/issues/281)).
 
-The page's `kind` is a template. `detail_page` contributes a `summary` section, a `record`; this page
-does not write one, so it inherits it. The canvas shows what ESS expands — the sections a page kind
-contributes included, marked as inherited. A page could not use `dashboard_page` here: that kind
-contributes a `board` section, and a board must read a dashboard record.
+The page's `kind` is a template whose sections every page of that kind gets. `dashboard_page`
+contributes a `board` section, and a board must read a dashboard record, which the library model
+does not have. `{name: board, remove: true}` takes the inherited `board` out of this page; the
+metric and the list are the page's own.
 
 ## A list page with a drawer
 
@@ -127,7 +128,7 @@ contributes a `board` section, and a board must read a dashboard record.
       - name: list
         component: collection
         reads: {view: loans.All, paging: server}
-        columns: [{field: title}, {field: member}, {field: due}, {field: state, as: tag}]
+        columns: [{field: title}, {field: member}, {field: due}, {field: state, as: badge}]
         row_actions: [{opens: edit, label: Extend}]
     overlays:
       edit:
@@ -143,7 +144,7 @@ title and the total of `list`, and two sections: `filters`, a `filter_bar` bound
 and `list`, a `collection`. The page's own `list` is merged over the kind's by name; `filters` is
 inherited and is shown on the canvas marked as inherited.
 
-`as: tag` renders a column as a tag. `row_actions` puts an **Extend** action on every row that
+`as: badge` renders a column as a badge. `row_actions` puts an **Extend** action on every row that
 `opens` the overlay `edit`. The overlay is a `drawer` holding a `form` whose submit runs the ESS
 command `loans.ExtendLoan` with the field `due`. The `opens_resolves` check holds that `edit` exists
 on this page, its kind or its shell.
@@ -158,7 +159,7 @@ on this page, its kind or its shell.
       - name: list
         component: collection
         reads: {view: members.All}
-        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: tag}]
+        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: badge}]
 ```
 
 That is the whole document: three pages, four sections and one overlay written by hand, and the

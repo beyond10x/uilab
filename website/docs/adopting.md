@@ -45,7 +45,7 @@ The specification is an `ess-ui/1` document, ESS's renderer-neutral UI format; i
 [reference](https://beyond10x.github.io/ess/docs/reference/ess-ui) is the full vocabulary. Its
 composite kinds are deliberately generic: `collection`, `record`, `form`, `metric`, `chart` and so
 on. Most teams already have a component for each. Write the mapping down once — which
-of your components renders a `collection` with `as: tag` columns, which renders a `drawer` — and
+of your components renders a `collection` with `as: badge` columns, which renders a `drawer` — and
 the specification becomes a checklist for implementation.
 
 Where your library has something more specific — a member card, a loan status line — declare it as
