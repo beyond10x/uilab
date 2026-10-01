@@ -59,17 +59,40 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
         }),
     );
     properties.insert("target".into(), json!({"const": path.to_string()}));
+    let inherited = Inherited::at(doc, path);
     if !children.is_empty() {
-        let variants: Vec<Value> = children.iter().map(|l| child_variant(doc, *l)).collect();
+        // The layer is chosen by `if`/`then` on `layer`, not `oneOf`, so a refusal names the field
+        // at fault inside the node rather than "valid under none of these".
+        let layers: Vec<&str> = children.iter().map(|l| l.as_str()).collect();
+        let choose: Vec<Value> = children
+            .iter()
+            .map(|l| {
+                json!({
+                    "if": {"properties": {"layer": {"const": l.as_str()}}, "required": ["layer"]},
+                    "then": child_variant(doc, *l, &inherited),
+                })
+            })
+            .collect();
         properties.insert(
             "child".into(),
-            json!({"description": "the new node, for insert", "oneOf": variants}),
+            json!({
+                "description": "the new node, for insert",
+                "type": "object",
+                "required": ["layer", "name", "node"],
+                "properties": {"layer": {"enum": layers}},
+                "allOf": choose,
+            }),
         );
     }
     if changeable {
+        let node = match (layer, inherited.this) {
+            (Layer::Section, true) => "#/$defs/section_node_inherited".to_owned(),
+            (Layer::Overlay, true) => "#/$defs/overlay_inherited".to_owned(),
+            _ => def_ref(layer),
+        };
         properties.insert(
             "node".into(),
-            json!({"description": "the replacement node, for replace", "$ref": def_ref(layer)}),
+            json!({"description": "the replacement node, for replace", "$ref": node}),
         );
     }
 
@@ -109,7 +132,7 @@ fn carried(ops: &[&str]) -> Vec<Value> {
 /// The definition a node of `layer` has.
 fn def_ref(layer: Layer) -> String {
     let name = match layer {
-        Layer::Section => "section",
+        Layer::Section => "section_node",
         Layer::Widget | Layer::Item | Layer::Child | Layer::Part | Layer::Tool => "node",
         Layer::Choice => "choice_entry",
         Layer::Node => "body_node",
@@ -119,14 +142,91 @@ fn def_ref(layer: Layer) -> String {
     format!("#/$defs/{name}")
 }
 
-fn child_variant(doc: &Document, layer: Layer) -> Value {
+/// What a patch's target inherits from its page's kind: the names of the sections and overlays the
+/// kind contributes (a page's children of those names may refine them without their tag), and
+/// whether the target is itself such a section or overlay.
+struct Inherited {
+    sections: Vec<String>,
+    overlays: Vec<String>,
+    this: bool,
+}
+
+impl Inherited {
+    fn at(doc: &Document, path: &NodePath) -> Self {
+        let mut out = Inherited {
+            sections: Vec::new(),
+            overlays: Vec::new(),
+            this: false,
+        };
+        let page = match (path.layer(), path.parent()) {
+            (Layer::Page, _) => path.name().to_owned(),
+            (Layer::Section | Layer::Overlay, Some(parent)) if parent.layer() == Layer::Page => {
+                parent.name().to_owned()
+            }
+            _ => return out,
+        };
+        let Some(kind) = doc.pages.get(&page).map(|p| p.kind.clone()) else {
+            return out;
+        };
+        // The kind, then each kind it `extends`: the document's own, else ESS's built-in ones.
+        let mut next = Some(kind);
+        let mut seen = BTreeSet::new();
+        while let Some(kind) = next.take() {
+            if !seen.insert(kind.clone()) {
+                break;
+            }
+            let def = match doc.page_kinds.get(&kind) {
+                Some(def) => def.clone(),
+                None => to_json(&construct("PageKind")["builtins"][kind.as_str()]),
+            };
+            for section in def["sections"].as_array().into_iter().flatten() {
+                if let Some(name) = section["name"].as_str()
+                    && section.get("remove") != Some(&json!(true))
+                {
+                    out.sections.push(name.to_owned());
+                }
+            }
+            for name in def["overlays"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(k, _)| k)
+            {
+                out.overlays.push(name.clone());
+            }
+            next = def["extends"].as_str().map(str::to_owned);
+        }
+        out.this = match path.layer() {
+            Layer::Section => out.sections.iter().any(|s| s == path.name()),
+            Layer::Overlay => out.overlays.iter().any(|o| o == path.name()),
+            _ => false,
+        };
+        out
+    }
+}
+
+fn child_variant(doc: &Document, layer: Layer, inherited: &Inherited) -> Value {
     let mut properties = Map::new();
     properties.insert("layer".into(), json!({"const": layer.as_str()}));
     properties.insert(
         "name".into(),
         json!({"type": "string", "pattern": CHILD_NAME}),
     );
-    properties.insert("node".into(), json!({"$ref": def_ref(layer)}));
+    // A child named as one the page's kind contributes may refine it without its tag; any other
+    // must carry its tag.
+    let (names, refined) = match layer {
+        Layer::Section => (&inherited.sections, "#/$defs/section_node_inherited"),
+        Layer::Overlay => (&inherited.overlays, "#/$defs/overlay_inherited"),
+        _ => (&Vec::new(), ""),
+    };
+    if names.is_empty() {
+        properties.insert("node".into(), json!({"$ref": def_ref(layer)}));
+    } else {
+        properties.insert(
+            "node".into(),
+            json!({"$ref": refined, "description": format!("without its tag only when named one of {}", names.join(", "))}),
+        );
+    }
     let mut required = vec!["layer", "name", "node"];
     if layer == Layer::Page {
         let sections: Vec<&str> = doc
@@ -143,7 +243,13 @@ fn child_variant(doc: &Document, layer: Layer) -> Value {
     } else {
         required.truncate(3);
     }
-    json!({"type": "object", "required": required, "additionalProperties": false, "properties": properties})
+    let mut variant = json!({"type": "object", "required": required, "additionalProperties": false, "properties": properties});
+    if !names.is_empty() {
+        let tag = composite_tag();
+        variant["if"] = json!({"not": {"properties": {"name": {"enum": names}}}});
+        variant["then"] = json!({"properties": {"node": {"required": [tag]}}});
+    }
+    variant
 }
 
 /// ESS's schema, parsed once.
@@ -208,9 +314,9 @@ struct Builder<'a> {
     seen: BTreeSet<&'static str>,
     /// Definitions whose every field also takes a short form: `(definition, form)`.
     widened: Vec<(String, &'static Yaml)>,
-    /// Whether the construct being built is a widget declaration, whose body nodes are named,
-    /// not typed.
-    in_body: bool,
+    /// The construct being built: a widget declaration's body nodes are named, not typed; a
+    /// page's sections and overlays may refine its kind's.
+    building: &'static str,
 }
 
 impl<'a> Builder<'a> {
@@ -221,7 +327,7 @@ impl<'a> Builder<'a> {
             queued: Vec::new(),
             seen: BTreeSet::new(),
             widened: Vec::new(),
-            in_body: false,
+            building: "",
         }
     }
 
@@ -255,9 +361,9 @@ impl<'a> Builder<'a> {
     /// Builds every construct referred to and not built yet.
     fn drain(&mut self) {
         while let Some(name) = self.queued.pop() {
-            self.in_body = name == "Widget";
+            self.building = name;
             let built = self.construct_def(name);
-            self.in_body = false;
+            self.building = "";
             self.defs.insert(def_name(name).to_owned(), built);
         }
     }
@@ -313,6 +419,10 @@ impl<'a> Builder<'a> {
     /// A type by name: a primitive of `type_rule.primitives`, a construct, or a type of the ESS
     /// model or of the document's `types`, which the document resolves and the schema cannot.
     fn named(&mut self, name: &'static str) -> Value {
+        // A page's own overlay may refine the one its kind contributes.
+        if name == "overlay" && self.building == "Page" {
+            return json!({"$ref": "#/$defs/overlay_inherited"});
+        }
         let primitive = &ess()["type_rule"]["primitives"][name];
         if !primitive.is_null() {
             let mut out = match name {
@@ -344,7 +454,9 @@ impl<'a> Builder<'a> {
     fn element(&mut self, element: &'static Yaml) -> Value {
         if let Some(name) = element.as_str() {
             match name {
-                "Node" if self.in_body => return json!({"$ref": "#/$defs/named_body_node"}),
+                "Node" if self.building == "Widget" => {
+                    return json!({"$ref": "#/$defs/named_body_node"});
+                }
                 "Node" => return json!({"$ref": "#/$defs/named_node"}),
                 "Section" => return json!({"$ref": "#/$defs/named_section"}),
                 _ => {}
@@ -518,14 +630,17 @@ impl<'a> Builder<'a> {
     }
 
     /// The node positions: section, overlay and nested composite, the nested primitive, a nested
-    /// node (either), and the same nested positions inside a widget declaration's body.
+    /// node (either), and the same nested positions inside a widget declaration's body. Where a
+    /// page kind can contribute the node (a section or an overlay of a page), also the untagged
+    /// refinement of it, offered only where the target inherits ([`patch_schema`]).
     fn positions(&mut self) {
         let doc = self.doc;
         let tag = composite_tag();
         let mut section = fields_of(construct("Section"));
         // A section's `reads` is "the composite's own `reads`" (`Section.fields.reads`): offered
-        // where the member declares one, by the member.
-        section.retain(|(_, spec)| spec["type"].as_str() != Some("Reads"));
+        // where the member declares one, by the member. Its `name` is the patch's (`child.name`,
+        // or the target's), or a page entry's, never written inside a patch's node.
+        section.retain(|(key, spec)| spec["type"].as_str() != Some("Reads") && *key != "name");
         let mut composites: Vec<Kind> = members().into_iter().map(Kind::Construct).collect();
         composites.extend(doc.widgets.keys().map(|w| Kind::Widget(w.as_str())));
         let primitive = construct("Primitive");
@@ -568,7 +683,7 @@ impl<'a> Builder<'a> {
                     kinds: &composites,
                     description: "A composite nested in another node, or a widget instance.",
                     typed: true,
-                    inherits: true,
+                    inherits: false,
                 },
             ),
             (
@@ -611,10 +726,13 @@ impl<'a> Builder<'a> {
             ),
         ];
         for (name, position) in positions {
-            let def = self.union(&position);
+            let def = self.union(name, &position);
             self.defs.insert(name.to_owned(), def);
         }
 
+        // A nested node is a primitive when it carries `primitive`, else a composite: chosen by
+        // the tag present, so a refusal names the field at fault rather than "none of these".
+        let leaf_tag = "primitive";
         for (node, composite, leaf) in [
             ("node", "composite", "primitive"),
             ("body_node", "body_composite", "body_primitive"),
@@ -623,20 +741,40 @@ impl<'a> Builder<'a> {
                 node.into(),
                 json!({
                     "description": construct("Node")["summary"],
-                    "oneOf": [{"$ref": format!("#/$defs/{composite}")}, {"$ref": format!("#/$defs/{leaf}")}],
+                    "if": {"required": [leaf_tag]},
+                    "then": {"$ref": format!("#/$defs/{leaf}")},
+                    "else": {"$ref": format!("#/$defs/{composite}")},
                 }),
             );
         }
+        let name_type = self.named("name");
         for (named, of) in [
             ("named_node", "node"),
-            ("named_section", "section"),
+            // A page's own entry may refine the section its kind contributes.
+            ("named_section", "section_inherited"),
             ("named_body_node", "body_node"),
         ] {
             self.defs.insert(
                 named.into(),
                 json!({
                     "description": "an entry of a list of nodes, which carries its `name`",
-                    "allOf": [{"type": "object", "required": ["name"]}, {"$ref": format!("#/$defs/{of}")}],
+                    "allOf": [
+                        {"type": "object", "required": ["name"], "properties": {"name": name_type}},
+                        {"$ref": format!("#/$defs/{of}")},
+                    ],
+                }),
+            );
+        }
+        // A section as a patch's node: named by the patch, so no `name` inside it.
+        for (node, of) in [
+            ("section_node", "section"),
+            ("section_node_inherited", "section_inherited"),
+        ] {
+            self.defs.insert(
+                node.into(),
+                json!({
+                    "description": "a section; its name is the patch's (`child.name`, or the target's), not written in the node",
+                    "allOf": [{"not": {"required": ["name"]}}, {"$ref": format!("#/$defs/{of}")}],
                 }),
             );
         }
@@ -668,15 +806,16 @@ impl<'a> Builder<'a> {
     }
 
     /// One position. A variant per kind, chosen by `tag`, names the fields it takes (the frame's
-    /// and the kind's), requires ESS's required ones, fixes `tag` to the kind and refuses every
-    /// other key. Typed, the frame's fields are typed here, once, and each kind's own once in the
+    /// and the kind's), requires ESS's required ones, fixes `tag` to the kind and refuses the
+    /// other tag. Typed, the frame's fields are typed here, once, and each kind's own once in the
     /// kind's definition, shared by every position.
     ///
-    /// Two of ESS's merges relax what a node must write. Where a page kind contributes nodes
+    /// Two of ESS's merges relax what a node must write. Where a page kind can contribute the node
     /// (`inherits`), one written without its tag refines the inherited node of its name
-    /// (`inheritance.named_lists`, `maps`): it names only what differs. An overlay naming
+    /// (`inheritance.named_lists`, `maps`): `<position>_refinement` names what it may write and
+    /// `<position>_inherited` takes either, for the targets that inherit. An overlay naming
     /// `same_as` is merged over the overlay it names, so it need not repeat a required field.
-    fn union(&mut self, p: &Position<'_, 'a>) -> Value {
+    fn union(&mut self, position: &str, p: &Position<'_, 'a>) -> Value {
         let tag = p.tag;
         let mut properties = Map::new();
         if p.typed {
@@ -684,6 +823,12 @@ impl<'a> Builder<'a> {
                 properties.insert((*key).to_owned(), self.field_in(p.framing, key, spec));
             }
         }
+        // A node has exactly one of its tags (`Node.exactly_one_of`).
+        let others: Vec<Value> = strings(&construct("Node")["exactly_one_of"])
+            .into_iter()
+            .filter(|other| *other != tag)
+            .map(|other| json!({"required": [other]}))
+            .collect();
         let same_as = p.frame.iter().any(|(key, _)| *key == "same_as");
         let mut offered = Vec::new();
         let mut choose = Vec::new();
@@ -711,8 +856,11 @@ impl<'a> Builder<'a> {
             names.insert(tag.to_owned(), json!({"const": name}));
             // The fields ESS declares, listed; other keys are not refused here: ESS's loader takes
             // some its schema does not list (an overlay's `visible`, a node's `degrades`), and its
-            // admission judges (beyond10x/ess#305). The tag and the required fields hold.
+            // admission judges (beyond10x/ess#305). The tags and the required fields hold.
             let mut variant = json!({"properties": names});
+            if !others.is_empty() {
+                variant["not"] = json!({"anyOf": others});
+            }
             match kind {
                 Kind::Construct(name) => {
                     if p.typed {
@@ -751,39 +899,40 @@ impl<'a> Builder<'a> {
             offered.push(name);
         }
         if p.inherits {
-            // A node has exactly one of its tags (`Node.exactly_one_of`): one without this tag
-            // that carries another is not a refinement of this kind of node.
-            let others: Vec<Value> = strings(&construct("Node")["exactly_one_of"])
-                .into_iter()
-                .filter(|other| *other != tag)
-                .map(|other| json!({"required": [other]}))
-                .collect();
-            choose.push(json!({
-                "if": {"not": {"required": [tag]}},
-                "then": {
+            let refinement = format!("{position}_refinement");
+            self.defs.insert(
+                refinement.clone(),
+                json!({
+                    "type": "object",
                     "description": format!("without `{tag}`: refines the node of the same name its page kind contributes, writing only what differs"),
                     "properties": every,
                     "minProperties": 1,
                     "not": {"anyOf": others},
-                },
-            }));
+                }),
+            );
+            self.defs.insert(
+                format!("{position}_inherited"),
+                json!({
+                    "description": format!("a {position} with `{tag}`, or, refining the one its page kind contributes, without"),
+                    "if": {"required": [tag]},
+                    "then": {"$ref": format!("#/$defs/{position}")},
+                    "else": {"$ref": format!("#/$defs/{refinement}")},
+                }),
+            );
         }
         properties.insert(
             tag.to_owned(),
             json!({"enum": offered, "description": "the kind, or a widget the document declares; the other fields are the ones that kind takes"}),
         );
         // An empty node is no node, at every position, as in a batch.
-        let mut def = json!({
+        json!({
             "type": "object",
             "description": p.description,
+            "required": [tag],
             "minProperties": 1,
             "properties": properties,
             "allOf": choose,
-        });
-        if !p.inherits {
-            def["required"] = json!([tag]);
-        }
-        def
+        })
     }
 
     /// A kind's own fields, typed and described, once for every position it is offered at. Which

@@ -110,15 +110,44 @@ fn def<'a>(schema: &'a Value, reference: &Value) -> &'a Value {
         .unwrap_or_else(|| panic!("no $defs entry `{name}`"))
 }
 
-/// The `node` the schema offers for inserting a `layer` child at the patch's target.
-fn child_node<'a>(schema: &'a Value, layer: &str) -> &'a Value {
-    let variant = schema["properties"]["child"]["oneOf"]
+/// The node definition a `layer` child takes at the patch's target: `child` picks its layer by
+/// `if`/`then` on `layer`.
+fn child_raw<'a>(schema: &'a Value, layer: &str) -> &'a Value {
+    let variant = schema["properties"]["child"]["allOf"]
         .as_array()
-        .unwrap()
+        .unwrap_or_else(|| panic!("no `child` offered"))
         .iter()
-        .find(|v| v["properties"]["layer"]["const"] == layer)
+        .find(|entry| entry["if"]["properties"]["layer"]["const"] == layer)
+        .map(|entry| &entry["then"])
         .unwrap_or_else(|| panic!("no `{layer}` child offered"));
     def(schema, &variant["properties"]["node"]["$ref"])
+}
+
+/// The tagged position a node definition comes to, for a node carrying `tag`: through a section
+/// node's `allOf`, an inherited node's `if <tag>`, a nested node's `if primitive`, or a `$ref`.
+fn position<'a>(schema: &'a Value, at: &'a Value, tag: &str) -> &'a Value {
+    if at["properties"].get(tag).is_some() && at.get("allOf").is_some() {
+        return at;
+    }
+    if let Some(reference) = at.get("$ref") {
+        return position(schema, def(schema, reference), tag);
+    }
+    if let Some(on) = at["if"]["required"][0].as_str() {
+        let branch = if on == tag { &at["then"] } else { &at["else"] };
+        return position(schema, branch, tag);
+    }
+    if let Some(entry) = at["allOf"]
+        .as_array()
+        .and_then(|all| all.iter().find(|e| e.get("$ref").is_some()))
+    {
+        return position(schema, entry, tag);
+    }
+    panic!("no position for `{tag}` in {at}")
+}
+
+/// The composite position of a `layer` child at the patch's target.
+fn child_node<'a>(schema: &'a Value, layer: &str) -> &'a Value {
+    position(schema, child_raw(schema, layer), "component")
 }
 
 /// The variant a discriminated definition holds for `tag == value`: the `then` of the one
@@ -191,6 +220,18 @@ fn assert_variant(
         "{at}: other keys are left to ESS's admission"
     );
     assert_eq!(variant["properties"][tag], json!({"const": value}), "{at}");
+    // A node has exactly one of its tags (`Node.exactly_one_of`): a tagged variant refuses the
+    // other one (correction 2).
+    let others: Vec<Value> = strings(&ess()["constructs"]["Node"]["exactly_one_of"])
+        .into_iter()
+        .filter(|other| other != tag)
+        .map(|other| json!({"required": [other]}))
+        .collect();
+    assert_eq!(
+        variant["not"],
+        json!({"anyOf": others}),
+        "{at}: the other tag"
+    );
     let one_of: Vec<Value> = exactly_one_of
         .map(|keys| {
             strings(keys)
@@ -248,9 +289,11 @@ fn schema_from_ess() {
 
     // A section's own fields; its `reads` is the composite's (Section.reads: "it is the
     // composite's own `reads`"), so a section offers one only where the member declares one.
+    // Its `name` is the patch's (`child.name`, or the target's), never written in the node
+    // (correction 2).
     let mut section = fields(&constructs["Section"]);
     for (key, spec) in constructs["Section"]["fields"].as_mapping().unwrap() {
-        if spec["type"].as_str() == Some("Reads") {
+        if spec["type"].as_str() == Some("Reads") || key.as_str() == Some("name") {
             let key = key.as_str().unwrap();
             section.all.remove(key);
             section.required.remove(key);
@@ -269,17 +312,8 @@ fn schema_from_ess() {
     let doc = with_widget();
     for (target, layer, frame) in &frames {
         let schema = patch_schema(&doc, &path(target)).unwrap();
-        let mut position = child_node(&schema, layer);
-        if *layer == "item" {
-            // A nested node is a composite, a widget instance or a primitive.
-            position = position["oneOf"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|r| def(&schema, &r["$ref"]))
-                .find(|d| d["properties"].get(tag).is_some())
-                .expect("a nested node may be a composite");
-        }
+        // A nested node is a composite (or widget instance) or a primitive, chosen by its tag.
+        let position = position(&schema, child_raw(&schema, layer), tag);
         let mut offered: Vec<String> = members.clone();
         offered.push("due_badge".into());
         assert_eq!(
@@ -287,39 +321,50 @@ fn schema_from_ess() {
             json!(offered),
             "{layer}: the kinds and the document's widgets"
         );
-        // A page kind may contribute the node: one without its tag refines the inherited node of
-        // its name, naming any field a kind or the frame takes and requiring none.
-        assert!(
-            required(position).is_empty(),
-            "{layer}: the tag may be inherited"
-        );
-        let refines = position["allOf"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|e| e["if"] == json!({"not": {"required": [tag]}}))
-            .map(|e| &e["then"])
-            .expect("a node without its tag refines an inherited one");
-        let mut every = frame.all.clone();
-        for kind in members.iter().map(String::as_str).chain(["WidgetInstance"]) {
-            every.extend(fields(&constructs[kind]).all);
-        }
+        // A position requires its tag; an empty node is no node.
         assert_eq!(
-            keys(&refines["properties"]),
-            every,
-            "{layer}: what a refinement names"
-        );
-        assert!(refines.get("required").is_none());
-        assert_eq!(
-            refines["minProperties"],
-            json!(1),
-            "{layer}: an empty node is no refinement"
+            required(position),
+            BTreeSet::from([tag.to_owned()]),
+            "{layer}: a node carries its tag"
         );
         assert_eq!(
             position["minProperties"],
             json!(1),
             "{layer}: an empty node is no node"
         );
+        // Where a page kind can contribute the node (a page's section or overlay), one without its
+        // tag refines the inherited node of its name, naming any field a kind or the frame takes
+        // and requiring none; it is offered only to targets that inherit (correction 2). An item
+        // never inherits.
+        let inherited = &schema["$defs"][format!("{layer}_inherited")];
+        if *layer == "item" {
+            assert!(inherited.is_null(), "an item is never a refinement");
+            assert!(schema["$defs"].get("composite_refinement").is_none());
+        } else {
+            assert_eq!(inherited["if"], json!({"required": [tag]}), "{layer}");
+            assert_eq!(inherited["then"]["$ref"], json!(format!("#/$defs/{layer}")));
+            let refines = def(&schema, &inherited["else"]["$ref"]);
+            let mut every = frame.all.clone();
+            for kind in members.iter().map(String::as_str).chain(["WidgetInstance"]) {
+                every.extend(fields(&constructs[kind]).all);
+            }
+            assert_eq!(
+                keys(&refines["properties"]),
+                every,
+                "{layer}: what a refinement names"
+            );
+            assert!(refines.get("required").is_none());
+            assert_eq!(
+                refines["minProperties"],
+                json!(1),
+                "{layer}: an empty node is no refinement"
+            );
+            assert_eq!(
+                refines["not"],
+                json!({"anyOf": [{"required": ["primitive"]}]}),
+                "{layer}: a refinement carries no other tag"
+            );
+        }
 
         for kind in &members {
             let at = format!("{layer} {kind}");
@@ -375,13 +420,7 @@ fn schema_from_ess() {
     let kinds = strings(&primitive["fields"]["primitive"]["type"]["enum"]);
     assert_eq!(kinds.len(), 9, "ESS 0.48.0 has 9 primitive kinds");
     let schema = patch_schema(&doc, &path("page:loans/section:list")).unwrap();
-    let position = child_node(&schema, "item")["oneOf"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| def(&schema, &r["$ref"]))
-        .find(|d| d["properties"].get("primitive").is_some())
-        .expect("a nested node may be a primitive");
+    let position = position(&schema, child_raw(&schema, "item"), "primitive");
     assert_eq!(position["properties"]["primitive"]["enum"], json!(kinds));
     for kind in &kinds {
         assert_variant(
@@ -415,7 +454,7 @@ fn schema_from_ess() {
         serde_json::to_value(overlay_kind).unwrap()
     );
     let shell = patch_schema(&doc, &path("shell:app")).unwrap();
-    let region = child_node(&shell, "region");
+    let region = child_raw(&shell, "region");
     assert_eq!(
         region["properties"]["kind"]["enum"],
         serde_json::to_value(&constructs["Region"]["fields"]["kind"]["type"]["enum"]).unwrap()

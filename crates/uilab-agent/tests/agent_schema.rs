@@ -74,14 +74,44 @@ fn def<'a>(schema: &'a Value, reference: &Value) -> &'a Value {
         .unwrap_or_else(|| panic!("no $defs entry `{name}`"))
 }
 
-fn child_node<'a>(schema: &'a Value, layer: &str) -> &'a Value {
-    let variant = schema["properties"]["child"]["oneOf"]
+/// The node definition a `layer` child takes at the patch's target: `child` picks its layer by
+/// `if`/`then` on `layer`.
+fn child_raw<'a>(schema: &'a Value, layer: &str) -> &'a Value {
+    let variant = schema["properties"]["child"]["allOf"]
         .as_array()
-        .unwrap()
+        .unwrap_or_else(|| panic!("no `child` offered"))
         .iter()
-        .find(|v| v["properties"]["layer"]["const"] == layer)
+        .find(|entry| entry["if"]["properties"]["layer"]["const"] == layer)
+        .map(|entry| &entry["then"])
         .unwrap_or_else(|| panic!("no `{layer}` child offered"));
     def(schema, &variant["properties"]["node"]["$ref"])
+}
+
+/// The tagged position a node definition comes to, for a node carrying `tag`: through a section
+/// node's `allOf`, an inherited node's `if <tag>`, a nested node's `if primitive`, or a `$ref`.
+fn position<'a>(schema: &'a Value, at: &'a Value, tag: &str) -> &'a Value {
+    if at["properties"].get(tag).is_some() && at.get("allOf").is_some() {
+        return at;
+    }
+    if let Some(reference) = at.get("$ref") {
+        return position(schema, def(schema, reference), tag);
+    }
+    if let Some(on) = at["if"]["required"][0].as_str() {
+        let branch = if on == tag { &at["then"] } else { &at["else"] };
+        return position(schema, branch, tag);
+    }
+    if let Some(entry) = at["allOf"]
+        .as_array()
+        .and_then(|all| all.iter().find(|e| e.get("$ref").is_some()))
+    {
+        return position(schema, entry, tag);
+    }
+    panic!("no position for `{tag}` in {at}")
+}
+
+/// The composite position of a `layer` child at the patch's target.
+fn child_node<'a>(schema: &'a Value, layer: &str) -> &'a Value {
+    position(schema, child_raw(schema, layer), "component")
 }
 
 /// The variant of a discriminated definition for `tag == value`.
@@ -98,17 +128,6 @@ fn variant<'a>(schema: &'a Value, union: &'a Value, tag: &str, value: &str) -> &
         (None, Some(reference)) => def(schema, reference),
         _ => then,
     }
-}
-
-/// The definitions a nested node may be: the composite one and the primitive one.
-fn nested<'a>(schema: &'a Value, node: &'a Value, tag: &str) -> &'a Value {
-    node["oneOf"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| def(schema, &r["$ref"]))
-        .find(|d| d["properties"].get(tag).is_some())
-        .unwrap_or_else(|| panic!("a nested node may carry `{tag}`"))
 }
 
 /// The smallest node a position's variant accepts. A variant names its fields (`true`) and types
@@ -269,9 +288,9 @@ fn schema_patches_pass_ess() {
 
     // Every composite kind, the widget and every primitive kind: as an item of a collection.
     let list = patch_schema(&doc, &path("page:loans/section:list")).unwrap();
-    let node = child_node(&list, "item");
+    let node = child_raw(&list, "item");
     for (tag, kinds) in [("component", &kinds), ("primitive", &primitives)] {
-        let position = nested(&list, node, tag);
+        let position = position(&list, node, tag);
         for kind in kinds {
             let node = example_variant(&list, position, variant(&list, position, tag, kind));
             passes(
@@ -464,4 +483,40 @@ fn the_library_as_written_is_valid_against_its_schema() {
         "the schema refuses nodes ESS admits:\n{}",
         refused.join("\n")
     );
+}
+
+/// Correction 2: a patch names its node (`child.name`, or the target). A `name` written inside the
+/// node that differs is refused by admission (`node_name`), so the document never keeps a node
+/// under one name and writes it under another; the same name, or none, is admitted.
+#[test]
+fn a_node_name_other_than_the_patchs_is_refused_by_admission() {
+    let doc = library();
+    let judged = |patch: Value| {
+        let parsed: Patch = serde_json::from_value(patch).unwrap();
+        admit(&doc, &parsed).map(|_| ()).map_err(|r| r.check)
+    };
+    let item = |name: Option<&str>| {
+        let mut node = json!({"primitive": "text", "text": "row.title"});
+        if let Some(name) = name {
+            node["name"] = json!(name);
+        }
+        insert("page:loans/section:list", "item", "caption", node)
+    };
+    // The schema offers `name` on a nested node, so admission is what holds it.
+    assert!(valid(&doc, &item(Some("other"))).is_ok());
+    assert_eq!(judged(item(Some("other"))), Err("node_name".to_owned()));
+    assert_eq!(judged(item(Some("caption"))), Ok(()));
+    assert_eq!(judged(item(None)), Ok(()));
+
+    let at = path("page:overview/section:on_loan");
+    let mut node =
+        serde_json::to_value(uilab_doc::resolve(&doc, &at).unwrap().composite().unwrap()).unwrap();
+    node["label"] = json!("Copies out");
+    node["name"] = json!("other");
+    let renamed = json!({"op": "replace", "target": at.to_string(), "node": node});
+    assert!(
+        valid(&doc, &renamed).is_err(),
+        "the schema does not offer a section `name`"
+    );
+    assert_eq!(judged(renamed), Err("node_name".to_owned()));
 }
