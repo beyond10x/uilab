@@ -436,48 +436,124 @@ impl<'de> Deserialize<'de> for Overlays {
     }
 }
 
-/// A board's `widgets`: a map of name to node, each node written without its name.
-mod board_widgets {
-    use indexmap::IndexMap;
-    use serde::de::Error;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use serde_json::{Map, Value};
+/// A board's node per widget kind, as `ess-ui/1` writes it: `{map: {key: name, value: Node}}`.
+/// A key written `null` removes the widget the page kind gives under that name (ESS's
+/// `inheritance.maps.null_value: remove_inherited`); it is no node, so it is kept apart and
+/// written back where the author wrote it. Derefs to the nodes.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BoardWidgets {
+    map: IndexMap<String, Node>,
+    /// Names written `null`.
+    removed: Vec<String>,
+    /// Every key as written, in order: where [`Self::removed`] go when written back.
+    order: Vec<String>,
+}
 
-    use super::Node;
+impl BoardWidgets {
+    /// Whether the board writes no `widgets` at all: then the key is left out.
+    pub fn unwritten(&self) -> bool {
+        self.map.is_empty() && self.removed.is_empty()
+    }
 
-    pub fn serialize<S: Serializer>(
-        widgets: &IndexMap<String, Node>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let mut out = Map::new();
-        for (name, node) in widgets {
-            let mut fields: Map<String, Value> = node.clone().into();
+    /// The names written `null`: the page kind's widgets the board removes.
+    pub fn removed(&self) -> &[String] {
+        &self.removed
+    }
+}
+
+impl std::ops::Deref for BoardWidgets {
+    type Target = IndexMap<String, Node>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl std::ops::DerefMut for BoardWidgets {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.map
+    }
+}
+
+impl From<IndexMap<String, Node>> for BoardWidgets {
+    fn from(map: IndexMap<String, Node>) -> Self {
+        BoardWidgets {
+            order: map.keys().cloned().collect(),
+            map,
+            removed: Vec::new(),
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a BoardWidgets {
+    type Item = (&'a String, &'a Node);
+    type IntoIter = indexmap::map::Iter<'a, String, Node>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut BoardWidgets {
+    type Item = (&'a String, &'a mut Node);
+    type IntoIter = indexmap::map::IterMut<'a, String, Node>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.iter_mut()
+    }
+}
+
+impl Serialize for BoardWidgets {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let node = |node: &Node| {
+            let mut fields: serde_json::Map<String, Value> = node.clone().into();
             fields.remove("name");
-            out.insert(name.clone(), Value::Object(fields));
+            Value::Object(fields)
+        };
+        let mut out = serde_json::Map::new();
+        for name in &self.order {
+            if let Some(found) = self.map.get(name) {
+                out.insert(name.clone(), node(found));
+            } else if self.removed.contains(name) {
+                out.insert(name.clone(), Value::Null);
+            }
+        }
+        for (name, found) in &self.map {
+            if !out.contains_key(name) {
+                out.insert(name.clone(), node(found));
+            }
         }
         out.serialize(serializer)
     }
+}
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<IndexMap<String, Node>, D::Error> {
-        let map = Option::<IndexMap<String, Value>>::deserialize(deserializer)?.unwrap_or_default();
-        map.into_iter()
-            .map(|(name, fields)| {
-                // `k: rich_text` is the Composite shorthand for `k: {component: rich_text}`; a map
-                // with neither `component` nor `primitive` refines the widget a page kind gives.
-                let mut fields = match fields {
-                    Value::String(kind) => {
-                        Map::from_iter([("component".to_owned(), Value::String(kind))])
-                    }
-                    Value::Object(fields) => fields,
-                    _ => return Err(D::Error::custom(format!("board widget `{name}` is a node"))),
-                };
-                fields.insert("name".into(), Value::String(name.clone()));
-                let node = Node::in_list(fields).map_err(D::Error::custom)?;
-                Ok((name, node))
-            })
-            .collect()
+impl<'de> Deserialize<'de> for BoardWidgets {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let written =
+            Option::<IndexMap<String, Value>>::deserialize(deserializer)?.unwrap_or_default();
+        let mut out = BoardWidgets::default();
+        for (name, fields) in written {
+            out.order.push(name.clone());
+            // `k: rich_text` is the Composite shorthand for `k: {component: rich_text}`; a map
+            // with neither `component` nor `primitive` refines the widget a page kind gives;
+            // `null` removes it.
+            let mut fields = match fields {
+                Value::Null => {
+                    out.removed.push(name);
+                    continue;
+                }
+                Value::String(kind) => {
+                    serde_json::Map::from_iter([("component".to_owned(), Value::String(kind))])
+                }
+                Value::Object(fields) => fields,
+                _ => return Err(D::Error::custom(format!("board widget `{name}` is a node"))),
+            };
+            fields.insert("name".into(), Value::String(name.clone()));
+            let node = Node::in_list(fields).map_err(D::Error::custom)?;
+            out.map.insert(name, node);
+        }
+        Ok(out)
     }
 }
 
@@ -499,12 +575,8 @@ pub struct Composite {
     pub reads: Option<Reads>,
     /// A board's node per widget kind (`{map: {key: name, value: Node}}`): a composite, a widget
     /// instance or a primitive, each named by its key.
-    #[serde(
-        default,
-        with = "board_widgets",
-        skip_serializing_if = "IndexMap::is_empty"
-    )]
-    pub widgets: IndexMap<String, Node>,
+    #[serde(default, skip_serializing_if = "BoardWidgets::unwritten")]
+    pub widgets: BoardWidgets,
     /// A collection's or record's named nodes per row, in order: composites, widget instances and
     /// primitives. Written as the list `ess-ui/1` declares; the map of name to composite that
     /// older documents carry is read too. A name written twice is kept for ESS's `names_unique`

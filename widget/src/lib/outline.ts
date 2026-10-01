@@ -163,21 +163,28 @@ export function propsOf(node: OutlineNode): Record<string, unknown> {
   return p && typeof p === 'object' && !Array.isArray(p) ? (p as Record<string, unknown>) : {};
 }
 
-/** A column of a collection: `columns: [{field, as?}]`, a bare string meaning `{field}`. */
+/** A column of a collection or references: `columns: [{field, as?, label?}]`, a bare string
+ *  meaning `{field}`. `label` only when the author wrote one. */
 export interface Column {
   field: string;
   as?: string;
+  label?: string;
 }
 
+/** A collection's or references' columns: a fixed list, or the user-selectable `{binds, all}`
+ *  (every column it offers); an UNMAPPED string is none. */
 export function columnsOf(node: OutlineNode): Column[] {
-  const raw = propsOf(node).columns;
+  const written = propsOf(node).columns;
+  const raw = written && typeof written === 'object' && !Array.isArray(written) ? (written as Record<string, unknown>).all : written;
   if (!Array.isArray(raw)) return [];
   const out: Column[] = [];
   for (const c of raw) {
     if (typeof c === 'string') out.push({ field: c });
     else if (c && typeof c === 'object' && typeof (c as Record<string, unknown>).field === 'string') {
       const rec = c as Record<string, unknown>;
-      out.push({ field: rec.field as string, as: typeof rec.as === 'string' ? rec.as : undefined });
+      const column: Column = { field: rec.field as string, as: typeof rec.as === 'string' ? rec.as : undefined };
+      if (typeof rec.label === 'string') column.label = rec.label;
+      out.push(column);
     }
   }
   return out;
@@ -190,7 +197,126 @@ export interface Field {
 }
 
 export function fieldsOf(node: OutlineNode, key = 'fields'): Field[] {
+  return fieldList(propsOf(node)[key]);
+}
+
+/** The text of an ESS `Action`: its `label`, else its name, else what it opens or runs. */
+export function actionLabel(action: unknown): string {
+  const r = action && typeof action === 'object' && !Array.isArray(action) ? (action as Record<string, unknown>) : {};
+  for (const k of ['label', 'name', 'opens', 'does']) if (typeof r[k] === 'string') return r[k] as string;
+  return 'action';
+}
+
+/** The lists of ESS `Action`s a composite carries other than `row_actions` (drawn per row): on the
+ *  whole collection, record, form or filter bar, on the selection, on each placed board widget,
+ *  on a graph's nodes and edges, and a confirm's alternatives. */
+const ACTION_LISTS = ['actions', 'bulk_actions', 'item_actions', 'node_actions', 'edge_actions', 'alternatives'];
+
+/** The text of every action of [`ACTION_LISTS`] the node writes, in that order. */
+export function actionsOf(node: OutlineNode): string[] {
+  const p = propsOf(node);
+  return ACTION_LISTS.flatMap((k) => (Array.isArray(p[k]) ? (p[k] as unknown[]).map(actionLabel) : []));
+}
+
+/** A tab of a record or form, or a group of a form: its text (`label`, else its name) and fields. */
+export interface FieldGroup {
+  name: string;
+  label: string;
+  fields: Field[];
+  /** A form group's actions' texts (a group can carry its own, such as rotating a key). */
+  actions: string[];
+}
+
+/** The ESS `Tab`s (`key: 'tabs'`) or `FormGroup`s (`key: 'groups'`) the node writes. */
+export function groupsOf(node: OutlineNode, key: 'tabs' | 'groups'): FieldGroup[] {
   const raw = propsOf(node)[key];
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((g) => {
+    if (!g || typeof g !== 'object' || Array.isArray(g)) return [];
+    const r = g as Record<string, unknown>;
+    const name = typeof r.name === 'string' ? r.name : '';
+    const actions = Array.isArray(r.actions) ? r.actions.map(actionLabel) : [];
+    return [{ name, label: typeof r.label === 'string' ? r.label : name, fields: fieldList(r.fields), actions }];
+  });
+}
+
+/** A form's `record` node (read-only fields shown above the inputs): the view it reads and its
+ *  fields; null when the form writes none. */
+export function formRecordOf(node: OutlineNode): { view: string | null; fields: Field[] } | null {
+  const r = propsOf(node).record;
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const rec = r as Record<string, unknown>;
+  const view = typeof rec.reads === 'string' ? rec.reads : textAt(rec, 'reads', 'view') ?? textAt(rec, 'reads', 'placeholder');
+  return { view, fields: fieldList(rec.fields) };
+}
+
+/** The labels of a choice's fixed `options`: `{value, label}` records or bare strings. A named enum
+ *  type (a string) has no labels the canvas can read. */
+export function optionsOf(node: OutlineNode): string[] {
+  const raw = propsOf(node).options;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((o) => {
+    if (typeof o === 'string') return [o];
+    const r = o && typeof o === 'object' ? (o as Record<string, unknown>) : {};
+    if (typeof r.label === 'string') return [r.label];
+    return r.value === undefined ? [] : [String(r.value)];
+  });
+}
+
+/** A headline metric of a page header: a node with its caption (`label`, none when the author
+ *  wrote none), the view it reads and the row field its value is. */
+export interface HeaderMetric {
+  name: string;
+  component: string;
+  label: string | null;
+  view: string | null;
+  from: string | null;
+  /** A widget instance's `args`, as written. */
+  args?: Record<string, unknown>;
+}
+
+/** A page's header as the server sends it (ESS's rendering, the kind's merged in): the title
+ *  (the header's, else the page's, else its name), the help text and link, each action's text and the
+ *  headline metrics. */
+export function headerOf(page: OutlineNode): { title: string; help: string | null; helpLink: string | null; actions: string[]; metrics: HeaderMetric[] } {
+  const p = propsOf(page);
+  const header = p.header && typeof p.header === 'object' && !Array.isArray(p.header) ? (p.header as Record<string, unknown>) : {};
+  const actions = header.actions;
+  const metrics = Array.isArray(header.metrics) ? header.metrics : [];
+  return {
+    title: textAt(p, 'header', 'title') || page.title || page.name,
+    help: textAt(p, 'header', 'help', 'text'),
+    helpLink: textAt(p, 'header', 'help', 'link'),
+    actions: Array.isArray(actions) ? actions.map(actionLabel) : [],
+    metrics: metrics.flatMap((m) => {
+      if (!m || typeof m !== 'object' || Array.isArray(m)) return [];
+      const r = m as Record<string, unknown>;
+      const reads = r.reads;
+      const view = typeof reads === 'string' ? reads : textAt(r, 'reads', 'view') ?? textAt(r, 'reads', 'placeholder');
+      const args = r.args && typeof r.args === 'object' && !Array.isArray(r.args) ? (r.args as Record<string, unknown>) : undefined;
+      return [{ name: textAt(r, 'name') ?? '', component: textAt(r, 'component') ?? '', label: textAt(r, 'label'), view, from: textAt(r, 'from'), args }];
+    }),
+  };
+}
+
+/** A page's text in the menu: its `nav.label` (ESS gives it the page's title when not written),
+ *  else its title, else its name. */
+export function navLabelOf(page: OutlineNode): string {
+  return textAt(propsOf(page), 'nav', 'label') || page.title || page.name;
+}
+
+/** A record field of `p` read as text, or null when absent or not text. */
+export function textAt(p: Record<string, unknown>, ...keys: string[]): string | null {
+  let at: unknown = p;
+  for (const k of keys) {
+    if (!at || typeof at !== 'object' || Array.isArray(at)) return null;
+    at = (at as Record<string, unknown>)[k];
+  }
+  return typeof at === 'string' ? at : null;
+}
+
+/** ESS `Field`s written as a list: `name | {field|name, label?}`; anything else is none. */
+function fieldList(raw: unknown): Field[] {
   if (!Array.isArray(raw)) return [];
   const out: Field[] = [];
   for (const f of raw) {
