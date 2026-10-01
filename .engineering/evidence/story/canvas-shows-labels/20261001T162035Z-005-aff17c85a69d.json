@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T16:20:35Z",
+  "actor": "human:timo",
+  "artifact": "story:canvas-shows-labels",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:canvas-shows-labels-adversary-1",
+    "reference": "crates/uilab-doc/src/outline.rs:338",
+    "review": "review-result:canvas-shows-labels-adversary-1",
+    "outcome": "fixed"
+  }
+}

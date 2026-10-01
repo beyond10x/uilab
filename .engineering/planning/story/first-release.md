@@ -2,16 +2,17 @@
 format: aep.planning-md/3
 id: story:first-release
 kind: story
-status: active
+status: implemented
 title: Release workflow and v0.1.0; a release per landed wave
 relations:
 - serves: vision:website-harness
 - depends_on: story:ci-task-check
 - depends_on: story:essui-document
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T14:29:52Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-10-01T14:29:52Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-10-01T15:48:04Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"test_result":1}}}
 ---
 ## Outcome
 

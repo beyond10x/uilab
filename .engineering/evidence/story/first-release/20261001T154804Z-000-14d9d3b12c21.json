@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-01T15:48:04Z",
+  "actor": "human:timo",
+  "artifact": "story:first-release",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "release run 36885894297 success; gh release download v0.1.0: sha256sum OK; archive uilab serve --listen 127.0.0.1:8793 --no-stt: /api/state 200, /api/document.yaml starts format: ess-ui/1, 0 findings",
+    "reference": "https://github.com/beyond10x/uilab/releases/tag/v0.1.0"
+  }
+}
