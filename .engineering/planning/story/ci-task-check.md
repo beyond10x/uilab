@@ -2,14 +2,15 @@
 format: aep.planning-md/3
 id: story:ci-task-check
 kind: story
-status: active
+status: implemented
 title: task check runs on GitHub and is a required check
 relations:
 - serves: vision:website-harness
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T14:29:52Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-10-01T14:29:52Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-01T18:40:34Z", actor: "human:timo", revision: 4, decided_on: {"recorded":{"test_result":2}}}
 ---
 ## Outcome
 

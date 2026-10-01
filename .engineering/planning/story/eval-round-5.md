@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:eval-round-5
 kind: story
-status: active
+status: implemented
 title: Eval round 5 on ess-ui/1 through the LLM agent; demo server switches after merge
 relations:
 - serves: vision:website-harness
@@ -14,10 +14,11 @@ scope:
   path: crates/uilab-agent/src/lib.rs
 - confidence: cited
   path: evals/reports
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:13Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:13Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "active", to: "implemented", at: "2026-10-01T17:25:43Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":2,"review_outcome":5}}}
 ---
 ## Outcome
 
