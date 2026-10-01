@@ -3202,4 +3202,173 @@ pages:
             "the undo restored the removed section"
         );
     }
+
+    // ── adversary pass 1, story:essui-app-widget ───────────────────────────────────────────────
+
+    /// Every `path` in a wire outline, however deep.
+    fn adversary_paths(node: &serde_json::Value, out: &mut std::collections::BTreeSet<String>) {
+        if let Some(p) = node["path"].as_str() {
+            out.insert(p.to_owned());
+        }
+        for c in node["children"].as_array().into_iter().flatten() {
+            adversary_paths(c, out);
+        }
+    }
+
+    /// What `widget/src/lib/collab.ts` `applyChange` does with a `Remove` delta: drops the node at
+    /// `path` from its parent's children.
+    fn adversary_drop(node: &mut serde_json::Value, path: &str) {
+        if let Some(children) = node["children"].as_array_mut() {
+            children.retain(|c| c["path"] != path);
+            for c in children.iter_mut() {
+                adversary_drop(c, path);
+            }
+        }
+    }
+
+    /// Adversary pass 1. Brief: "the canvas shows what ESS renders". The Loans page is a
+    /// `list_page`, whose kind contributes a section `list`; the author's `list` refines it. Removing
+    /// the author's `list` is admitted (ESS checks the result clean), and ESS then renders the
+    /// kind's `list`, which `rendered` holds as inherited. `announce_change` sends a `Remove` delta
+    /// for a section, and the browser applying it drops `page:loans/section:list`: the browser's
+    /// outline no longer matches the server's until the next snapshot.
+    #[test]
+    fn adversary_a_removed_section_the_page_kind_still_renders_stays_on_the_browser() {
+        let mut rig = rig(true);
+        rig.connect("ws-a1");
+        let mut shown = serde_json::to_value(&last_document(&rig.drain_direct()).outline).unwrap();
+        rig.drain();
+        let list = "page:loans/section:list";
+        let sent = accept_patch_reviewed(
+            &mut rig,
+            Patch::Remove {
+                target: list.parse().unwrap(),
+            },
+        );
+        let id = proposals(&sent)
+            .pop()
+            .unwrap_or_else(|| panic!("the removal is proposed: {sent:?}"));
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"accept","value":{{"proposal_id":"{id}"}}}}"#),
+        );
+        let messages = rig.drain();
+        assert_eq!(refusals(&messages), [], "the removal is admitted");
+
+        let server = serde_json::to_value(wire::outline(&rendered(&rig.app.doc()))).unwrap();
+        assert_eq!(
+            node_in(&server, list).map(|n| n["inherited"].clone()),
+            Some(json!(true)),
+            "ESS renders the kind's `list` once the author's is gone"
+        );
+
+        // The browser: a snapshot replaces its outline, a Remove delta drops the node.
+        for m in &messages {
+            match m {
+                Server::Document(d) => shown = serde_json::to_value(&d.outline).unwrap(),
+                Server::Changed(c) => {
+                    let c = serde_json::to_value(c).unwrap();
+                    assert_eq!(c["op"], "Remove", "{c}");
+                    adversary_drop(&mut shown, c["changed"].as_str().unwrap());
+                }
+                _ => {}
+            }
+        }
+        let (mut on_browser, mut on_server) = Default::default();
+        adversary_paths(&shown, &mut on_browser);
+        adversary_paths(&server, &mut on_server);
+        let missing: Vec<_> = on_server.difference(&on_browser).collect();
+        assert!(
+            missing.is_empty(),
+            "the server renders and the browser was told to drop: {missing:?}"
+        );
+    }
+
+    /// Adversary pass 1. Session writes that are not in `session_writes_ess_ui`: a batch, its undo,
+    /// a rejected proposal, and a placeholder read whose fixture file is missing. After every write
+    /// the saved file passes ESS's own checker with 0 errors.
+    #[test]
+    fn adversary_batches_undos_and_rejects_leave_a_file_ess_checks_clean() {
+        let mut rig = rig(true);
+        let file = rig.root.join("library/library.ui.yaml");
+        let errors = |file: &Path| {
+            let report = uilab_doc::ess_ui_check::check(file, None).expect("the file is read");
+            (
+                report.errors(),
+                report.render(uilab_doc::ess_ui_check::OutputFormat::Text),
+            )
+        };
+        let accept = |rig: &mut Rig, patch: Patch| -> String {
+            let shown = accept_patch_reviewed(rig, patch.clone());
+            let id = proposals(&shown)
+                .pop()
+                .unwrap_or_else(|| panic!("{patch:?} is not proposed: {shown:?}"));
+            rig.client(
+                "api-1",
+                &format!(r#"{{"type":"accept","value":{{"proposal_id":"{id}"}}}}"#),
+            );
+            assert_eq!(refusals(&rig.drain()), [], "{patch:?}");
+            id
+        };
+
+        let batch = Patch::Batch {
+            target: "page:members".parse().unwrap(),
+            patches: vec![
+                Patch::Insert {
+                    target: "page:members".parse().unwrap(),
+                    child: uilab_doc::Child {
+                        layer: Layer::Section,
+                        name: "history".into(),
+                        node: json!({"component": "collection", "reads": {"placeholder": "MemberHistory", "fixture": "fixtures/member_history.yaml"}, "columns": [{"field": "title"}]}),
+                        nav_section: None,
+                    },
+                },
+                Patch::Remove {
+                    target: "page:loans/overlay:edit".parse().unwrap(),
+                },
+                Patch::Replace {
+                    target: "page:loans/section:list".parse().unwrap(),
+                    node: json!({"component": "collection", "reads": {"view": "loans.All", "paging": "server"}, "columns": [{"field": "title"}]}),
+                },
+            ],
+        };
+        let id = accept(&mut rig, batch);
+        let (n, report) = errors(&file);
+        assert_eq!(n, 0, "after the batch: {report}");
+
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"undo","value":{{"proposal_id":"{id}"}}}}"#),
+        );
+        assert_eq!(refusals(&rig.drain()), [], "the undo");
+        let (n, report) = errors(&file);
+        assert_eq!(n, 0, "after the undo of the batch: {report}");
+
+        let shown = accept_patch_reviewed(
+            &mut rig,
+            Patch::Remove {
+                target: "page:overview/section:on_loan".parse().unwrap(),
+            },
+        );
+        let rejected = proposals(&shown).pop().expect("proposed");
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"reject","value":{{"proposal_id":"{rejected}"}}}}"#),
+        );
+        rig.drain();
+        let (n, report) = errors(&file);
+        assert_eq!(n, 0, "after the reject: {report}");
+
+        accept(
+            &mut rig,
+            Patch::Remove {
+                target: "page:loans/section:list".parse().unwrap(),
+            },
+        );
+        let (n, report) = errors(&file);
+        assert_eq!(
+            n, 0,
+            "after removing the list a page kind contributes: {report}"
+        );
+    }
 }
