@@ -1,0 +1,44 @@
+domain: library.members
+
+summary: The members the library document lists.
+
+# UNMAPPED: the members page lists members.All to the signed-in person, and ess ui check holds
+# that section to `section_readable`: some actor must be granted a command of library.members,
+# because ESS grants commands, not views (beyond10x/ess#286). Neither source names a members
+# command, so none is declared and that check stays an error until ESS can state a read grant.
+entities:
+  # UNMAPPED: the fixture rows carry no identifier. `name` is the identity because it is the
+  # value loans.All rows carry as `member`; neither source says a member's name is unique.
+  - name: library.members.Member
+    identity:
+      name: name
+      type: String
+    fields:
+      # UNMAPPED: a calendar date in the fixtures (`2024-03-01`); ESS has no date type. Text.
+      - name: joined
+        type: String
+      - name: loans
+        type: Integer
+      # UNMAPPED: the fixtures show `good` and `overdue`; neither source gives the whole set, so
+      # this is text rather than an enum.
+      - name: standing
+        type: String
+    # UNMAPPED: ESS requires a lifecycle and neither source gives a member one. One placeholder
+    # state, Recorded, stands for "the row exists".
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+views:
+  - name: library.members.All
+    source: library.members.Member
+    fields:
+      - name: name
+        type: String
+      - name: joined
+        type: String
+      - name: loans
+        type: Integer
+      - name: standing
+        type: String
