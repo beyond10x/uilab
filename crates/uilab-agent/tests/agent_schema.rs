@@ -172,6 +172,18 @@ fn example(schema: &Value, at: &Value) -> Value {
                     wanted.push(key.as_str().unwrap().to_owned());
                 }
             }
+            // A record (closed, `required` left out: ESS's records do not say which fields its
+            // loader defaults) is written with every field it names.
+            if at.get("required").is_none() && at["additionalProperties"] == json!(false) {
+                for key in at["properties"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .map(|(k, _)| k)
+                {
+                    wanted.push(key.clone());
+                }
+            }
             // `if not <keys> then <required>`: none of those keys is generated, so the `then` holds.
             if at["if"]["not"].get("required").is_some() {
                 for key in at["then"]["required"].as_array().into_iter().flatten() {
@@ -304,19 +316,20 @@ fn schema_patches_pass_ess() {
     let next = passes(&doc, &batch);
     assert!(uilab_doc::resolve(&next, &path("page:overview/overlay:peek")).is_ok());
 
-    // Closed: a field ESS does not declare is refused by the schema before ESS sees it.
+    // A field ESS does not declare is not offered, and ESS's admission refuses it: the schema
+    // guides, admission judges (correction 1, beyond10x/ess#305).
     let section = child_node(&page, "section");
-    let mut titled = example_variant(
-        &page,
-        section,
-        variant(&page, section, "component", "metric"),
-    );
-    titled["title"] = json!("Copies on loan");
-    let refused = valid(&doc, &insert("page:loans", "section", "titled", titled));
+    let metric = variant(&page, section, "component", "metric");
     assert!(
-        refused.is_err(),
-        "a section `title` is refused by the schema"
+        metric["properties"].get("title").is_none(),
+        "a section `title` is not offered"
     );
+    let mut titled = example_variant(&page, section, metric);
+    titled["title"] = json!("Copies on loan");
+    let patch = insert("page:loans", "section", "titled", titled);
+    let parsed: Patch = serde_json::from_value(patch.clone()).unwrap();
+    let refused = admit(&doc, &parsed);
+    assert!(refused.is_err(), "ESS refuses a section `title`: {patch}");
 }
 
 /// Round 4, case `creative` ("show me how creative you can be" at `page:overview`): the answer

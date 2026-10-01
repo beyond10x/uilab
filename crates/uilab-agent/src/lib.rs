@@ -1011,8 +1011,9 @@ Widgets are app-defined, reusable components (not a board's `widgets`, which are
 composites). A widget is declared under `widgets:` at the document root: insert it at `/` with \
 layer `component` and a short lower-case name that is not a composite kind (`member_card`). Its \
 node has `summary` (one line, required), `params` (each `{type: …, required: true}` or with a \
-`default`; a type is `string`, `number`, `boolean`, a named type such as `Member`, or a \
-constructor map), optional `arrange` (`row`, `column` or `grid`) and a `body`: a list of named \
+`default`, and every param with a one-line `note` saying what it is, which ESS requires: \
+`member: {type: Member, required: true, note: the member shown}`; a type is `string`, `number`, \
+`boolean`, a named type such as `Member`, or a constructor map), optional `arrange` (`row`, `column` or `grid`) and a `body`: a list of named \
 nodes, each with `name`. A body node is a built-in composite, an instance of another widget, or a \
 primitive `{name: …, primitive: <kind>, …}`. The primitive kinds are `text` (`text` or `field`, \
 optional `style: heading`), `badge` (`text`, `tone`), `icon` (`icon` and `label`), `button` \

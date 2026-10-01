@@ -184,10 +184,11 @@ fn assert_variant(
     } else {
         assert_eq!(required(variant), wanted, "{at}: fields required");
     }
-    assert_eq!(
-        variant["additionalProperties"],
-        json!(false),
-        "{at}: a field ESS does not declare is refused"
+    // Listed, not closed: ESS's loader takes keys its schema does not list, so the schema guides
+    // and ESS's admission judges (correction 1, beyond10x/ess#305).
+    assert!(
+        variant.get("additionalProperties").is_none(),
+        "{at}: other keys are left to ESS's admission"
     );
     assert_eq!(variant["properties"][tag], json!({"const": value}), "{at}");
     let one_of: Vec<Value> = exactly_one_of
@@ -308,8 +309,17 @@ fn schema_from_ess() {
             every,
             "{layer}: what a refinement names"
         );
-        assert_eq!(refines["additionalProperties"], json!(false));
         assert!(refines.get("required").is_none());
+        assert_eq!(
+            refines["minProperties"],
+            json!(1),
+            "{layer}: an empty node is no refinement"
+        );
+        assert_eq!(
+            position["minProperties"],
+            json!(1),
+            "{layer}: an empty node is no node"
+        );
 
         for kind in &members {
             let at = format!("{layer} {kind}");

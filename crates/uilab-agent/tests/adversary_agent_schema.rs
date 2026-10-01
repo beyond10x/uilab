@@ -95,7 +95,7 @@ fn a_widget_declared_as_the_prompt_teaches_is_admitted_in_a_batch() {
         "patches": [
             insert("/", "component", "member_card", json!({
                 "summary": "A member as a card.",
-                "params": {"member": {"type": "string", "required": true}},
+                "params": {"member": {"type": "string", "required": true, "note": "the member shown"}},
                 "body": [{"name": "title", "primitive": "text", "text": "args.member"}],
             })),
             insert("page:members/section:list", "item", "card",

@@ -383,23 +383,17 @@ impl<'a> Builder<'a> {
         out
     }
 
-    /// `{record: {field: T}}`: every field required unless `{optional: T}`, no other key.
+    /// `{record: {field: T}}`: its fields, no other key, none required. ESS's records mark a field
+    /// `{optional: T}` or not, but its loader defaults some of the others (`Sort.allowed`), so the
+    /// schema guides here and ESS's admission judges (beyond10x/ess#305).
     fn record(&mut self, record: &'static Yaml) -> Value {
         let mut properties = Map::new();
-        let mut required = Vec::new();
         for (key, ty) in record.as_mapping().into_iter().flatten() {
             let Some(key) = key.as_str() else { continue };
-            match ty.get("optional") {
-                Some(inner) => {
-                    properties.insert(key.to_owned(), self.ty(inner));
-                }
-                None => {
-                    properties.insert(key.to_owned(), self.ty(ty));
-                    required.push(key);
-                }
-            }
+            let ty = ty.get("optional").unwrap_or(ty);
+            properties.insert(key.to_owned(), self.ty(ty));
         }
-        json!({"type": "object", "properties": properties, "required": required, "additionalProperties": false})
+        json!({"type": "object", "properties": properties, "additionalProperties": false})
     }
 
     /// One field: its type, described by its `note`.
@@ -715,7 +709,10 @@ impl<'a> Builder<'a> {
                 }
             }
             names.insert(tag.to_owned(), json!({"const": name}));
-            let mut variant = json!({"properties": names, "additionalProperties": false});
+            // The fields ESS declares, listed; other keys are not refused here: ESS's loader takes
+            // some its schema does not list (an overlay's `visible`, a node's `degrades`), and its
+            // admission judges (beyond10x/ess#305). The tag and the required fields hold.
+            let mut variant = json!({"properties": names});
             match kind {
                 Kind::Construct(name) => {
                     if p.typed {
@@ -754,12 +751,20 @@ impl<'a> Builder<'a> {
             offered.push(name);
         }
         if p.inherits {
+            // A node has exactly one of its tags (`Node.exactly_one_of`): one without this tag
+            // that carries another is not a refinement of this kind of node.
+            let others: Vec<Value> = strings(&construct("Node")["exactly_one_of"])
+                .into_iter()
+                .filter(|other| *other != tag)
+                .map(|other| json!({"required": [other]}))
+                .collect();
             choose.push(json!({
                 "if": {"not": {"required": [tag]}},
                 "then": {
                     "description": format!("without `{tag}`: refines the node of the same name its page kind contributes, writing only what differs"),
                     "properties": every,
-                    "additionalProperties": false,
+                    "minProperties": 1,
+                    "not": {"anyOf": others},
                 },
             }));
         }
@@ -767,9 +772,11 @@ impl<'a> Builder<'a> {
             tag.to_owned(),
             json!({"enum": offered, "description": "the kind, or a widget the document declares; the other fields are the ones that kind takes"}),
         );
+        // An empty node is no node, at every position, as in a batch.
         let mut def = json!({
             "type": "object",
             "description": p.description,
+            "minProperties": 1,
             "properties": properties,
             "allOf": choose,
         });
