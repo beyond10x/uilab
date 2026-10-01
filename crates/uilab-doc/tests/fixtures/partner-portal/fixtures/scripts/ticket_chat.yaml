@@ -1,0 +1,10 @@
+channel: ticket_chat
+session: {ticket_id: tk-01}
+loop: true
+events:
+  - {at: 0s, event: tickets.TypingStarted, payload: {ticket_id: tk-01, author: Alex Contact}}
+  - {at: 3s, event: tickets.ReplyPosted,   payload: {id: m-06, ticket_id: tk-01, at: "2026-09-30T10:02:00Z", author: Alex Contact, body: "One more question about the logout URL."}}
+  - {at: 8s, event: tickets.TypingStarted, payload: {ticket_id: tk-01, author: Kai Demo}}
+  - {at: 11s, event: tickets.ReplyPosted,  payload: {id: m-07, ticket_id: tk-01, at: "2026-09-30T10:02:11Z", author: Kai Demo, body: "Use the same host with /logout."}}
+  - {at: 15s, lifecycle: reconnecting}
+  - {at: 18s, lifecycle: live}

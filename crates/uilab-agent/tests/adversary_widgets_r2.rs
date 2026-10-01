@@ -23,7 +23,7 @@ fn library_text() -> String {
 fn library_with_page(name: &str, title: &str) -> Document {
     let mut text = library_text();
     text.push_str(&format!(
-        "  {name}:\n    kind: list_page\n    title: {title}\n    sections:\n      queue:\n        component: collection\n        reads: {{view: loans.All}}\n        columns: [{{field: title}}]\n"
+        "  {name}:\n    kind: list_page\n    title: {title}\n    sections:\n      - name: queue\n        component: collection\n        reads: {{view: loans.All}}\n        columns: [{{field: title}}]\n"
     ));
     Document::from_yaml(&text).unwrap()
 }
@@ -164,7 +164,7 @@ fn the_listing_of_a_large_page_is_one_line_per_section_and_nothing_else() {
     let mut text = library_text();
     for i in 0..120 {
         text.push_str(&format!(
-            "      extra_{i}:\n        component: collection\n        reads: {{view: members.All}}\n        columns: [{{field: name}}]\n"
+            "      - name: extra_{i}\n        component: collection\n        reads: {{view: members.All}}\n        columns: [{{field: name}}]\n"
         ));
     }
     let doc = Document::from_yaml(&text).unwrap();

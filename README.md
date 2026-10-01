@@ -1,6 +1,6 @@
 # uilab
 
-Build a UI by talking to it. uilab opens a `ui-spec/1` document in the browser: the canvas shows the
+Build a UI by talking to it. uilab opens an `ess-ui/1` document in the browser: the canvas shows the
 application it describes, the sidebar shows its tree. Select a node, hold Space and say what you
 want there ("add a table of overdue loans with title, member and due date"). Speech is transcribed
 on your own GPU, an agent proposes one change at that node, and you see it as a diff and a preview
@@ -24,9 +24,11 @@ instructions instead.
 
 ## How it fits together
 
-- The **document** is `ui-spec/1`: shells with regions, a menu, pages made of sections, overlays,
-  and 14 composite kinds (collection, form, record, metric, chart, board, …). Sample rows come from
-  fixture files, so the canvas renders without a backend.
+- The **document** is `ess-ui/1`, the UI format ESS publishes
+  ([reference](https://beyond10x.github.io/ess/docs/reference/ess-ui)): shells with regions, a
+  menu, pages made of named sections, overlays, app-defined widgets, and 12 composite kinds
+  (collection, form, record, metric, chart, board, …). ESS's own loader and checker decide what a
+  document may hold. Sample rows come from fixture files, so the canvas renders without a backend.
 - The **session** is specified in ESS (`ess/`): a proposal is made by the agent and decided by you;
   nothing changes the file until you accept.
 - **Speech** is whisper.cpp (`large-v3-turbo`) on the GPU, prompted with the names valid at the

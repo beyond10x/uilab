@@ -621,6 +621,9 @@
           },
           "type": "array"
         },
+        "inherited": {
+          "type": "boolean"
+        },
         "kind": {
           "type": "string"
         },
@@ -785,6 +788,9 @@
         "rows": {
           "items": {},
           "type": "array"
+        },
+        "sample": {
+          "type": "boolean"
         },
         "total": {
           "type": "integer"
@@ -1186,8 +1192,8 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "x-ess-provenance": {
-    "contract_digest": "slice-sha256/2:c5a8ef96d326453baee30aa7573313201936a8325cbf956ae876c37420def685",
-    "source_digest": "823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24",
+    "contract_digest": "slice-sha256/2:d1e424a9fbbb2455da85e1618a99afe7866e45e1b8850c5d34a8e9f75846934b",
+    "source_digest": "d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13",
     "specification_version": "v1",
     "system": "uilab"
   }

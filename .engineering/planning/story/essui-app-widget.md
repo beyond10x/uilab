@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:essui-app-widget
 kind: story
-status: active
+status: implemented
 title: Server and canvas on ess-ui/1, expanded document shown
 relations:
 - decomposes: epic:ess-ui-adoption
@@ -19,10 +19,11 @@ scope:
   path: generated
 - confidence: cited
   path: widget/src
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":9}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":9}}}
+- {from: "active", to: "implemented", at: "2026-10-01T15:26:21Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":18}}}
 ---
 ## Outcome
 
@@ -62,6 +63,10 @@ in a library target this story adds); widget tests are in `widget/src/lib/`.
     `filters` section, and for a widget instance its body nodes, each with the inherited class;
   - `canvasmode.inherited.test.ts`: the canvas offers no remove on an inherited node.
 - `task check` exits 0.
+
+- `divider_renders_as_rule` (demo gap, 2026-10-01; moved here from story:ui-polish-leftovers): an
+  ESS `primitive: divider` renders as a horizontal rule on the canvas, not the placeholder box
+  (`widget/src/components/PrimitiveView.vue:35` today); widget test `primitive.divider.test.ts`.
 
 ## Scope
 

@@ -6,7 +6,7 @@ use uilab_doc::path::{NodeRef, children};
 use uilab_doc::{Child, Document, Layer, NodePath, Patch, Severity, admit, check, resolve};
 
 const DOC: &str = r#"
-format: ui-spec/1
+format: ess-ui/1
 app: library
 title: Lending library
 model: library
@@ -33,7 +33,7 @@ widgets:
   loan_card:
     summary: A loan as a card.
     params:
-      loan: {type: Loan, required: true}
+      loan: {type: Loan, required: true, note: the loan row}
     body:
       - {name: title, primitive: text, text: args.loan.title, style: heading}
       - name: rows
@@ -46,7 +46,8 @@ pages:
     kind: dashboard_page
     title: Overview
     sections:
-      list:
+      - {name: board, remove: true}
+      - name: list
         component: collection
         reads: {view: loans.All}
         columns: [{field: title}]
@@ -106,7 +107,10 @@ fn a_button_item_that_opens_a_missing_overlay_is_reported() {
     ))
     .unwrap();
     assert!(
-        errors(&in_children).contains(&("opens_resolves", "page:overview/section:list".to_owned())),
+        errors(&in_children).contains(&(
+            "opens_resolves",
+            "page:overview/section:list/child:go".to_owned()
+        )),
         "control: a button in `children` is checked: {:?}",
         errors(&in_children)
     );
@@ -206,10 +210,24 @@ fn item_nodes_are_removed_and_replaced_at_every_position() {
     }
 }
 
-/// An empty list, an empty map and a null `item` all read as no items and write nothing.
+/// An empty list reads as no items and writes nothing. An empty map and a null are not an `item`
+/// list in ess-ui/1: ESS's loader refuses both, and uilab relays the refusal.
 #[test]
 fn empty_item_forms_read_as_no_items() {
-    for empty in ["[]", "{}", "~"] {
+    for (form, at) in [
+        ("{}", "pages/overview/sections/list"),
+        ("~", "pages/overview/sections/list"),
+    ] {
+        let text = DOC.replace(
+            "        columns: [{field: title}]\n        item:\n          - {name: cover, primitive: image, src: row.cover_url, alt: Book cover}\n          - {name: card, component: loan_card, args: {loan: row}}\n          - {name: tag, primitive: badge, text: row.state}\n",
+            &format!("        columns: [{{field: title}}]\n        item: {form}\n"),
+        );
+        assert_ne!(text, DOC, "the fixture changed");
+        let refused = Document::from_yaml(&text).expect_err(form);
+        assert_eq!(refused.path, at, "{form}: {refused}");
+    }
+    {
+        let empty = "[]";
         let text = DOC.replace(
             "        columns: [{field: title}]\n        item:\n          - {name: cover, primitive: image, src: row.cover_url, alt: Book cover}\n          - {name: card, component: loan_card, args: {loan: row}}\n          - {name: tag, primitive: badge, text: row.state}\n",
             &format!("        columns: [{{field: title}}]\n        item: {empty}\n"),
@@ -231,14 +249,17 @@ fn empty_item_forms_read_as_no_items() {
 #[test]
 fn a_malformed_item_entry_is_refused_with_its_reason() {
     for (entry, says) in [
-        ("{primitive: divider}", "carries `name`"),
-        ("{name: '', primitive: divider}", "non-empty"),
-        ("card", "is a map"),
+        ("{primitive: divider}", "needs a `name`"),
+        ("{name: '', primitive: divider}", "needs a `name`"),
+        ("card", "Composite shorthand"),
         (
-            "{name: x, component: stack, primitive: divider}",
+            "{name: x, component: metric, primitive: divider}",
             "exactly one",
         ),
-        ("{name: x, text: row.id}", "exactly one"),
+        (
+            "{name: x, text: row.id}",
+            "needs `component` or `primitive`",
+        ),
     ] {
         match Document::from_yaml(&with_list_item(entry)) {
             Ok(_) => panic!("`{entry}` in an item list is accepted"),
@@ -251,15 +272,15 @@ fn a_malformed_item_entry_is_refused_with_its_reason() {
 #[test]
 fn numbers_in_item_nodes_survive_a_round_trip() {
     let doc = Document::from_yaml(&with_list_item(
-        "{name: due, component: metric, from: row.due, precision: 2, ratio: 1.5}",
+        "{name: due, component: choice, options: [{value: 2, label: two}, {value: 1.5, label: one and a half}]}",
     ))
     .unwrap();
     let written = doc.to_yaml().unwrap();
     let yaml: serde_yaml::Value = serde_yaml::from_str(&written).unwrap();
-    let due = &yaml["pages"]["overview"]["sections"]["list"]["item"][3];
+    let due = &yaml["pages"]["overview"]["sections"][1]["item"][3];
     assert_eq!(due["name"].as_str(), Some("due"), "{written}");
-    assert_eq!(due["precision"].as_u64(), Some(2), "{written}");
-    assert_eq!(due["ratio"].as_f64(), Some(1.5), "{written}");
+    assert_eq!(due["options"][0]["value"].as_u64(), Some(2), "{written}");
+    assert_eq!(due["options"][1]["value"].as_f64(), Some(1.5), "{written}");
     assert_eq!(Document::from_yaml(&written).unwrap(), doc);
 }
 
@@ -276,5 +297,5 @@ fn a_widget_containing_itself_through_an_item_is_refused() {
         },
     };
     let refused = admit(&doc(), &insert).unwrap_err();
-    assert_eq!(refused.check, "widget_recursion", "{refused}");
+    assert_eq!(refused.check, "widget_expands", "{refused}");
 }

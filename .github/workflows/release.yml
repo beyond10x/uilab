@@ -1,0 +1,255 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to backfill, for example v0.1.0.
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  TARGET: x86_64-unknown-linux-gnu
+
+jobs:
+  resolve:
+    name: Resolve the release tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: stable
+
+      - name: Pin the annotated tag on main to one commit
+        id: release
+        shell: bash
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::release tag must be v<major>.<minor>.<patch>; got $TAG" >&2
+            exit 1
+          fi
+          git fetch --no-tags --force origin \
+            "+refs/tags/$TAG:refs/tags/$TAG" \
+            "+refs/heads/main:refs/remotes/origin/main"
+          if ! git cat-file -e "refs/tags/$TAG^{tag}" 2> /dev/null; then
+            echo "::error::$TAG is a lightweight tag; a release needs an annotated tag" >&2
+            exit 1
+          fi
+          commit=$(git rev-parse "refs/tags/$TAG^{commit}")
+          if [ "$(git rev-parse HEAD)" != "$commit" ]; then
+            echo "::error::the checkout does not match tag $TAG at $commit" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$commit" refs/remotes/origin/main; then
+            echo "::error::$TAG points at $commit, which is not on main" >&2
+            exit 1
+          fi
+          version="${TAG#v}"
+          declared=$(cargo metadata --locked --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "uilab-app") | .version')
+          if [ "$declared" != "$version" ]; then
+            echo "::error::Cargo.toml declares $declared, but the release tag is $TAG" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  gate:
+    needs: resolve
+    uses: ./.github/workflows/check.yml
+    with:
+      checkout-ref: ${{ needs.resolve.outputs.commit }}
+
+  package:
+    name: Package x86_64-unknown-linux-gnu
+    needs: resolve
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: stable
+
+      - name: Install the whisper.cpp build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends cmake clang libclang-dev
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          version: 11.9.0
+          cache: true
+          cache_dependency_path: widget/pnpm-lock.yaml
+
+      - name: Build the binary and the browser app
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$EXPECTED_COMMIT" ]; then
+            echo "::error::packaging $EXPECTED_COMMIT, but the checkout is $(git rev-parse HEAD)" >&2
+            exit 1
+          fi
+          cargo build --locked --release -p uilab-app --no-default-features --target "$TARGET"
+          cd widget
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          package="uilab-$VERSION-x86_64-unknown-linux-gnu"
+          mkdir -p "dist/$package/widget" "dist/$package/examples"
+          cp "target/$TARGET/release/uilab" "dist/$package/"
+          cp -R widget/dist "dist/$package/widget/dist"
+          cp -R examples/library "dist/$package/examples/library"
+          cp README.md "dist/$package/"
+          tar -C dist -czf "dist/$package.tar.gz" "$package"
+          rm -rf "dist/$package"
+          cd dist
+          sha256sum "$package.tar.gz" > SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
+
+      - name: Smoke-run the archive that is published
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          package="uilab-$VERSION-x86_64-unknown-linux-gnu"
+          smoke="$RUNNER_TEMP/smoke"
+          mkdir -p "$smoke"
+          tar -xzf "dist/$package.tar.gz" -C "$smoke"
+          cd "$smoke/$package"
+          ./uilab serve --assets widget/dist --doc examples/library/library.ui.yaml --no-stt \
+            --listen 127.0.0.1:8740 --journal "$RUNNER_TEMP/journal" > "$RUNNER_TEMP/serve.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2> /dev/null || true; cat "$RUNNER_TEMP/serve.log"' EXIT
+          status=000
+          for _ in $(seq 1 60); do
+            status=$(curl --silent --output "$RUNNER_TEMP/state.json" --write-out '%{http_code}' \
+              http://127.0.0.1:8740/api/state || true)
+            [ "$status" = 200 ] && break
+            sleep 1
+          done
+          if [ "$status" != 200 ]; then
+            echo "::error::GET /api/state answered $status, not 200" >&2
+            exit 1
+          fi
+          jq -e '.type == "document"' "$RUNNER_TEMP/state.json"
+          format=$(curl --fail --silent --show-error http://127.0.0.1:8740/api/document.yaml | sed -n 's/^format: //p')
+          if [ "$format" != "ess-ui/1" ]; then
+            echo "::error::the served document has format '$format', not ess-ui/1" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-x86_64-unknown-linux-gnu
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish the release
+    needs: [resolve, gate, package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag still names the resolved commit
+        shell: bash
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+          git cat-file -e "refs/tags/$TAG^{tag}"
+          if [ "$(git rev-parse "refs/tags/$TAG^{commit}")" != "$EXPECTED_COMMIT" ]; then
+            echo "::error::tag $TAG moved after this release resolved it to $EXPECTED_COMMIT" >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-x86_64-unknown-linux-gnu
+          path: dist
+
+      - name: Verify the checksums
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd dist
+          test -f "uilab-$VERSION-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum --check --strict SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create or reconcile the GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG"
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag --draft
+          fi
+          gh release upload "$TAG" "dist/uilab-$VERSION-x86_64-unknown-linux-gnu.tar.gz" dist/SHA256SUMS --clobber
+          gh release edit "$TAG" --draft=false

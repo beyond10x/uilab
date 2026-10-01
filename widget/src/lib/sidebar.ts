@@ -88,14 +88,24 @@ export function findingsBadge(findings: readonly Pick<Finding, 'severity' | 'che
  */
 export const DRAFT_READ = 'draft_read';
 
-/** The findings that are faults: every finding but a draft read, in order. */
-export function faults<F extends Pick<Finding, 'check'>>(findings: readonly F[]): F[] {
-  return findings.filter((f) => f.check !== DRAFT_READ);
+/** ESS's check for a read that is a placeholder with no model binding yet (`ess-ui/1`); the sidebar
+ *  lists it with the draft reads. */
+export const UNBOUND_PLACEHOLDER = 'unbound_placeholder';
+
+/** Whether a finding is a read with no model binding yet: a draft read or an unbound placeholder. */
+export function isDraftRead(check: string): boolean {
+  return check === DRAFT_READ || check === UNBOUND_PLACEHOLDER;
 }
 
-/** The view a draft read's message names (``reads `draft.X`, …``), or `null` when it names none. */
+/** The findings that are faults: every finding but a draft read, in order. */
+export function faults<F extends Pick<Finding, 'check'>>(findings: readonly F[]): F[] {
+  return findings.filter((f) => !isDraftRead(f.check));
+}
+
+/** The view a draft read's message names (``reads `draft.X`, …``), or the placeholder an unbound
+ *  placeholder's names (``… `X` is a placeholder read …``); `null` when it names none. */
 export function draftView(message: string): string | null {
-  return /reads `([^`]+)`/.exec(message)?.[1] ?? null;
+  return /`([^`]+)` is a placeholder read/.exec(message)?.[1] ?? /reads `([^`]+)`/.exec(message)?.[1] ?? null;
 }
 
 /** A draft view and the sections that read it, in document order. */
@@ -111,7 +121,7 @@ export interface DraftView {
 export function draftViews(findings: readonly Pick<Finding, 'check' | 'path' | 'message'>[]): DraftView[] {
   const byView = new Map<string, DraftView>();
   for (const f of findings) {
-    if (f.check !== DRAFT_READ) continue;
+    if (!isDraftRead(f.check)) continue;
     const view = draftView(f.message) ?? f.message;
     const entry = byView.get(view) ?? { view, paths: [] };
     if (!entry.paths.includes(f.path)) entry.paths.push(f.path);

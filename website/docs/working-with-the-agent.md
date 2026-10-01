@@ -51,9 +51,12 @@ It is not sent your source code, and it cannot fetch anything: the agent run has
 ## What the agent can answer
 
 Its only way to finish is an answer that matches the JSON Schema of what the selected node can
-hold: an `insert`, `replace`, `remove` or `batch`. The answer is validated against that schema, then
-admitted against the document checks. If a check refuses it, the refusal is fed back once; a second
-refusal is reported to you, and nothing changes.
+hold: an `insert`, `replace`, `remove` or `batch`. The field shapes in that schema come from ESS's
+own schema for `ess-ui/1` (see its [reference](https://beyond10x.github.io/ess/docs/reference/ess-ui)),
+so the agent can only write what the format declares — no section `title`, a `note` on every widget
+param. The answer is validated against that schema, then admitted against ESS's document checks. If
+a check refuses it, the refusal is fed back once; a second refusal is reported to you, and nothing
+changes.
 
 ## What it cannot change
 
@@ -61,7 +64,7 @@ refusal is reported to you, and nothing changes.
 |---|---|
 | write the file | only an accepted proposal is written, by the server (unless you chose `--auto-apply`) |
 | change more than it shows you | the proposal is the whole change; a `batch` lists each of its patches with its own target, and they are checked together |
-| invent a data source | it must use a view the document reads, or a `draft.` placeholder that stays flagged |
+| invent a data source | it must use a view the document reads, or a placeholder read (`reads: {placeholder, fixture}`) that stays flagged |
 | run commands or read files | the run has no tools |
 | accept its own proposal | accept, reject and undo belong to the operator in the ESS session specification |
 

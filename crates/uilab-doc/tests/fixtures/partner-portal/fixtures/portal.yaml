@@ -1,0 +1,171 @@
+# Invented sample data for examples/partner-portal/ui.yaml.
+views:
+  session.Me:
+    rows:
+      - {id: us-01, name: Dana Example, email: dana@example.com, roles: [admin], organization: {id: org-01, name: Example Partners Ltd}}
+  session.Organizations:
+    rows:
+      - {id: org-01, label: Example Partners Ltd}
+      - {id: org-02, label: Example Partners GmbH}
+      - {id: org-03, label: Sandbox organization}
+      - {id: org-04, label: Demo reseller}
+      - {id: org-05, label: Training tenant}
+  tags.All:
+    rows:
+      - {id: strategic, label: strategic}
+      - {id: emea, label: emea}
+      - {id: apac, label: apac}
+      - {id: renewal, label: renewal}
+      - {id: new-logo, label: new-logo}
+  saved_views.Mine:
+    rows:
+      - {id: sv-01, label: My open deals}
+      - {id: sv-02, label: Closing this month}
+      - {id: sv-03, label: Stalled > 30 days}
+      - {id: sv-04, label: Gold partners pipeline}
+      - {id: sv-05, label: Lost last quarter}
+  metrics.Live:
+    rows:
+      - {revenue_mtd: 184200, open_deals: 37, overdue_invoices: 4}
+  deals.StageTotals:
+    rows:
+      - {stage: lead, count: 14, value: 120000}
+      - {stage: qualified, count: 9, value: 210000}
+      - {stage: proposal, count: 6, value: 185000}
+      - {stage: won, count: 11, value: 402000}
+      - {stage: lost, count: 5, value: 96000}
+  activity.Page:
+    rows:
+      - {id: ev-01, at: "2026-09-30T09:58:00Z", actor: Dana Example, type: deal,    summary: "Moved 'Cloud rollout' to proposal"}
+      - {id: ev-02, at: "2026-09-30T09:51:00Z", actor: Lee Sample,   type: invoice, summary: "Invoice INV-1042 marked paid"}
+      - {id: ev-03, at: "2026-09-30T09:40:00Z", actor: Kai Demo,     type: ticket,  summary: "Opened ticket 'SSO login fails'"}
+      - {id: ev-04, at: "2026-09-30T09:32:00Z", actor: Dana Example, type: partner, summary: "Added partner Alder Resale"}
+      - {id: ev-05, at: "2026-09-30T09:12:00Z", actor: Sam Test,     type: deal,    summary: "Won 'Security add-on'"}
+      - {id: ev-06, at: "2026-09-30T08:55:00Z", actor: Lee Sample,   type: invoice, summary: "Reminder sent for INV-1037"}
+  dashboards.Mine:
+    rows:
+      - {widget: w-1, type: top_partners, x: 0, y: 0, w: 6, h: 4}
+      - {widget: w-2, type: win_rate,     x: 6, y: 0, w: 3, h: 2}
+      - {widget: w-3, type: win_rate,     x: 9, y: 0, w: 3, h: 2}
+      - {widget: w-4, type: top_partners, x: 6, y: 2, w: 6, h: 4}
+      - {widget: w-5, type: win_rate,     x: 0, y: 4, w: 3, h: 2}
+  deals.WinRate:
+    rows:
+      - {value: 0.62}
+      - {value: 0.58}
+      - {value: 0.64}
+      - {value: 0.61}
+      - {value: 0.66}
+  partners.Page:
+    total: 6
+    rows:
+      - {id: pt-001, name: Alder Resale,  tier: gold,       revenue_ytd: {amount: 420000, currency: EUR}, tags: [strategic, emea], website: "https://alder.example.com", logo_url: "https://cdn.example.com/logos/pt-001.png", created_at: "2023-02-01"}
+      - {id: pt-002, name: Birch Channel,   tier: platinum,   revenue_ytd: {amount: 910000, currency: USD}, tags: [strategic], website: "https://birch.example.com", logo_url: "https://cdn.example.com/logos/pt-002.png", created_at: "2021-06-15"}
+      - {id: pt-003, name: Cedar Partners, tier: silver,     revenue_ytd: {amount: 150000, currency: EUR}, tags: [emea], website: "https://cedar.example.com", logo_url: "https://cdn.example.com/logos/pt-003.png", created_at: "2024-01-10"}
+      - {id: pt-004, name: Dogwood Systems,  tier: registered, revenue_ytd: {amount: 12000, currency: GBP}, tags: [new-logo], website: "https://dogwood.example.com", logo_url: "https://cdn.example.com/logos/pt-004.png", created_at: "2026-05-20"}
+      - {id: pt-005, name: Elm IT,      tier: gold,       revenue_ytd: {amount: 380000, currency: USD}, tags: [apac, renewal], website: "https://elm.example.com", logo_url: "https://cdn.example.com/logos/pt-005.png", created_at: "2022-09-03"}
+      - {id: pt-006, name: Fir Cloud,     tier: silver,     revenue_ytd: {amount: 97000, currency: EUR}, tags: [apac], website: "https://fir.example.com", logo_url: "https://cdn.example.com/logos/pt-006.png", created_at: "2025-03-14"}
+  partners.UsedBy:
+    rows:
+      - {label: Cloud rollout, type: deal, id: dl-01}
+      - {label: Security add-on, type: deal, id: dl-02}
+      - {label: INV-1042, type: invoice, id: in-01}
+      - {label: SSO login fails, type: ticket, id: tk-01}
+      - {label: Gold partners pipeline, type: saved_view, id: sv-04}
+  contacts.ByPartner:
+    by_params: {partner_id: pt-001}
+    rows:
+      - {id: ct-01, name: Alex Contact,  email: alex@alder.example.com,  role: owner}
+      - {id: ct-02, name: Robin Contact, email: robin@alder.example.com, role: billing}
+      - {id: ct-03, name: Sky Contact,   email: sky@alder.example.com,   role: technical}
+      - {id: ct-04, name: Jo Contact,    email: jo@alder.example.com,    role: sales}
+      - {id: ct-05, name: Max Contact,   email: max@alder.example.com,   role: support}
+  deals.Page:
+    total: 6
+    rows:
+      - {id: dl-01, title: Cloud rollout,      partner: Alder Resale,  stage: proposal,  value: 85000,  close_date: "2026-10-15", owner: Dana Example, notes: "Pilot approved"}
+      - {id: dl-02, title: Security add-on,    partner: Birch Channel,   stage: won,       value: 42000,  close_date: "2026-09-28", owner: Sam Test,     notes: "Signed"}
+      - {id: dl-03, title: Branch expansion,   partner: Cedar Partners, stage: qualified, value: 60000,  close_date: "2026-11-30", owner: Lee Sample,   notes: ""}
+      - {id: dl-04, title: Starter bundle,     partner: Dogwood Systems,  stage: lead,      value: 9000,   close_date: "2026-12-10", owner: Kai Demo,     notes: "First call booked"}
+      - {id: dl-05, title: Renewal 2027,       partner: Elm IT,      stage: proposal,  value: 120000, close_date: "2026-10-31", owner: Dana Example, notes: ""}
+      - {id: dl-06, title: Migration services, partner: Fir Cloud,     stage: lost,      value: 30000,  close_date: "2026-09-01", owner: Sam Test,     notes: "Price"}
+  deals.ByPartner:
+    by_params: {partner_id: pt-001}
+    rows:
+      - {id: dl-01, title: Cloud rollout,    stage: proposal,  value: 85000}
+      - {id: dl-07, title: Support upgrade,  stage: won,       value: 18000}
+      - {id: dl-08, title: Training package, stage: qualified, value: 7000}
+      - {id: dl-09, title: Second site,      stage: lead,      value: 40000}
+      - {id: dl-10, title: Legacy licences,  stage: lost,      value: 12000}
+  invoices.ByPartner:
+    by_params: {partner_id: pt-001}
+    rows:
+      - {id: in-01, number: INV-1042, status: paid,    due: "2026-09-15", amount: {amount: 18000, currency: EUR}}
+      - {id: in-02, number: INV-1051, status: sent,    due: "2026-10-15", amount: {amount: 7000, currency: EUR}}
+      - {id: in-03, number: INV-1033, status: overdue, due: "2026-09-01", amount: {amount: 4200, currency: EUR}}
+      - {id: in-04, number: INV-1060, status: draft,   due: "2026-11-01", amount: {amount: 85000, currency: EUR}}
+      - {id: in-05, number: INV-1019, status: paid,    due: "2026-07-01", amount: {amount: 12000, currency: EUR}}
+  invoices.Page:
+    total: 6
+    rows:
+      - {id: in-01, number: INV-1042, partner: Alder Resale,  status: paid,    due: "2026-09-15", amount: {amount: 18000, currency: EUR}, lines: [{item: Support upgrade, qty: 1}]}
+      - {id: in-02, number: INV-1051, partner: Alder Resale,  status: sent,    due: "2026-10-15", amount: {amount: 7000, currency: EUR},  lines: [{item: Training package, qty: 1}]}
+      - {id: in-03, number: INV-1033, partner: Alder Resale,  status: overdue, due: "2026-09-01", amount: {amount: 4200, currency: EUR},  lines: [{item: Licences, qty: 12}]}
+      - {id: in-06, number: INV-1037, partner: Birch Channel,   status: overdue, due: "2026-08-25", amount: {amount: 9900, currency: USD},  lines: [{item: Add-on, qty: 3}]}
+      - {id: in-07, number: INV-1055, partner: Elm IT,      status: sent,    due: "2026-10-20", amount: {amount: 64000, currency: USD}, lines: [{item: Renewal deposit, qty: 1}]}
+      - {id: in-08, number: INV-1058, partner: Cedar Partners, status: draft,   due: "2026-10-30", amount: {amount: 15000, currency: EUR}, lines: [{item: Services, qty: 5}]}
+  tickets.Page:
+    total: 5
+    rows:
+      - {id: tk-01, subject: SSO login fails,         partner: Alder Resale,  priority: high,   updated_at: "2026-09-30T09:40:00Z", opened_at: "2026-09-30T09:40:00Z"}
+      - {id: tk-02, subject: Invoice address wrong,   partner: Birch Channel,   priority: normal, updated_at: "2026-09-30T08:10:00Z", opened_at: "2026-09-29T15:00:00Z"}
+      - {id: tk-03, subject: API rate limit question, partner: Elm IT,      priority: low,    updated_at: "2026-09-29T17:30:00Z", opened_at: "2026-09-29T11:00:00Z"}
+      - {id: tk-04, subject: Portal down for EU users, partner: Cedar Partners, priority: urgent, updated_at: "2026-09-30T09:59:00Z", opened_at: "2026-09-30T09:55:00Z"}
+      - {id: tk-05, subject: Add second admin,        partner: Dogwood Systems,  priority: normal, updated_at: "2026-09-28T10:00:00Z", opened_at: "2026-09-28T09:00:00Z"}
+  tickets.Messages:
+    by_params: {ticket_id: tk-01}
+    rows:
+      - {id: m-01, at: "2026-09-30T09:40:00Z", author: Alex Contact, body: "Users get an error after the identity provider redirect."}
+      - {id: m-02, at: "2026-09-30T09:44:00Z", author: Kai Demo,     body: "Thanks, which identity provider and which error text?"}
+      - {id: m-03, at: "2026-09-30T09:47:00Z", author: Alex Contact, body: "Generic OIDC; 'invalid redirect URI'."}
+      - {id: m-04, at: "2026-09-30T09:50:00Z", author: Kai Demo,     body: "The redirect URI needs the /callback suffix. Can you retry?"}
+      - {id: m-05, at: "2026-09-30T09:53:00Z", author: Alex Contact, body: "Works now, thank you."}
+  templates.Expressions:
+    rows:
+      - {id: partner.name, label: "{{partner.name}}"}
+      - {id: partner.tier, label: "{{partner.tier}}"}
+      - {id: ticket.subject, label: "{{ticket.subject}}"}
+      - {id: agent.name, label: "{{agent.name}}"}
+      - {id: today, label: "{{today}}"}
+  settings.Organization:
+    rows:
+      - {name: Example Partners Ltd, website: "https://partners.example.com", logo: null, billing_email: billing@example.com, currency: EUR, api_key: "********", api_enabled: true}
+  users.All:
+    rows:
+      - {id: us-01, name: Dana Example, email: dana@example.com, roles: [admin]}
+      - {id: us-02, name: Lee Sample,   email: lee@example.com,  roles: [finance]}
+      - {id: us-03, name: Kai Demo,     email: kai@example.com,  roles: [support]}
+      - {id: us-04, name: Sam Test,     email: sam@example.com,  roles: [sales]}
+      - {id: us-05, name: Alex Contact, email: alex@alder.example.com, roles: [partner]}
+  users.Roles:
+    rows:
+      - {id: admin, label: admin}
+      - {id: sales, label: sales}
+      - {id: finance, label: finance}
+      - {id: support, label: support}
+      - {id: partner, label: partner}
+  users.UsedBy:
+    rows:
+      - {label: Cloud rollout, type: deal_owner, id: dl-01}
+      - {label: Renewal 2027, type: deal_owner, id: dl-05}
+      - {label: SSO login fails, type: ticket_assignee, id: tk-01}
+      - {label: My open deals, type: saved_view, id: sv-01}
+      - {label: Approval workflow, type: workflow_approver, id: wf-1}
+  workflows.Graph:
+    rows:
+      - {id: st-1, kind: node, step_type: approval, label: Sales lead approval, approver_role: sales}
+      - {id: st-2, kind: node, step_type: approval, label: Finance approval,       approver_role: finance}
+      - {id: st-3, kind: node, step_type: notify,   label: Notify partner,         approver_role: null}
+      - {id: e-1,  kind: edge, from_step: st-1, to_step: st-2, outcome: approved}
+      - {id: e-2,  kind: edge, from_step: st-2, to_step: st-3, outcome: approved}
+      - {id: e-3,  kind: edge, from_step: st-1, to_step: st-3, outcome: rejected}

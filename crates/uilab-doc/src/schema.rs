@@ -69,7 +69,7 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
 fn def_ref(layer: Layer) -> String {
     let name = match layer {
         Layer::Section | Layer::Widget => "composite",
-        Layer::Item => "node",
+        Layer::Item | Layer::Child | Layer::Part | Layer::Choice | Layer::Tool => "node",
         Layer::Component => "widget_declaration",
         other => other.as_str(),
     };
@@ -142,7 +142,7 @@ fn defs(doc: &Document) -> Value {
                     "type": "object",
                     "required": ["layer", "name", "node"],
                     "properties": {
-                        "layer": {"enum": ["shell", "region", "nav_section", "page", "section", "overlay", "widget", "item", "component", "node"]},
+                        "layer": {"enum": ["shell", "region", "nav_section", "page", "section", "overlay", "widget", "item", "child", "part", "choice", "tool", "component", "node"]},
                         "name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"},
                         "node": {"type": "object"},
                         "nav_section": {"type": "string"}
@@ -153,9 +153,11 @@ fn defs(doc: &Document) -> Value {
         },
         "reads": {
             "type": "object",
-            "required": ["view"],
+            "oneOf": [{"required": ["view"]}, {"required": ["placeholder", "fixture"]}],
             "properties": {
-                "view": {"type": "string", "description": "ESS view `<domain>.<View>`; use `draft.<Name>` while no model view exists"}
+                "view": {"type": "string", "description": "ESS view `<domain>.<View>`"},
+                "placeholder": {"type": "string", "description": "while no model view exists: the view name it will have"},
+                "fixture": {"type": "string", "description": "for a placeholder: the fixture file answering it, relative to the document"}
             }
         },
         "composite": {
@@ -250,7 +252,7 @@ fn defs(doc: &Document) -> Value {
                 "kind": {"enum": page_kinds},
                 "title": {"type": "string"},
                 "shell": shell_prop,
-                "sections": {"type": "object", "additionalProperties": {"$ref": "#/$defs/composite"}},
+                "sections": {"type": "array", "description": "named sections, in layout order", "items": {"allOf": [{"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]*$"}}}, {"$ref": "#/$defs/composite"}]}},
                 "overlays": {"type": "object", "additionalProperties": {"$ref": "#/$defs/overlay"}}
             }
         },

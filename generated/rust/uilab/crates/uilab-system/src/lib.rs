@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
-// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
+// model digest d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13
+// contract digest 9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0
 // do not edit: regenerate with `ess synthesize`
 
 //! The `uilab` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -31,6 +31,20 @@ pub enum SystemEvent {
     ProposalRejected(uilab_types::session::ProposalRejected),
     /// `uilab.session.ProposalUndone`.
     ProposalUndone(uilab_types::session::ProposalUndone),
+}
+
+impl SystemEvent {
+    /// The qualified name the specification declares this event under.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::DocumentOpened(_) => "uilab.session.DocumentOpened",
+            Self::NodeSelected(_) => "uilab.session.NodeSelected",
+            Self::PatchProposed(_) => "uilab.session.PatchProposed",
+            Self::ProposalAccepted(_) => "uilab.session.ProposalAccepted",
+            Self::ProposalRejected(_) => "uilab.session.ProposalRejected",
+            Self::ProposalUndone(_) => "uilab.session.ProposalUndone",
+        }
+    }
 }
 
 impl From<uilab_session::PublishedEvent> for SystemEvent {
@@ -72,19 +86,27 @@ impl<UilabSessionBehaviors> System<UilabSessionBehaviors> {
     pub fn published(&self) -> &[SystemEvent] {
         &self.published
     }
+
+    /// Takes every event the pump has already delivered off the log, in publication order.
+    ///
+    /// A long-running shell calls this after each `pump`, or the log holds every event the
+    /// process ever published. A `pump` returns with every logged event delivered: each
+    /// reacting binding has had its attempt, and a binding whose attempt stopped holds the event in
+    /// its own held-back list, not on the log. Events published since the last `pump` stay on the
+    /// log, so the next `pump` still delivers them; taking never skips a binding.
+    pub fn take_published(&mut self) -> Vec<SystemEvent> {
+        let delivered: Vec<SystemEvent> = self.published.drain(..self.cursor).collect();
+        self.cursor = 0;
+        delivered
+    }
 }
 
 impl<UilabSessionBehaviors> System<UilabSessionBehaviors>
 where
     UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
 {
-    /// Delivers until quiescent: collects every component's outbox onto the log, then delivers
-    /// each logged event to every binding that reacts to it — at least once each, which is the
-    /// guarantee the specification declares.
-    ///
-    /// `Err` carries the first unmet obligation that delivery could not route around; the log
-    /// keeps everything already published. A specification whose bindings feed each other
-    /// without end will not quiesce, and this pump will not pretend otherwise.
+    /// Delivers until quiescent: collects every component's outbox onto the log. No binding
+    /// reacts to anything this specification publishes, so collecting is the whole delivery.
     pub fn pump(&mut self) -> Result<(), uilab_types::obligation::UnmetObligation> {
         loop {
             self.collect();

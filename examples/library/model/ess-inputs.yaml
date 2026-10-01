@@ -1,0 +1,8 @@
+format: ess-inputs/2
+requires: ess 0.48.0
+specification:
+  - system.yaml
+  - domains/loans.yaml
+  - domains/members.yaml
+  - domains/staff.yaml
+scenarios: []

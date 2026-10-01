@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
-// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
+// model digest d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13
+// contract digest 9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0
 // do not edit: regenerate with `ess synthesize`
 
 //! Session — `uilab.session`.
@@ -482,7 +482,7 @@ pub enum OpenDocumentOutcome {
         /// The `uilab.session.DocumentOpened` this outcome publishes.
         document_opened: DocumentOpened,
     },
-    /// `unreadable` — externally decided (the file does not parse as a ui-spec/1 document).
+    /// `unreadable` — externally decided (the file does not parse as an ess-ui/1 document).
     ///
     /// Nothing was opened.
     Unreadable {
@@ -716,7 +716,7 @@ pub struct DocumentNotOpen {
 
 /// The declared error `uilab.session.DocumentUnreadable`.
 ///
-/// The file is not a ui-spec/1 document, so nothing was opened.
+/// The file is not an ess-ui/1 document, so nothing was opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentUnreadable {
     /// `path` — `String`.
@@ -753,8 +753,8 @@ pub struct ProposalStateConflict {
 /// Documents — one row of the view `uilab.session.Documents`.
 ///
 /// Projects `uilab.session.Document` at `read_your_writes` consistency.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Documents {
     /// `document_id` — `uilab.session.DocumentId`.
@@ -768,8 +768,8 @@ pub struct Documents {
 /// Pending proposals — one row of the view `uilab.session.Pending`.
 ///
 /// Projects `uilab.session.Proposal` at `read_your_writes` consistency, containing instances where `state == Proposed`.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pending {
     /// `proposal_id` — `uilab.session.ProposalId`.
@@ -783,8 +783,8 @@ pub struct Pending {
 /// Proposals — one row of the view `uilab.session.Proposals`.
 ///
 /// Projects `uilab.session.Proposal` at `read_your_writes` consistency.
-/// Serving it is an implementation obligation — see the plan — because how a projection is kept
-/// current is a storage decision the specification does not take.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proposals {
     /// `proposal_id` — `uilab.session.ProposalId`.
@@ -801,15 +801,15 @@ pub struct Proposals {
     pub state: ProposalState,
 }
 
-/// What this bounded context owes its implementor, as typed seams.
+/// What this bounded context owes its implementor, and the seams of what is generated.
 ///
-/// One trait per obligation in the synthesis plan, each carrying the plan's own contract.
-/// [`Unimplemented`](obligations::Unimplemented) satisfies every trait by refusing in the type system, so the workspace builds —
-/// and says exactly what it cannot yet do — before a line is hand-written.
+/// One trait per obligation in the synthesis plan, each carrying the plan's own contract, and one
+/// per generated behaviour, which [`Generated`](crate::behaviour::Generated) implements.
+/// [`Unimplemented`](obligations::Unimplemented) satisfies every owed trait by refusing in the type system.
 pub mod obligations {
     /// The behaviour `uilab.session.AcceptProposal` — an implementation obligation.
     ///
-    /// Why it is not generated: decided outside the system: the document changed since the proposal and the patch no longer applies.
+    /// Why it is not generated: kept an obligation by the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `stale`.
     ///
     /// Contract: given `uilab.session.AcceptProposal` input, decide and enact exactly one outcome — `accepted` otherwise, takes `accept` of `uilab.session.Proposal`, emits `uilab.session.ProposalAccepted`; `stale` externally decided (the document changed since the proposal and the patch no longer applies), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait AcceptProposalBehavior {
@@ -822,9 +822,9 @@ pub mod obligations {
 
     /// The behaviour `uilab.session.OpenDocument` — an implementation obligation.
     ///
-    /// Why it is not generated: decided outside the system: the file does not parse as a ui-spec/1 document.
+    /// Why it is not generated: kept an obligation by `creates:` leaving the required field `selected` of `uilab.session.Document` undetermined, in `opened`.
     ///
-    /// Contract: given `uilab.session.OpenDocument` input, decide and enact exactly one outcome — `opened` otherwise, creates `uilab.session.Document`, emits `uilab.session.DocumentOpened`; `unreadable` externally decided (the file does not parse as a ui-spec/1 document), error `uilab.session.DocumentUnreadable`.
+    /// Contract: given `uilab.session.OpenDocument` input, decide and enact exactly one outcome — `opened` otherwise, creates `uilab.session.Document`, emits `uilab.session.DocumentOpened`; `unreadable` externally decided (the file does not parse as an ess-ui/1 document), error `uilab.session.DocumentUnreadable`.
     pub trait OpenDocumentBehavior {
         /// Decides and enacts exactly one declared outcome of `uilab.session.OpenDocument`.
         ///
@@ -835,7 +835,7 @@ pub mod obligations {
 
     /// The behaviour `uilab.session.ProposePatch` — an implementation obligation.
     ///
-    /// Why it is not generated: decided outside the system: the patched document fails a document check.
+    /// Why it is not generated: kept an obligation by the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `refused`.
     ///
     /// Contract: given `uilab.session.ProposePatch` input, decide and enact exactly one outcome — `proposed` otherwise, creates `uilab.session.Proposal`, emits `uilab.session.PatchProposed`; `refused` externally decided (the patched document fails a document check), error `uilab.session.PatchRefused`.
     pub trait ProposePatchBehavior {
@@ -846,22 +846,20 @@ pub mod obligations {
         fn propose_patch(&mut self, input: super::ProposePatch) -> Result<super::ProposePatchOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The behaviour `uilab.session.RejectProposal` — an implementation obligation.
+    /// The behaviour `uilab.session.RejectProposal` — generated.
     ///
-    /// Why it is not generated: the contract is declared; the algorithm is not.
-    ///
-    /// Contract: given `uilab.session.RejectProposal` input, decide and enact exactly one outcome — `rejected` otherwise, takes `reject` of `uilab.session.Proposal`, emits `uilab.session.ProposalRejected`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
     pub trait RejectProposalBehavior {
         /// Decides and enacts exactly one declared outcome of `uilab.session.RejectProposal`.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn reject_proposal(&mut self, input: super::RejectProposal) -> Result<super::RejectProposalOutcome, crate::obligation::UnmetObligation>;
     }
 
     /// The behaviour `uilab.session.SelectNode` — an implementation obligation.
     ///
-    /// Why it is not generated: decided outside the system: no document with this id is open.
+    /// Why it is not generated: kept an obligation by an unknown identity, which reaches no declared outcome (neither `unknown_instance:` nor `wrong_state:`).
     ///
     /// Contract: given `uilab.session.SelectNode` input, decide and enact exactly one outcome — `selected` otherwise, updates `uilab.session.Document`, emits `uilab.session.NodeSelected`; `unknown-document` externally decided (no document with this id is open), error `uilab.session.DocumentNotOpen`; `not-found` externally decided (the document has no node at this path), error `uilab.session.NodeNotFound`.
     pub trait SelectNodeBehavior {
@@ -874,7 +872,7 @@ pub mod obligations {
 
     /// The behaviour `uilab.session.UndoProposal` — an implementation obligation.
     ///
-    /// Why it is not generated: decided outside the system: a later change to the document would be lost by undoing this one.
+    /// Why it is not generated: kept an obligation by the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `stale`.
     ///
     /// Contract: given `uilab.session.UndoProposal` input, decide and enact exactly one outcome — `undone` otherwise, takes `undo` of `uilab.session.Proposal`, emits `uilab.session.ProposalUndone`; `stale` externally decided (a later change to the document would be lost by undoing this one), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait UndoProposalBehavior {
@@ -885,42 +883,36 @@ pub mod obligations {
         fn undo_proposal(&mut self, input: super::UndoProposal) -> Result<super::UndoProposalOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `uilab.session.Documents` — an implementation obligation.
+    /// The query `uilab.session.Documents` — generated.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
-    ///
-    /// Contract: a query answering `uilab.session.Documents` with rows projected from `uilab.session.Document` at `read_your_writes` consistency.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait DocumentsQuery {
         /// Serves `uilab.session.Documents` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn documents(&self) -> Result<Vec<super::Documents>, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `uilab.session.Pending` — an implementation obligation.
+    /// The query `uilab.session.Pending` — generated.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
-    ///
-    /// Contract: a query answering `uilab.session.Pending` with rows projected from `uilab.session.Proposal` at `read_your_writes` consistency, containing instances where `state == Proposed`.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait PendingQuery {
         /// Serves `uilab.session.Pending` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn pending(&self) -> Result<Vec<super::Pending>, crate::obligation::UnmetObligation>;
     }
 
-    /// The query `uilab.session.Proposals` — an implementation obligation.
+    /// The query `uilab.session.Proposals` — generated.
     ///
-    /// Why it is not generated: how the projection is kept current is a storage decision.
-    ///
-    /// Contract: a query answering `uilab.session.Proposals` with rows projected from `uilab.session.Proposal` at `read_your_writes` consistency.
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
     pub trait ProposalsQuery {
         /// Serves `uilab.session.Proposals` rows at the view's declared consistency.
         ///
-        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
-        /// implementation never returns it.
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn proposals(&self) -> Result<Vec<super::Proposals>, crate::obligation::UnmetObligation>;
     }
 
@@ -948,12 +940,6 @@ pub mod obligations {
         }
     }
 
-    impl RejectProposalBehavior for Unimplemented {
-        fn reject_proposal(&mut self, _input: super::RejectProposal) -> Result<super::RejectProposalOutcome, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "uilab.session.RejectProposal" })
-        }
-    }
-
     impl SelectNodeBehavior for Unimplemented {
         fn select_node(&mut self, _input: super::SelectNode) -> Result<super::SelectNodeOutcome, crate::obligation::UnmetObligation> {
             Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "uilab.session.SelectNode" })
@@ -963,24 +949,6 @@ pub mod obligations {
     impl UndoProposalBehavior for Unimplemented {
         fn undo_proposal(&mut self, _input: super::UndoProposal) -> Result<super::UndoProposalOutcome, crate::obligation::UnmetObligation> {
             Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "uilab.session.UndoProposal" })
-        }
-    }
-
-    impl DocumentsQuery for Unimplemented {
-        fn documents(&self) -> Result<Vec<super::Documents>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "uilab.session.Documents" })
-        }
-    }
-
-    impl PendingQuery for Unimplemented {
-        fn pending(&self) -> Result<Vec<super::Pending>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "uilab.session.Pending" })
-        }
-    }
-
-    impl ProposalsQuery for Unimplemented {
-        fn proposals(&self) -> Result<Vec<super::Proposals>, crate::obligation::UnmetObligation> {
-            Err(crate::obligation::UnmetObligation { capability: "view query", source: "uilab.session.Proposals" })
         }
     }
 }

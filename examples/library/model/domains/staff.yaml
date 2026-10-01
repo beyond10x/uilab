@@ -1,0 +1,41 @@
+domain: library.staff
+
+summary: The signed-in staff member, shown in the account menu.
+
+entities:
+  - name: library.staff.StaffMember
+    identity:
+      name: id
+      type: String
+    fields:
+      - name: name
+        type: String
+      - name: email
+        type: String
+    # UNMAPPED: ESS requires a lifecycle and neither source gives staff one. One placeholder
+    # state, Recorded, stands for "the row exists".
+    lifecycle:
+      initial: Recorded
+      states: [Recorded]
+      terminal: [Recorded]
+
+actors:
+  # UNMAPPED: the document shows the signed-in person, read from staff.Me, the Extend form on the
+  # loans page. The model reads that as staff may invoke ExtendLoan; neither source states a grant.
+  - name: library.staff.Staff
+    may:
+      - library.loans.ExtendLoan
+
+views:
+  # UNMAPPED: `Me` is the signed-in staff member's row. ESS has no caller-relative view, and a
+  # view narrowed by a parameter on its identity is refused, so this view is unfiltered; nothing
+  # here says which row is the caller's.
+  - name: library.staff.Me
+    source: library.staff.StaffMember
+    fields:
+      - name: id
+        type: String
+      - name: name
+        type: String
+      - name: email
+        type: String

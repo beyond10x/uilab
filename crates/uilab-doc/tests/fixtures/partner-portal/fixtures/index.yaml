@@ -1,0 +1,41 @@
+views:
+  activity.Page: portal.yaml
+  contacts.ByPartner: portal.yaml
+  dashboards.Mine: portal.yaml
+  deals.ByPartner: portal.yaml
+  deals.Page: portal.yaml
+  deals.StageTotals: portal.yaml
+  deals.WinRate: portal.yaml
+  invoices.ByPartner: portal.yaml
+  invoices.Page: portal.yaml
+  metrics.Live: portal.yaml
+  partners.Page: portal.yaml
+  partners.UsedBy: portal.yaml
+  saved_views.Mine: portal.yaml
+  session.Me: portal.yaml
+  session.Organizations: portal.yaml
+  settings.Organization: portal.yaml
+  tags.All: portal.yaml
+  templates.Expressions: portal.yaml
+  tickets.Messages: portal.yaml
+  tickets.Page: portal.yaml
+  users.All: portal.yaml
+  users.Roles: portal.yaml
+  users.UsedBy: portal.yaml
+  workflows.Graph: portal.yaml
+derived:
+  activity.Recent:    {same_as: activity.Page}
+  deals.BySavedView:  {same_as: deals.Page}
+  deals.Open:         {same_as: deals.Page}
+  deals.ById:         {by_id_from: deals.Page, key: id}
+  invoices.ById:      {by_id_from: invoices.Page, key: id}
+  invoices.Pdf:       {by_id_from: invoices.Page, key: id}
+  partners.ById:      {by_id_from: partners.Page, key: id}
+  partners.Top:       {same_as: partners.Page}
+  tickets.ById:       {by_id_from: tickets.Page, key: id}
+  workflows.StepById: {by_id_from: workflows.Graph, key: id}
+scripts:
+  activity:    scripts/activity.yaml
+  metrics:     scripts/metrics.yaml
+  tickets:     scripts/tickets.yaml
+  ticket_chat: scripts/ticket_chat.yaml

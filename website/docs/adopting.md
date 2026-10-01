@@ -17,7 +17,7 @@ product stays where it is today.
 | your framework, router and state management | a specification file per application, in the repository |
 | your component library and design system | a shared vocabulary: composite kinds, widgets and their params |
 | your styling, tokens, accessibility and interaction details | agreement on *which* data, fields and actions each screen shows |
-| your API client and backend | a list of the views and commands the screens need, with `draft.` marking the missing ones |
+| your API client and backend | a list of the views and commands the screens need, with placeholder reads marking the missing ones |
 | code review, CI and releases | a diff of the specification in the same pull request |
 
 The canvas is not your application. It renders the specification with uilab's own generic
@@ -35,13 +35,16 @@ components so that people can agree on content and structure. Nothing it draws i
    session can read it without running anything.
 4. **Implement by hand.** The team builds the screen in its own stack from the reviewed
    specification, using its own components.
-5. **Hand the data list to the backend.** The Docs view's **Data** table and the `draft_read`
-   warnings list every view the screens read, with the drafts that do not exist yet.
+5. **Hand the data list to the backend.** The Docs view's **Data** table lists every view the
+   screens read, and the `unbound_placeholder` warnings list the placeholders that no model view
+   answers yet.
 
 ## Mapping to your component library
 
-The 14 built-in composite kinds are deliberately generic: `collection`, `record`, `form`, `metric`,
-`chart` and so on. Most teams already have a component for each. Write the mapping down once — which
+The specification is an `ess-ui/1` document, ESS's renderer-neutral UI format; its
+[reference](https://beyond10x.github.io/ess/docs/reference/ess-ui) is the full vocabulary. Its
+composite kinds are deliberately generic: `collection`, `record`, `form`, `metric`, `chart` and so
+on. Most teams already have a component for each. Write the mapping down once — which
 of your components renders a `collection` with `as: tag` columns, which renders a `drawer` — and
 the specification becomes a checklist for implementation.
 

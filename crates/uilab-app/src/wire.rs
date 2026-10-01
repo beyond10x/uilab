@@ -363,11 +363,13 @@ pub fn goal_state(goal: &UilabWireGoal) -> String {
     name_of(&goal.state)
 }
 
-pub fn rows(view: &str, total: Option<u64>, rows: Vec<Value>) -> Server {
+/// The rows of a view; `sample` when they are made up because no fixture answers it.
+pub fn rows(view: &str, total: Option<u64>, rows: Vec<Value>, sample: bool) -> Server {
     Server::Rows(UilabWireRows {
         view: view.to_owned(),
         total: present(total.map(Number::from)),
         rows,
+        sample: EssPresence::Present(sample),
     })
 }
 
@@ -382,7 +384,7 @@ mod tests {
             "/../../examples/library/library.ui.yaml"
         ))
         .unwrap();
-        uilab_doc::outline(&uilab_doc::Document::from_yaml(&text).unwrap())
+        uilab_doc::outline::rendered(&uilab_doc::Document::from_yaml(&text).unwrap())
     }
 
     /// Every server message this crate builds decodes as the generated union, and back.
@@ -457,8 +459,9 @@ mod tests {
                 "loans.All",
                 Some(4),
                 vec![serde_json::json!({"title": "x"})],
+                false,
             ),
-            rows("draft.X", None, vec![]),
+            rows("loans.X", None, vec![], true),
             presence(
                 vec![
                     OperatorParts {
@@ -651,5 +654,102 @@ mod tests {
             })
             .collect();
         assert_eq!(ended, [false, false, true, true, true]);
+    }
+
+    /// story:essui-app-widget `finding_carries_ess_check_id`: a section naming a widget the
+    /// document does not declare is ESS's `widget_expands`, and the wire finding carries that id on
+    /// the uilab path of the section. The document is read past ESS's loader, which refuses it,
+    /// the way a patch's result is checked before it is admitted.
+    #[test]
+    fn finding_carries_ess_check_id() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/library/library.ui.yaml"
+        ))
+        .unwrap();
+        let anchor = "    sections:\n      - name: list\n        component: collection\n        reads: {view: loans.All, paging: server}\n";
+        assert!(text.contains(anchor), "fixture anchor is missing");
+        let text = text.replacen(
+            anchor,
+            &format!(
+                "    sections:\n      - {{name: ghost, component: no_such_widget}}\n{}",
+                &anchor["    sections:\n".len()..]
+            ),
+            1,
+        );
+        assert!(
+            uilab_doc::Document::from_yaml(&text).is_err(),
+            "ESS's loader refuses the document"
+        );
+        let doc: uilab_doc::Document = serde_yaml::from_str(&text).unwrap();
+        let sent = findings(&uilab_doc::check(&doc));
+        let found: Vec<(&str, &str)> = sent
+            .iter()
+            .filter(|f| f.check == "widget_expands")
+            .map(|f| (f.check.as_str(), f.path.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            [("widget_expands", "page:loans/section:ghost")],
+            "{sent:?}"
+        );
+        let value = serde_json::to_value(&sent[0]).unwrap();
+        assert!(
+            serde_json::from_value::<UilabWireFinding>(value).is_ok(),
+            "the finding is the generated wire type"
+        );
+    }
+
+    /// A placeholder read is sent as ESS's `unbound_placeholder` on the section that reads it, its
+    /// message naming ESS's path of the read and then ESS's words: exactly the shape
+    /// `widget/src/lib/sidebar.drafts.adversary.test.ts` builds, so the sidebar lists it as a draft.
+    #[test]
+    fn a_placeholder_read_is_sent_as_the_sidebar_reads_it() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/library/library.ui.yaml"
+        ))
+        .unwrap();
+        let anchor = "  members:\n";
+        assert!(text.contains(anchor), "fixture anchor is missing");
+        let text = text.replacen(
+            anchor,
+            "  history:\n    kind: list_page\n    title: History\n    sections:\n      - name: list\n        component: collection\n        reads: {placeholder: LoanHistory, fixture: fixtures/history.yaml}\n        columns: [{field: title}]\n  members:\n",
+            1,
+        );
+        let doc = uilab_doc::Document::from_yaml(&text).unwrap();
+        let sent: Vec<Box<UilabWireFinding>> = findings(&uilab_doc::check(&doc))
+            .into_iter()
+            .filter(|f| f.check == "unbound_placeholder")
+            .collect();
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert_eq!(sent[0].path, "page:history/section:list");
+        assert_eq!(
+            sent[0].message,
+            "`pages/history/sections/list/reads`: `LoanHistory` is a placeholder read answered by \
+             `fixtures/history.yaml`; bind it to a view"
+        );
+        assert_eq!(serde_json::to_value(&sent[0].severity).unwrap(), "warning");
+    }
+
+    /// The outline a browser is shown carries the inherited mark through the generated type: the
+    /// library's Loans page holds its kind's `filters` section, marked.
+    #[test]
+    fn the_wire_outline_carries_the_inherited_mark() {
+        let wire = serde_json::to_value(outline(&outline_fixture())).unwrap();
+        let loans = wire["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["path"] == "page:loans")
+            .unwrap();
+        let filters = loans["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["path"] == "page:loans/section:filters")
+            .expect("the kind's filters section is shown");
+        assert_eq!(filters["inherited"], true);
+        assert!(loans.get("inherited").is_none());
     }
 }
