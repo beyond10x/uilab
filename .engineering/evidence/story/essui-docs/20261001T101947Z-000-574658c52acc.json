@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T10:19:47Z",
+  "actor": "human:timo",
+  "artifact": "story:essui-docs",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:essui-acceptance-round-1",
+    "reference": ".engineering/planning/story/essui-docs.md:36",
+    "review": "review-result:essui-acceptance-round-1",
+    "outcome": "fixed"
+  }
+}

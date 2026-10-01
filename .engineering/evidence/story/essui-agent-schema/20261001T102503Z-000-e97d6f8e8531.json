@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T10:25:03Z",
+  "actor": "human:timo",
+  "artifact": "story:essui-agent-schema",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:essui-acceptance-round-2",
+    "reference": ".engineering/planning/story/essui-agent-schema.md:47",
+    "review": "review-result:essui-acceptance-round-2",
+    "outcome": "fixed"
+  }
+}

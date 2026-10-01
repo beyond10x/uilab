@@ -6,7 +6,8 @@ status: draft
 title: 'Styles workspace: tokens, themes, user UI options'
 relations:
 - serves: vision:website-harness
-revision: 1
+- depends_on: epic:ess-ui-adoption
+revision: 2
 ---
 ## Outcome
 
@@ -14,4 +15,5 @@ A Styles workspace: design tokens (colour, spacing, type, radius) and themes (li
 
 ## Depends on
 
-Style tokens and themes in ui-spec/1 (requirement R8 to the ess session); ui-spec/1 today has only a `theme` preference in shell state.
+- Design tokens, themes and preferences in `ess-ui/1`: ess `story:ui-spec-style-tokens`, draft at ess main `6c3a811` (2026-10-01). Recorded as dependency-blocker:ess-style-tokens.
+- epic:ess-ui-adoption: tokens arrive in `ess-ui/1`, which uilab reads only after that epic.

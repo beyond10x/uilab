@@ -15,6 +15,11 @@ uilab edits a `ui-spec/1` UI document by voice in the browser. What it is and ho
 
 - Anything that runs is Rust, with clap derive for command lines. The browser app in `widget/` is
   TypeScript and is served as built files by the Rust binary.
+- The UI document format is ESS's, never uilab's. uilab reads, edits and writes only the format ESS
+  publishes (`ess-ui/1` from ess 0.47.0), and ESS's own loader and checker decide what a document
+  is. uilab may keep an editing layer on top (node paths, patches, outline, sample rows), but
+  everything it writes is an ESS document. A construct uilab needs and the format lacks is filed
+  in `../ess` and waits for an ESS release (operator, 2026-10-01; epic:ess-ui-adoption).
 - ESS is the contract. `ess/` holds the session domain (`uilab.session`) and the browser↔server
   messages (`uilab.wire`). Change the specification first, then `task generate`; never edit
   `generated/` or `widget/src/generated/` by hand. `task drift` fails when they differ from what

@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T10:25:08Z",
+  "actor": "human:timo",
+  "artifact": "story:essui-document",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:essui-scope-round-2",
+    "reference": ".engineering/planning/epic/ess-ui-adoption.md:54",
+    "review": "review-result:essui-scope-round-2",
+    "outcome": "fixed"
+  }
+}
