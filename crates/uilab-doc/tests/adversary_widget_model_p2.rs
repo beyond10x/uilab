@@ -6,7 +6,7 @@ use serde_json::json;
 use uilab_doc::{Document, Fixtures, NodePath, Patch, Severity, admit, check};
 
 const DOC: &str = r#"
-format: ui-spec/1
+format: ess-ui/1
 app: library
 title: Lending library
 model: library
@@ -26,8 +26,8 @@ widgets:
   state_badge:
     summary: A loan state as a toned badge.
     params:
-      state: {type: string, required: true}
-      tone: {type: string, required: false}
+      state: {type: string, required: true, note: state param}
+      tone: {type: string, required: false, note: tone param}
     body:
       - {name: badge, primitive: badge, text: args.state}
 pages:
@@ -35,7 +35,8 @@ pages:
     kind: dashboard_page
     title: Overview
     sections:
-      list:
+      - {name: board, remove: true}
+      - name: list
         component: collection
         reads: {view: loans.All}
         columns: [{field: title}]
@@ -59,14 +60,26 @@ const PAGE: &str = "    title: Overview\n";
 /// ess `header.metrics: {list: Node}`: an instance there names no declared widget.
 #[test]
 fn an_unresolved_instance_in_a_page_header_metric_is_reported() {
-    let doc = with(
+    let text = DOC.replacen(
         PAGE,
         "    title: Overview\n    header: {metrics: [{name: due, component: loan_tile}]}\n",
+        1,
     );
-    let found = errors(&doc);
+    let refused = Document::from_yaml(&text).expect_err("ESS refuses an undeclared widget");
+    let found = uilab_doc::ess_ui_check::check_source(
+        &text,
+        "case",
+        std::path::Path::new("."),
+        None,
+        &Default::default(),
+    );
     assert!(
-        found.iter().any(|(c, _)| *c == "widget_resolves"),
-        "an instance of an undeclared widget in header.metrics goes unreported: {found:?}"
+        found.findings.iter().any(|f| f.check == "widget_expands"
+            && f.path
+                .to_string()
+                .starts_with("pages/overview/header/metrics/due")),
+        "an instance of an undeclared widget in header.metrics goes unreported: {refused}: {:?}",
+        found.findings
     );
 }
 
@@ -86,7 +99,7 @@ fn removing_a_widget_a_page_header_metric_still_uses_is_refused() {
     );
     assert_eq!(
         removed.map(|_| ()).map_err(|r| r.check),
-        Err("widget_resolves".to_owned()),
+        Err("widget_expands".to_owned()),
         "a widget still used by a page header metric was removed"
     );
 }
@@ -107,7 +120,8 @@ fn docs_list_a_use_site_in_an_untyped_node_position() {
         .map_or(docs.len(), |i| start + 4 + i);
     let entry = &docs[start..end];
     assert!(
-        entry.contains("`page:overview/section:list`") && !entry.contains("Not used yet."),
+        entry.contains("`page:overview/section:list/child:badge`")
+            && !entry.contains("Not used yet."),
         "docs miss the use in `children`:\n{entry}"
     );
 }
@@ -117,7 +131,7 @@ fn docs_list_a_use_site_in_an_untyped_node_position() {
 fn an_explicit_required_false_is_kept_and_means_optional() {
     let doc = with(
         "        columns: [{field: title}]\n",
-        "        columns: [{field: title}]\n        item: {badge: {component: state_badge, args: {state: row.state}}}\n",
+        "        columns: [{field: title}]\n        item: [{name: badge, component: state_badge, args: {state: row.state}}]\n",
     );
     assert!(errors(&doc).is_empty(), "{:?}", errors(&doc));
     let param = &doc.widgets["state_badge"].params["tone"];

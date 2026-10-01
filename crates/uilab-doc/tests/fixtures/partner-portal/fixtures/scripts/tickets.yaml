@@ -1,0 +1,8 @@
+channel: tickets
+loop: true
+events:
+  - {at: 0s,  event: tickets.TicketOpened,  payload: {id: tk-06, subject: Export shows wrong totals, partner: Fir Cloud, priority: normal, updated_at: "2026-09-30T10:01:00Z"}}
+  - {at: 6s,  event: tickets.TicketUpdated, payload: {id: tk-04, priority: high, updated_at: "2026-09-30T10:01:06Z"}}
+  - {at: 12s, event: tickets.TicketClosed,  payload: {id: tk-01, updated_at: "2026-09-30T10:01:12Z"}}
+  - {at: 18s, event: tickets.TicketUpdated, payload: {id: tk-06, priority: urgent, updated_at: "2026-09-30T10:01:18Z"}}
+  - {at: 25s, event: tickets.TicketOpened,  payload: {id: tk-07, subject: Need a sandbox, partner: Dogwood Systems, priority: low, updated_at: "2026-09-30T10:01:25Z"}}

@@ -96,10 +96,10 @@ fn an_insert_then_a_replace_without_it_names_nothing_the_document_had() {
             },
             replace(
                 "page:members",
-                json!({"kind": "list_page", "title": "People", "sections": {"list": {
+                json!({"kind": "list_page", "title": "People", "sections": [{"name": "list",
                     "component": "collection", "reads": {"view": "members.All"},
                     "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"},
-                        {"field": "standing", "as": "tag"}]}}}),
+                        {"field": "standing", "as": "tag"}]}]}),
             ),
         ],
     };
@@ -138,7 +138,7 @@ fn one_of_two_columns_over_the_same_field_dropped_is_named() {
 fn a_drop_deep_under_children_that_stay_is_named_at_its_node() {
     let doc = Document::from_yaml(
         r#"
-format: ui-spec/1
+format: ess-ui/1
 app: library
 model: library
 placement_profile: fat
@@ -154,8 +154,9 @@ pages:
   overview:
     kind: dashboard_page
     sections:
-      board:
+      - name: board
         component: board
+        reads: {view: loans.All}
         widgets:
           due:
             component: collection
@@ -168,11 +169,11 @@ pages:
     .unwrap();
     let page = replace(
         "page:overview",
-        json!({"kind": "dashboard_page", "title": "Overview", "sections": {"board": {
-            "component": "board", "widgets": {"due": {
+        json!({"kind": "dashboard_page", "title": "Overview", "sections": [{"name": "board",
+            "component": "board", "reads": {"view": "loans.All"}, "widgets": {"due": {
                 "component": "collection", "reads": {"view": "loans.All"},
                 "columns": [{"field": "due"}, {"field": "title"}],
-                "item": [{"name": "info", "component": "record", "fields": ["title"]}]}}}}}),
+                "item": [{"name": "info", "component": "record", "fields": ["title"]}]}}}]}),
     );
     assert_eq!(
         drops(&doc, &page),

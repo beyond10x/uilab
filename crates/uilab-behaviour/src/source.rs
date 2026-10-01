@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use uilab_doc::Document;
 
-/// Reads and saves `ui-spec/1` documents by path.
+/// Reads and saves `ess-ui/1` documents by path.
 pub trait DocumentSource {
     /// The document at `path`, or why it cannot be read as one.
     fn load(&self, path: &str) -> Result<Document, String>;
@@ -21,7 +21,10 @@ pub struct FileSource;
 impl DocumentSource for FileSource {
     fn load(&self, path: &str) -> Result<Document, String> {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
-        Document::from_yaml(&text).map_err(|e| format!("{path}: {e}"))
+        let dir = std::path::Path::new(path)
+            .parent()
+            .unwrap_or(std::path::Path::new("."));
+        Document::from_yaml_in(&text, dir).map_err(|e| format!("{path}: {e}"))
     }
 
     fn save(&self, path: &str, doc: &Document) -> Result<(), String> {

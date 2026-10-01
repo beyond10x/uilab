@@ -138,6 +138,20 @@ export function shellOf(root: OutlineNode, page: OutlineNode | null): OutlineNod
   return (typeof named === 'string' ? shells.find((s) => s.name === named) : undefined) ?? shells[0] ?? null;
 }
 
+/**
+ * The mark of a node the author did not write: a section or overlay its page kind contributes, or
+ * a node of a widget instance's body. ESS renders it, so the outline and the canvas show it, but
+ * it is not in the document. `null` for a node the author wrote.
+ */
+export function inheritedMark(node: OutlineNode): string | null {
+  return node.inherited === true ? 'inherited' : null;
+}
+
+/** The classes a node is drawn with for what it is: `inherited` when the author did not write it. */
+export function nodeClasses(node: OutlineNode): Record<string, boolean> {
+  return { inherited: node.inherited === true };
+}
+
 /** A node's display label: its title, else its name, else its layer. */
 export function labelOf(node: OutlineNode): string {
   return node.title || node.name || (node.layer === 'root' ? 'document' : node.layer);

@@ -444,12 +444,14 @@ export function showPage(path: string): void {
   state.openOverlay = null;
 }
 
-/** Asks for `view`'s rows when they are due (`rowsDue`); a `draft.` view gets sample rows. */
+/** Asks for `view`'s rows when they are due (`rowsDue`); made-up rows are asked for again as the
+ *  document moves on. */
 export function requestRows(view: string | undefined): void {
   if (!view) return;
   pendingViews.add(view);
   const stamp = rowsStamp();
-  if (!rowsDue(view, !!state.rows[view], rowsAsked.get(view), stamp)) return;
+  const have = state.rows[view];
+  if (!rowsDue(view, !!have, rowsAsked.get(view), stamp, have?.sample === true)) return;
   if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsAsked.set(view, stamp);
 }
 

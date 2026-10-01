@@ -21,7 +21,7 @@ widgets:
     summary: Who is signed in
     arrange: row
     params:
-      staff: {type: Staff, required: true}
+      staff: {type: Staff, required: true, note: the signed-in staff row}
     body:
       - {name: name, primitive: text, text: args.staff.name}
       - {name: email, primitive: text, text: args.staff.email}

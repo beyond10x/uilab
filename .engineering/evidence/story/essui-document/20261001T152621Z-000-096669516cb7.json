@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T15:26:21Z",
+  "actor": "human:timo",
+  "artifact": "story:essui-document",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check steps on wave/2026-10-01-w9 at c0601b3: validate, drift, ui, widget 345 (344 pass, 1 todo), cargo test 42 suites 348 passed 0 failed, clippy, fmt; EXIT=0"
+  }
+}

@@ -9,7 +9,7 @@ use serde_json::json;
 use uilab_doc::{Child, Document, Layer, NodePath, Patch, admit, check, resolve};
 
 const DOC: &str = r#"
-format: ui-spec/1
+format: ess-ui/1
 app: library
 title: Lending library
 model: library
@@ -31,7 +31,7 @@ widgets:
   loan_card:
     summary: A loan as a card with an extend button.
     params:
-      loan: {type: Loan, required: true}
+      loan: {type: Loan, required: true, note: the loan row}
     body:
       - {name: title, primitive: text, text: args.loan.title}
       - {name: extend, primitive: button, label: Extend, action: {name: extend, opens: extend}}
@@ -42,7 +42,7 @@ widgets:
   opener:
     summary: A button that opens the overlay it is given.
     params:
-      target: {type: {ref: overlay}, required: true}
+      target: {type: {ref: overlay}, required: true, note: target param}
     body:
       - {name: go, primitive: button, label: Open, action: {name: go, opens: args.target}}
 pages:
@@ -50,14 +50,15 @@ pages:
     kind: dashboard_page
     title: Overview
     sections:
-      latest: {component: loan_card, args: {loan: rows.first}}
+      - {name: board, remove: true}
+      - {name: latest, component: loan_card, args: {loan: rows.first}}
     overlays:
       extend: {kind: dialog, component: record, reads: {view: loans.All}}
   members:
     kind: list_page
     title: Members
     sections:
-      list:
+      - name: list
         component: collection
         reads: {view: loans.All}
         item:
@@ -134,8 +135,8 @@ fn item(name: &str, node: serde_json::Value) -> Patch {
 #[test]
 fn an_opens_bound_through_args_is_checked_against_the_bound_overlay() {
     let text = DOC.replace(
-        "      latest: {component: loan_card, args: {loan: rows.first}}\n",
-        "      latest: {component: loan_card, args: {loan: rows.first}}\n      open_extend: {component: opener, args: {target: extend}}\n",
+        "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n",
+        "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n      - {name: open_extend, component: opener, args: {target: extend}}\n",
     );
     let doc = parse(&text);
     let found: Vec<_> = check(&doc)
@@ -190,56 +191,47 @@ fn a_widget_body_finding_path_parses_and_resolves_as_a_node_path() {
     }
 }
 
-/// Two widgets that contain each other (a `widget_recursion` document, which admit lets the
-/// operator keep editing elsewhere). `loop_b`'s body opens `nowhere` and holds `loop_a`;
-/// `loop_a`'s body holds `loop_b`. A use of `loop_a` on `members` carries `loop_b`'s button, as
-/// `a_recursive_widget_body_is_expanded_once` shows for the other order. Whether it is reported
-/// must not depend on whether a use of `loop_b` comes earlier in the document.
+/// Two widgets that contain each other. `loop_b`'s body opens `nowhere` and holds `loop_a`;
+/// `loop_a`'s body holds `loop_b`. Used nowhere, ESS reports the loop at both declarations
+/// (`widget_expands`); used anywhere, ESS refuses the document, whichever widget a page uses first
+/// or both; and an instance of `loop_a` cannot be admitted into a document where `loop_b`
+/// holds a placeholder for it and the patch closes the loop.
 #[test]
 fn a_recursive_widget_reached_first_inside_another_is_still_expanded_at_its_own_use() {
     let widgets = "  loop_a:\n    summary: Holds loop_b.\n    body:\n      - {name: b, component: loop_b}\n  loop_b:\n    summary: Holds loop_a and opens nowhere.\n    body:\n      - {name: go, primitive: button, label: Go, action: {name: go, opens: nowhere}}\n      - {name: a, component: loop_a}\n";
-    let alone = parse(&with_member_items(
-        &with_widgets(DOC, widgets),
+    // Used nowhere, the declarations load and ESS's checker reports the loop at both widgets.
+    let unused = parse(&with_widgets(DOC, widgets));
+    let expands: Vec<String> = check(&unused)
+        .into_iter()
+        .filter(|f| f.check == "widget_expands")
+        .map(|f| f.path)
+        .collect();
+    assert_eq!(expands, ["component:loop_a", "component:loop_b"]);
+    for uses in [
         "          - {name: la, component: loop_a}\n",
-    ));
-    assert_opens(
-        opens_found(&alone),
-        &[(
-            "page:members/section:list/item:la",
-            "widget `loop_a`, body `body/b/body/go`",
-        )],
-        "loop_a used alone",
-    );
-
-    let after_b = parse(&with_member_items(
-        &with_widgets(DOC, widgets),
         "          - {name: lb, component: loop_b}\n          - {name: la, component: loop_a}\n",
-    ));
-    assert_opens(
-        opens_found(&after_b),
-        &[
-            (
-                "page:members/section:list/item:lb",
-                "widget `loop_b`, body `body/go`",
-            ),
-            (
-                "page:members/section:list/item:la",
-                "widget `loop_a`, body `body/b/body/go`",
-            ),
-        ],
-        "loop_a used after loop_b",
-    );
-
-    let with_b = parse(&with_member_items(
-        &with_widgets(DOC, widgets),
         "          - {name: lb, component: loop_b}\n",
+    ] {
+        let text = with_member_items(&with_widgets(DOC, widgets), uses);
+        let refused = Document::from_yaml(&text).expect_err(uses);
+        assert!(
+            refused.message.contains("contains itself"),
+            "{uses}: {refused}"
+        );
+    }
+
+    let open = parse(&with_widgets(
+        DOC,
+        &widgets.replace(
+            "{name: a, component: loop_a}",
+            "{name: a, primitive: divider}",
+        ),
     ));
-    let admitted = admit(&with_b, &item("la", json!({"component": "loop_a"})));
-    assert!(
-        admitted.is_err(),
-        "an instance of loop_a, whose body carries loop_b's `opens: nowhere`, is admitted onto \
-         `members`"
-    );
+    let close = Patch::Replace {
+        target: path("component:loop_b/node:a"),
+        node: json!({"component": "loop_a"}),
+    };
+    assert_eq!(admit(&open, &close).unwrap_err().check, "widget_expands");
 }
 
 /// A document that already has an unresolved `opens` in a body at a use site: an unrelated insert
@@ -265,21 +257,22 @@ fn an_unresolved_body_opens_already_present_does_not_block_an_unrelated_insert()
 }
 
 /// path.rs: "keyed by name and never by position. Adding a sibling never changes an existing
-/// path." An instance in an unnamed header metric already carries an unresolved body `opens`.
+/// path." An instance in a header metric (named, as ess-ui/1 requires) already carries an
+/// unresolved body `opens`.
 /// A replace of the page that puts a clean metric in front of it brings no new unresolved
 /// `opens` onto the page, and is refused all the same, because the old error's path moved.
 #[test]
 fn a_clean_metric_added_in_front_of_a_broken_one_is_not_refused_for_the_old_error() {
     let text = DOC.replace(
         "    kind: list_page\n    title: Members\n",
-        "    kind: list_page\n    title: Members\n    header: {metrics: [{component: loan_card, args: {loan: rows.first}}]}\n",
+        "    kind: list_page\n    title: Members\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}]}\n",
     );
     let doc = parse(&text);
     assert_eq!(opens_at(&doc).len(), 1, "{:?}", opens_at(&doc));
     let mut page = serde_json::to_value(&doc.pages["members"]).unwrap();
     page["header"]["metrics"] = json!([
-        {"component": "helper"},
-        {"component": "loan_card", "args": {"loan": "rows.first"}},
+        {"name": "help", "component": "helper"},
+        {"name": "due", "component": "loan_card", "args": {"loan": "rows.first"}},
     ]);
     let replace = Patch::Replace {
         target: path("page:members"),
@@ -298,8 +291,8 @@ fn a_clean_metric_added_in_front_of_a_broken_one_is_not_refused_for_the_old_erro
 fn every_page_position_is_a_use_site_and_shell_or_batch_overlays_resolve() {
     let text = with_member_items(
         &DOC.replace(
-            "    sections:\n      list:\n",
-            "    sections:\n      board:\n        component: board\n        widgets:\n          top:\n            component: collection\n            reads: {view: loans.All}\n            item:\n              - {name: c, component: loan_card, args: {loan: row}}\n      list:\n",
+            "    sections:\n      - name: list\n",
+            "    sections:\n      - name: board\n        component: board\n        reads: {view: loans.All}\n        widgets:\n          top:\n            component: collection\n            reads: {view: loans.All}\n            item:\n              - {name: c, component: loan_card, args: {loan: row}}\n      - name: list\n",
         )
         .replace(
             "        item:\n          - {name: tag, primitive: badge, text: row.state}\n",
@@ -313,14 +306,17 @@ fn every_page_position_is_a_use_site_and_shell_or_batch_overlays_resolve() {
     assert_opens(
         found,
         &[
-            ("page:members/overlay:peek", "body `body/extend`"),
+            (
+                "page:members/overlay:peek",
+                "overlays/peek/body/extend/action`",
+            ),
             (
                 "page:members/section:board/widget:top/item:c",
-                "body `body/extend`",
+                "board/widgets/top/item/c/body/extend/action`",
             ),
             (
                 "page:members/section:list/item:pick",
-                "at `action/choice`, body `body/extend`",
+                "item/pick/action/choice/body/extend/action`",
             ),
         ],
         "every page position",

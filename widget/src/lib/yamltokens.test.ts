@@ -69,7 +69,7 @@ test('the tokens of a line spell the line exactly, for the whole example documen
   assert.equal(tokens.length, lines.length);
   tokens.forEach((line, i) => assert.equal(line.map((t) => t.text).join(''), lines[i], `line ${i + 1}`));
   assert.ok(ofKind(text, 'key').includes('placement_profile'));
-  assert.ok(ofKind(text, 'string').includes('ui-spec/1'));
+  assert.ok(ofKind(text, 'string').includes('ess-ui/1'));
 });
 
 test('lines split the way the view numbers them', () => {

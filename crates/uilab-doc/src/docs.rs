@@ -77,7 +77,7 @@ pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) 
         );
         let _ = writeln!(
             out,
-            "| section | component | reads | title |\n|---|---|---|---|"
+            "| section | component | reads | label |\n|---|---|---|---|"
         );
         for (section, composite) in page
             .sections
@@ -91,10 +91,10 @@ pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) 
                 composite
                     .reads
                     .as_ref()
-                    .map_or("-".to_owned(), |r| format!("`{}`", r.view)),
+                    .map_or("-".to_owned(), |r| format!("`{}`", r.name())),
                 composite
                     .props
-                    .get("title")
+                    .get("label")
                     .and_then(Value::as_str)
                     .unwrap_or("")
             );
@@ -146,21 +146,24 @@ pub fn docs_markdown(doc: &Document, fixtures: &Fixtures, findings: &[Finding]) 
     );
     let fields = fixtures.fields();
     let mut readers: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut placeholders: Vec<String> = Vec::new();
     for (path, composite) in &all {
         if let Some(reads) = &composite.reads {
             readers
-                .entry(reads.view.clone())
+                .entry(reads.name().to_owned())
                 .or_default()
                 .push(format!("`{path}`"));
+            if reads.is_placeholder() {
+                placeholders.push(reads.name().to_owned());
+            }
         }
     }
     for (view, by) in &readers {
-        let status = if view.starts_with(crate::model::DRAFT_VIEW_PREFIX) {
-            "draft: no model view yet"
-        } else if fixtures.has(view) {
-            "fixture"
-        } else {
-            "no fixture"
+        let status = match (placeholders.contains(view), fixtures.has(view)) {
+            (true, true) => "placeholder, answered by its fixture: no model view yet",
+            (true, false) => "placeholder, sample rows: no model view yet",
+            (false, true) => "fixture",
+            (false, false) => "no fixture",
         };
         let names = fields.get(view).map(|f| f.join(", ")).unwrap_or_default();
         let _ = writeln!(out, "| `{view}` | {status} | {names} | {} |", by.join(", "));
@@ -470,10 +473,12 @@ pub fn help_markdown() -> String {
          - **batch**: several of those checked together, when one instruction touches more than one \
          node (a drawer plus the row action that opens it)\n\n\
          Data comes from ESS views. When no view holds what you asked for, the agent reads a \
-         placeholder `draft.<Name>` view; the canvas fills it with sample rows and the findings list \
-         it until the model has the view.\n\n\
-         Every proposal is checked before you see it: names resolve, the menu lists every page, \
-         `opens` names an overlay that exists, columns name fields the view has. The proposal card \
+         placeholder (`reads: {{placeholder: <Name>, fixture: <file>}}`); the canvas shows the \
+         fixture's rows, or sample rows while the file does not exist, and the findings list the \
+         placeholder until the model has the view.\n\n\
+         Every proposal is checked by ESS's `ess-ui/1` checker before you see it: names resolve, \
+         the menu lists every page, `opens` names an overlay that exists, every widget expands; \
+         uilab adds that columns name fields the view has. The proposal card \
          lists only the findings the proposal brings: those the document did not have before it, \
          and what a replace would drop. The document's own findings stay in the sidebar."
     );

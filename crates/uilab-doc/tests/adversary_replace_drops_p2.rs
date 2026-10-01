@@ -52,13 +52,18 @@ fn drops(doc: &Document, patch: &Patch) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The library overview's `board`, which `dashboard_page` contributes and the overview removes.
+fn no_board() -> serde_json::Value {
+    json!({"name": "board", "remove": true})
+}
+
 fn on_loan() -> serde_json::Value {
-    json!({"component": "metric", "title": "Copies on loan",
+    json!({"name": "on_loan", "component": "metric", "label": "Copies on loan",
         "reads": {"view": "loans.Summary"}, "from": "on_loan"})
 }
 
 fn recent() -> serde_json::Value {
-    json!({"component": "collection", "title": "Recent loans",
+    json!({"name": "recent", "component": "collection",
         "reads": {"view": "loans.All", "params": {"size": 5}},
         "columns": [{"field": "title"}, {"field": "member"}, {"field": "due"}]})
 }
@@ -76,7 +81,7 @@ fn a_remove_then_a_replace_of_the_parent_does_not_blame_the_replace() {
             replace(
                 "page:overview",
                 json!({"kind": "dashboard_page", "title": "Overview",
-                    "sections": {"on_loan": on_loan()}}),
+                    "sections": [no_board(), on_loan()]}),
             ),
         ],
     );
@@ -94,7 +99,7 @@ fn a_replace_then_a_remove_of_its_child_does_not_blame_the_replace() {
             replace(
                 "page:overview",
                 json!({"kind": "dashboard_page", "title": "Home",
-                    "sections": {"on_loan": on_loan(), "recent": recent()}}),
+                    "sections": [no_board(), on_loan(), recent()]}),
             ),
             remove("page:overview/section:recent"),
         ],
@@ -139,14 +144,14 @@ fn the_same_target_replaced_twice_is_judged_once() {
         vec![
             replace(
                 "page:members/section:list",
-                json!({"component": "collection", "title": "All members",
+                json!({"component": "collection",
                     "reads": {"view": "members.All"},
                     "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"},
                         {"field": "standing", "as": "tag"}]}),
             ),
             replace(
                 "page:members/section:list",
-                json!({"component": "collection", "title": "All members",
+                json!({"component": "collection",
                     "reads": {"view": "members.All"}, "columns": [{"field": "name"}]}),
             ),
         ],
@@ -203,14 +208,14 @@ fn an_insert_then_a_replace_of_the_new_node_names_nothing() {
                 child: Child {
                     layer: Layer::Overlay,
                     name: "invite".into(),
-                    node: json!({"kind": "drawer", "component": "form", "title": "Invite",
+                    node: json!({"kind": "drawer", "component": "form", "title": "Invite", "does": "members.Invite",
                         "fields": ["name", "joined"]}),
                     nav_section: None,
                 },
             },
             replace(
                 "page:members/overlay:invite",
-                json!({"kind": "drawer", "component": "form", "title": "Invite",
+                json!({"kind": "drawer", "component": "form", "title": "Invite", "does": "members.Invite",
                     "fields": ["name"]}),
             ),
         ],

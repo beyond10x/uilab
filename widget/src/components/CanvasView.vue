@@ -2,7 +2,7 @@
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { accountChrome, canvasMode } from '../lib/canvasmode.ts';
-import { childrenOf, findNode, labelOf, navLayout, shellOf } from '../lib/outline.ts';
+import { childrenOf, findNode, labelOf, navLayout, nodeClasses, shellOf } from '../lib/outline.ts';
 import { activePage, marks, requestRows, select, shownOutline, showPage, state, tint } from '../store.ts';
 import CompositeView from './CompositeView.vue';
 
@@ -111,7 +111,7 @@ function openOverlay(o: OutlineNode): void {
       <button
         v-for="o in shellOverlays"
         :key="o.path"
-        :class="[preview ? 'chrome-region' : 'chip', 'node', marks(o.path)]" :style="tint(o.path)"
+        :class="[preview ? 'chrome-region' : 'chip', 'node', marks(o.path), nodeClasses(o)]" :style="tint(o.path)"
         @click.stop="openOverlay(o)"
       >
         <template v-if="!preview">▢ </template>{{ o.title || o.name }}
@@ -163,7 +163,7 @@ function openOverlay(o: OutlineNode): void {
             <button
               v-for="o in pageOverlays"
               :key="o.path"
-              :class="[preview ? 'chrome-region' : 'chip', 'node', marks(o.path)]" :style="tint(o.path)"
+              :class="[preview ? 'chrome-region' : 'chip', 'node', marks(o.path), nodeClasses(o)]" :style="tint(o.path)"
               @click.stop="openOverlay(o)"
             >
               <template v-if="preview">{{ o.title || o.name }}</template>

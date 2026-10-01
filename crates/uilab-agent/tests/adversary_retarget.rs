@@ -20,7 +20,7 @@ fn library_with_loan_card() -> Document {
     assert!(text.contains("\npages:\n"), "fixture anchor is missing");
     let text = text.replacen(
         "\npages:\n",
-        "\nwidgets:\n  loan_card:\n    summary: A loan as a card.\n    params:\n      loan: {type: Loan, required: true}\n    body:\n      - {name: title, primitive: text, text: args.loan.title, style: heading}\npages:\n",
+        "\nwidgets:\n  loan_card:\n    summary: A loan as a card.\n    params:\n      loan: {type: Loan, required: true, note: loan param}\n    body:\n      - {name: title, primitive: text, text: args.loan.title, style: heading}\npages:\n",
         1,
     );
     Document::from_yaml(&text).unwrap()
@@ -219,7 +219,7 @@ fn new_page_at_root() -> Value {
             "node": {
                 "kind": "list_page",
                 "title": "Overdue",
-                "sections": {"list": {"component": "collection", "reads": {"view": "loans.All"}}}
+                "sections": [{"name": "list", "component": "collection", "reads": {"view": "loans.All"}}]
             }
         }
     })
@@ -236,7 +236,7 @@ fn a_patch_outside_the_target_is_not_admitted_where_a_move_is_allowed() {
     let retitle = json!({
         "op": "replace",
         "target": "page:loans/section:list",
-        "node": {"component": "collection", "title": "Current loans", "reads": {"view": "loans.All"}}
+        "node": {"component": "collection", "reads": {"view": "loans.All"}}
     });
     let mut proposer = proposer(vec![new_page_at_root(), retitle]);
     let answer = proposer
@@ -263,7 +263,7 @@ fn the_re_ask_after_a_move_does_not_admit_a_patch_back_at_the_old_target() {
     let back_at_the_list = json!({
         "op": "replace",
         "target": "page:loans/section:list",
-        "node": {"component": "collection", "title": "Current loans", "reads": {"view": "loans.All"}}
+        "node": {"component": "collection", "reads": {"view": "loans.All"}}
     });
     let members: NodePath = "page:members".parse().unwrap();
     let at_members = json!({
@@ -272,7 +272,7 @@ fn the_re_ask_after_a_move_does_not_admit_a_patch_back_at_the_old_target() {
         "child": {
             "layer": "section",
             "name": "loans",
-            "node": {"component": "collection", "title": "Loans", "reads": {"view": "loans.All"}}
+            "node": {"component": "collection", "reads": {"view": "loans.All"}}
         }
     });
     let mut proposer = proposer(vec![back_at_the_list, at_members]);

@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
-// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
+// model digest d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13
+// contract digest 9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0
 // do not edit: regenerate with `ess synthesize`
 
 //! The `uilab-session` component of `uilab` v1, on the wire.
@@ -10,7 +10,7 @@
 //! projects for a command surface is the `OpenAPI` document, and an `OpenAPI` document is an
 //! HTTP contract. The document is beside this file, served verbatim at `/openapi.json`.
 
-use crate::{http, json, wire};
+use crate::{entry, http, json, wire};
 
 /// The contract this surface answers, byte for byte as `generated/` commits it.
 ///
@@ -49,7 +49,7 @@ pub const ROUTES: &[(&str, &str)] = &[
 /// Everything outside `runtime` is the same in every language this plan is emitted into, and
 /// `cargo xtask synth --check` starts both and compares them.
 pub const STARTUP: &[&str] = &[
-    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"uilab\",\"version\":\"v1\",\"model_digest\":\"823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24\",\"contract_digest\":\"1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9\",\"components\":[\"uilab-session\"],\"capabilities\":{\"generated\":64,\"obligations\":9,\"refused\":2}",
+    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"uilab\",\"version\":\"v1\",\"model_digest\":\"d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13\",\"contract_digest\":\"9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0\",\"components\":[\"uilab-session\"],\"capabilities\":{\"generated\":68,\"obligations\":5,\"refused\":2}",
     "{\"log\":\"ess/1\",\"event\":\"surface.serving\",\"component\":\"uilab-session\",\"reached_by\":\"network\",\"transport\":\"http/1.1\",\"routes\":11,\"paths\":[{\"method\":\"GET\",\"path\":\"/docs\",\"serves\":\"documentation\",\"name\":\"docs\"},{\"method\":\"GET\",\"path\":\"/openapi.json\",\"serves\":\"contract\",\"name\":\"openapi\"},{\"method\":\"POST\",\"path\":\"/session/commands/accept-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.AcceptProposal\"},{\"method\":\"POST\",\"path\":\"/session/commands/open-document\",\"serves\":\"command\",\"name\":\"uilab.session.OpenDocument\"},{\"method\":\"POST\",\"path\":\"/session/commands/propose-patch\",\"serves\":\"command\",\"name\":\"uilab.session.ProposePatch\"},{\"method\":\"POST\",\"path\":\"/session/commands/reject-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.RejectProposal\"},{\"method\":\"POST\",\"path\":\"/session/commands/select-node\",\"serves\":\"command\",\"name\":\"uilab.session.SelectNode\"},{\"method\":\"POST\",\"path\":\"/session/commands/undo-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.UndoProposal\"},{\"method\":\"GET\",\"path\":\"/session/views/documents\",\"serves\":\"view\",\"name\":\"uilab.session.Documents\"},{\"method\":\"GET\",\"path\":\"/session/views/pending\",\"serves\":\"view\",\"name\":\"uilab.session.Pending\"},{\"method\":\"GET\",\"path\":\"/session/views/proposals\",\"serves\":\"view\",\"name\":\"uilab.session.Proposals\"}]",
     "{\"log\":\"ess/1\",\"event\":\"system.ready\",\"system\":\"uilab\",\"surfaces\":1",
 ];
@@ -104,7 +104,10 @@ where
 /// path it holds under a different method is a `405` naming the one it answers. Neither is a
 /// status the contract declares, and neither should be: both are facts about a transport rather
 /// than about any command.
-fn dispatch<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, request: &http::Request) -> http::Response
+///
+/// Public so a caller can hand it a request it built itself: [`serve`] is this function behind a
+/// socket, and nothing else.
+pub fn dispatch<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, request: &http::Request) -> http::Response
 where
     UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
 {
@@ -161,25 +164,59 @@ where
             if request.method != "GET" {
                 return http::method_not_allowed("GET");
             }
-            serve_uilab_session_documents(system)
+            http::answer(run_uilab_session_documents(system))
         }
         "/session/views/pending" => {
             if request.method != "GET" {
                 return http::method_not_allowed("GET");
             }
-            serve_uilab_session_pending(system)
+            http::answer(run_uilab_session_pending(system))
         }
         "/session/views/proposals" => {
             if request.method != "GET" {
                 return http::method_not_allowed("GET");
             }
-            serve_uilab_session_proposals(system)
+            http::answer(run_uilab_session_proposals(system))
         }
         other => http::Response::refusal(
             404,
             &format!("`{other}` is not a path this surface declares; `GET /openapi.json` publishes every one that is"),
         ),
     }
+}
+
+/// Runs one command or view of `uilab-session` by its qualified name, with no transport.
+///
+/// The same decoding, refusals and rendering the HTTP routes use — each route and this function call
+/// one `run_*` function — so a conformance runner or an in-process caller drives the system
+/// without a socket and without a dispatch table of its own. `Ok` is the declared outcome, as the
+/// route's body renders it; a view ignores `input`, as its `GET` route ignores a body.
+///
+/// # Errors
+///
+/// [`entry::Refused::Unknown`] naming `name` when this surface declares no command or view
+/// by it; [`entry::Refused::Input`] when `input` is not the command's declared input (the
+/// route's `400`); [`entry::Refused::Unmet`] when the port reports an unmet obligation, and
+/// [`entry::Refused::Undelivered`] when the command took effect and delivering what it published
+/// failed (the route's `501`, with `committed` `false` and `true`).
+pub fn handle<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
+where
+    UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
+{
+    let answered = match name {
+        "uilab.session.AcceptProposal" => run_uilab_session_accept_proposal(system, &input),
+        "uilab.session.Documents" => run_uilab_session_documents(system),
+        "uilab.session.OpenDocument" => run_uilab_session_open_document(system, &input),
+        "uilab.session.Pending" => run_uilab_session_pending(system),
+        "uilab.session.Proposals" => run_uilab_session_proposals(system),
+        "uilab.session.ProposePatch" => run_uilab_session_propose_patch(system, &input),
+        "uilab.session.RejectProposal" => run_uilab_session_reject_proposal(system, &input),
+        "uilab.session.SelectNode" => run_uilab_session_select_node(system, &input),
+        "uilab.session.UndoProposal" => run_uilab_session_undo_proposal(system, &input),
+        other => return Err(entry::Refused::Unknown(other.to_owned())),
+    };
+    let (_, body) = answered?;
+    Ok(entry::read(&body))
 }
 
 /// `POST` `uilab.session.AcceptProposal`: reads the declared input, runs the port, answers the declared outcome.
@@ -199,33 +236,65 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_uilab_session_accept_proposal(&value, "body") {
+    http::answer(run_uilab_session_accept_proposal(system, &value))
+}
+
+/// `uilab.session.AcceptProposal` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_uilab_session_accept_proposal<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
+{
+    let input = match wire::decode_command_uilab_session_accept_proposal(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.uilab_session.accept_proposal(input) {
-        Ok(outcome) => answer_uilab_session_accept_proposal(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+    let outcome = match system.uilab_session.accept_proposal(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_uilab_session_accept_proposal(&outcome))
 }
 
-/// One declared outcome of `uilab.session.AcceptProposal`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_uilab_session_accept_proposal(outcome: &uilab_types::session::AcceptProposalOutcome) -> http::Response {
+/// One declared outcome of `uilab.session.AcceptProposal`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
+fn answer_uilab_session_accept_proposal(outcome: &uilab_types::session::AcceptProposalOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        uilab_types::session::AcceptProposalOutcome::Accepted { .. } => {
+        uilab_types::session::AcceptProposalOutcome::Accepted { proposal_accepted, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "accepted");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "uilab.session.ProposalAccepted");
+            json::member(&mut body, "payload");
+            wire::encode_event_uilab_session_proposal_accepted(proposal_accepted, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         uilab_types::session::AcceptProposalOutcome::Stale { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "stale");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.PatchRefused");
             json::member(&mut body, "payload");
@@ -235,6 +304,9 @@ fn answer_uilab_session_accept_proposal(outcome: &uilab_types::session::AcceptPr
         uilab_types::session::AcceptProposalOutcome::WrongState { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.ProposalStateConflict");
             json::member(&mut body, "payload");
@@ -244,13 +316,15 @@ fn answer_uilab_session_accept_proposal(outcome: &uilab_types::session::AcceptPr
         uilab_types::session::AcceptProposalOutcome::WrongStateUnknownInstance => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push_str("[]");
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.ProposalStateConflict");
             409
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `POST` `uilab.session.OpenDocument`: reads the declared input, runs the port, answers the declared outcome.
@@ -270,33 +344,65 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_uilab_session_open_document(&value, "body") {
+    http::answer(run_uilab_session_open_document(system, &value))
+}
+
+/// `uilab.session.OpenDocument` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_uilab_session_open_document<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
+{
+    let input = match wire::decode_command_uilab_session_open_document(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.uilab_session.open_document(input) {
-        Ok(outcome) => answer_uilab_session_open_document(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+    let outcome = match system.uilab_session.open_document(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_uilab_session_open_document(&outcome))
 }
 
-/// One declared outcome of `uilab.session.OpenDocument`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_uilab_session_open_document(outcome: &uilab_types::session::OpenDocumentOutcome) -> http::Response {
+/// One declared outcome of `uilab.session.OpenDocument`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
+fn answer_uilab_session_open_document(outcome: &uilab_types::session::OpenDocumentOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        uilab_types::session::OpenDocumentOutcome::Opened { .. } => {
+        uilab_types::session::OpenDocumentOutcome::Opened { document_opened, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "opened");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "uilab.session.DocumentOpened");
+            json::member(&mut body, "payload");
+            wire::encode_event_uilab_session_document_opened(document_opened, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         uilab_types::session::OpenDocumentOutcome::Unreadable { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "unreadable");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.DocumentUnreadable");
             json::member(&mut body, "payload");
@@ -305,7 +411,7 @@ fn answer_uilab_session_open_document(outcome: &uilab_types::session::OpenDocume
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `POST` `uilab.session.ProposePatch`: reads the declared input, runs the port, answers the declared outcome.
@@ -325,33 +431,65 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_uilab_session_propose_patch(&value, "body") {
+    http::answer(run_uilab_session_propose_patch(system, &value))
+}
+
+/// `uilab.session.ProposePatch` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_uilab_session_propose_patch<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
+{
+    let input = match wire::decode_command_uilab_session_propose_patch(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.uilab_session.propose_patch(input) {
-        Ok(outcome) => answer_uilab_session_propose_patch(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+    let outcome = match system.uilab_session.propose_patch(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_uilab_session_propose_patch(&outcome))
 }
 
-/// One declared outcome of `uilab.session.ProposePatch`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_uilab_session_propose_patch(outcome: &uilab_types::session::ProposePatchOutcome) -> http::Response {
+/// One declared outcome of `uilab.session.ProposePatch`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
+fn answer_uilab_session_propose_patch(outcome: &uilab_types::session::ProposePatchOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        uilab_types::session::ProposePatchOutcome::Proposed { .. } => {
+        uilab_types::session::ProposePatchOutcome::Proposed { patch_proposed, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "proposed");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "uilab.session.PatchProposed");
+            json::member(&mut body, "payload");
+            wire::encode_event_uilab_session_patch_proposed(patch_proposed, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         uilab_types::session::ProposePatchOutcome::Refused { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "refused");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.PatchRefused");
             json::member(&mut body, "payload");
@@ -360,7 +498,7 @@ fn answer_uilab_session_propose_patch(outcome: &uilab_types::session::ProposePat
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `POST` `uilab.session.RejectProposal`: reads the declared input, runs the port, answers the declared outcome.
@@ -380,33 +518,65 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_uilab_session_reject_proposal(&value, "body") {
+    http::answer(run_uilab_session_reject_proposal(system, &value))
+}
+
+/// `uilab.session.RejectProposal` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_uilab_session_reject_proposal<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
+{
+    let input = match wire::decode_command_uilab_session_reject_proposal(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.uilab_session.reject_proposal(input) {
-        Ok(outcome) => answer_uilab_session_reject_proposal(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+    let outcome = match system.uilab_session.reject_proposal(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_uilab_session_reject_proposal(&outcome))
 }
 
-/// One declared outcome of `uilab.session.RejectProposal`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_uilab_session_reject_proposal(outcome: &uilab_types::session::RejectProposalOutcome) -> http::Response {
+/// One declared outcome of `uilab.session.RejectProposal`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
+fn answer_uilab_session_reject_proposal(outcome: &uilab_types::session::RejectProposalOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        uilab_types::session::RejectProposalOutcome::Rejected { .. } => {
+        uilab_types::session::RejectProposalOutcome::Rejected { proposal_rejected, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "rejected");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "uilab.session.ProposalRejected");
+            json::member(&mut body, "payload");
+            wire::encode_event_uilab_session_proposal_rejected(proposal_rejected, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         uilab_types::session::RejectProposalOutcome::WrongState { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.ProposalStateConflict");
             json::member(&mut body, "payload");
@@ -416,13 +586,15 @@ fn answer_uilab_session_reject_proposal(outcome: &uilab_types::session::RejectPr
         uilab_types::session::RejectProposalOutcome::WrongStateUnknownInstance => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push_str("[]");
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.ProposalStateConflict");
             409
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `POST` `uilab.session.SelectNode`: reads the declared input, runs the port, answers the declared outcome.
@@ -442,33 +614,65 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_uilab_session_select_node(&value, "body") {
+    http::answer(run_uilab_session_select_node(system, &value))
+}
+
+/// `uilab.session.SelectNode` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_uilab_session_select_node<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
+{
+    let input = match wire::decode_command_uilab_session_select_node(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.uilab_session.select_node(input) {
-        Ok(outcome) => answer_uilab_session_select_node(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+    let outcome = match system.uilab_session.select_node(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_uilab_session_select_node(&outcome))
 }
 
-/// One declared outcome of `uilab.session.SelectNode`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_uilab_session_select_node(outcome: &uilab_types::session::SelectNodeOutcome) -> http::Response {
+/// One declared outcome of `uilab.session.SelectNode`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
+fn answer_uilab_session_select_node(outcome: &uilab_types::session::SelectNodeOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        uilab_types::session::SelectNodeOutcome::Selected { .. } => {
+        uilab_types::session::SelectNodeOutcome::Selected { node_selected, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "selected");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "uilab.session.NodeSelected");
+            json::member(&mut body, "payload");
+            wire::encode_event_uilab_session_node_selected(node_selected, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         uilab_types::session::SelectNodeOutcome::UnknownDocument { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "unknown-document");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.DocumentNotOpen");
             json::member(&mut body, "payload");
@@ -478,6 +682,9 @@ fn answer_uilab_session_select_node(outcome: &uilab_types::session::SelectNodeOu
         uilab_types::session::SelectNodeOutcome::NotFound { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "not-found");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.NodeNotFound");
             json::member(&mut body, "payload");
@@ -486,7 +693,7 @@ fn answer_uilab_session_select_node(outcome: &uilab_types::session::SelectNodeOu
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `POST` `uilab.session.UndoProposal`: reads the declared input, runs the port, answers the declared outcome.
@@ -506,33 +713,65 @@ where
             return http::Response::refusal(400, &format!("the body is not JSON: {error}"));
         }
     };
-    let input = match wire::decode_command_uilab_session_undo_proposal(&value, "body") {
+    http::answer(run_uilab_session_undo_proposal(system, &value))
+}
+
+/// `uilab.session.UndoProposal` from its input as a JSON value: decode, run the port, render the declared outcome.
+///
+/// The one path the `POST` route and [`handle`] share. A decoding failure is located under
+/// `body`, as the route reports it.
+fn run_uilab_session_undo_proposal<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, value: &json::Value) -> Result<(u16, String), entry::Refused>
+where
+    UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
+{
+    let input = match wire::decode_command_uilab_session_undo_proposal(value, "body") {
         Ok(input) => input,
         Err(error) => {
             // `400` and not `422`: this is a body the schema decides, which is the difference
             // between fixing a value and fixing a serialiser.
-            return http::Response::refusal(400, &format!("{error}"));
+            return Err(entry::Refused::Input(format!("{error}")));
         }
     };
-    match system.uilab_session.undo_proposal(input) {
-        Ok(outcome) => answer_uilab_session_undo_proposal(&outcome),
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+    let outcome = match system.uilab_session.undo_proposal(input) {
+        Ok(outcome) => outcome,
+        Err(unmet) => return Err(entry::Refused::Unmet(format!("{unmet}"))),
+    };
+    // Deliver what this command published to every binding that reacts to it, then take it
+    // off the log: a long-running server keeps nothing from one request to the next.
+    let delivered = system.pump();
+    let _ = system.take_published();
+    if let Err(failure) = delivered {
+        return Err(entry::Refused::Undelivered(format!("delivering what the command published: {failure}")));
     }
+    Ok(answer_uilab_session_undo_proposal(&outcome))
 }
 
-/// One declared outcome of `uilab.session.UndoProposal`, as the contract publishes it: the branch that was taken,
-/// the declared error where there is one, and that error's own payload.
-fn answer_uilab_session_undo_proposal(outcome: &uilab_types::session::UndoProposalOutcome) -> http::Response {
+/// One declared outcome of `uilab.session.UndoProposal`: the branch that was taken, every event it published in
+/// publication order, the declared error where there is one, and that error's own payload —
+/// with the status the contract declares for that branch.
+fn answer_uilab_session_undo_proposal(outcome: &uilab_types::session::UndoProposalOutcome) -> (u16, String) {
     let mut body = String::from("{");
     let status = match outcome {
-        uilab_types::session::UndoProposalOutcome::Undone { .. } => {
+        uilab_types::session::UndoProposalOutcome::Undone { proposal_undone, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "undone");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push('{');
+            json::member(&mut body, "event");
+            json::push_text(&mut body, "uilab.session.ProposalUndone");
+            json::member(&mut body, "payload");
+            wire::encode_event_uilab_session_proposal_undone(proposal_undone, &mut body);
+            body.push('}');
+            body.push(']');
             202
         }
         uilab_types::session::UndoProposalOutcome::Stale { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "stale");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.PatchRefused");
             json::member(&mut body, "payload");
@@ -542,6 +781,9 @@ fn answer_uilab_session_undo_proposal(outcome: &uilab_types::session::UndoPropos
         uilab_types::session::UndoProposalOutcome::WrongState { error, .. } => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push('[');
+            body.push(']');
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.ProposalStateConflict");
             json::member(&mut body, "payload");
@@ -551,17 +793,21 @@ fn answer_uilab_session_undo_proposal(outcome: &uilab_types::session::UndoPropos
         uilab_types::session::UndoProposalOutcome::WrongStateUnknownInstance => {
             json::member(&mut body, "outcome");
             json::push_text(&mut body, "wrong-state");
+            json::member(&mut body, "published");
+            body.push_str("[]");
             json::member(&mut body, "error");
             json::push_text(&mut body, "uilab.session.ProposalStateConflict");
             409
         }
     };
     body.push('}');
-    http::Response::new(status, http::JSON, body)
+    (status, body)
 }
 
 /// `GET` `uilab.session.Documents` at `read_your_writes` consistency: every row the owed projection holds.
-fn serve_uilab_session_documents<UilabSessionBehaviors>(system: &uilab_system::System<UilabSessionBehaviors>) -> http::Response
+///
+/// The one path the `GET` route and [`handle`] share.
+fn run_uilab_session_documents<UilabSessionBehaviors>(system: &uilab_system::System<UilabSessionBehaviors>) -> Result<(u16, String), entry::Refused>
 where
     UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
 {
@@ -578,14 +824,16 @@ where
             }
             body.push(']');
             body.push('}');
-            http::Response::new(200, http::JSON, body)
+            Ok((200, body))
         }
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
     }
 }
 
 /// `GET` `uilab.session.Pending` at `read_your_writes` consistency: every row the owed projection holds.
-fn serve_uilab_session_pending<UilabSessionBehaviors>(system: &uilab_system::System<UilabSessionBehaviors>) -> http::Response
+///
+/// The one path the `GET` route and [`handle`] share.
+fn run_uilab_session_pending<UilabSessionBehaviors>(system: &uilab_system::System<UilabSessionBehaviors>) -> Result<(u16, String), entry::Refused>
 where
     UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
 {
@@ -602,14 +850,16 @@ where
             }
             body.push(']');
             body.push('}');
-            http::Response::new(200, http::JSON, body)
+            Ok((200, body))
         }
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
     }
 }
 
 /// `GET` `uilab.session.Proposals` at `read_your_writes` consistency: every row the owed projection holds.
-fn serve_uilab_session_proposals<UilabSessionBehaviors>(system: &uilab_system::System<UilabSessionBehaviors>) -> http::Response
+///
+/// The one path the `GET` route and [`handle`] share.
+fn run_uilab_session_proposals<UilabSessionBehaviors>(system: &uilab_system::System<UilabSessionBehaviors>) -> Result<(u16, String), entry::Refused>
 where
     UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
 {
@@ -626,8 +876,8 @@ where
             }
             body.push(']');
             body.push('}');
-            http::Response::new(200, http::JSON, body)
+            Ok((200, body))
         }
-        Err(unmet) => http::Response::refusal(501, &format!("{unmet}")),
+        Err(unmet) => Err(entry::Refused::Unmet(format!("{unmet}"))),
     }
 }

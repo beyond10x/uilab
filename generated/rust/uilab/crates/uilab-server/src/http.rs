@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
-// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
+// model digest d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13
+// contract digest 9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0
 // do not edit: regenerate with `ess synthesize`
 
 //! HTTP/1.1, as much of it as a synthesised surface needs and no more.
@@ -23,6 +23,13 @@ use std::io::{BufRead, Read, Write};
 /// can describe.
 pub const MAX_BODY: usize = 1_048_576;
 
+/// The most headers this surface keeps from one request.
+///
+/// Every header is kept for the caller ([`Request::headers`]), so a request that sent headers
+/// without end would be memory without end. A hundred is far past what a client and a proxy add
+/// together.
+pub const MAX_HEADERS: usize = 100;
+
 /// The media type every answer derived from the model carries.
 pub const JSON: &str = "application/json";
 
@@ -43,6 +50,12 @@ pub struct Request {
     /// dropped rather than refused, because a caller that appends one has not made a different
     /// request.
     pub path: String,
+    /// Every header, in the order it arrived: the name lower-cased, the value trimmed.
+    ///
+    /// Kept for the caller rather than read here: the model declares no header, so routing never
+    /// looks at one, and a shell that authenticates the caller before a surface's `dispatch`
+    /// reads `authorization` from this list. A name that arrives twice is kept twice.
+    pub headers: Vec<(String, String)>,
     /// The body: exactly the `Content-Length` bytes the caller announced.
     pub body: Vec<u8>,
 }
@@ -81,6 +94,44 @@ impl Response {
         crate::json::push_text(&mut body, detail);
         body.push('}');
         Self::new(status, JSON, body)
+    }
+
+    /// The `501` the contract declares: the realization is unfinished.
+    ///
+    /// Its body is [`Response::refusal`]'s with one more member, `committed`: `true` when the
+    /// command's effect and events were committed and delivering what it published failed, and
+    /// `false` when an unmet obligation stopped it before anything was written.
+    pub fn unfinished(detail: &str, committed: bool) -> Self {
+        let mut body = String::from("{");
+        crate::json::member(&mut body, "refused");
+        crate::json::push_text(&mut body, detail);
+        crate::json::member(&mut body, "committed");
+        body.push_str(if committed { "true" } else { "false" });
+        body.push('}');
+        Self::new(501, JSON, body)
+    }
+}
+
+/// The answer for what a construct's shared path produced: the declared outcome at the status
+/// the contract declares for its branch, or the refusal at the status this surface gives it.
+///
+/// The one place a [`crate::entry::Refused`] becomes a status, so a route and `handle` refuse
+/// with the same words.
+pub fn answer(result: Result<(u16, String), crate::entry::Refused>) -> Response {
+    match result {
+        Ok((status, body)) => Response::new(status, JSON, body),
+        Err(refused) => Response::from(&refused),
+    }
+}
+
+impl From<&crate::entry::Refused> for Response {
+    /// The refusal as served: at [`crate::entry::Refused::status`], and for a `501` with the
+    /// `committed` member the contract declares.
+    fn from(refused: &crate::entry::Refused) -> Self {
+        match refused.status() {
+            501 => Self::unfinished(&refused.to_string(), refused.committed()),
+            status => Self::refusal(status, &refused.to_string()),
+        }
     }
 }
 
@@ -133,6 +184,7 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
 
     let mut length = 0_usize;
     let mut chunked = false;
+    let mut headers = Vec::new();
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
@@ -172,6 +224,16 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
         } else if name == "transfer-encoding" && value.eq_ignore_ascii_case("chunked") {
             chunked = true;
         }
+        if headers.len() == MAX_HEADERS {
+            return Err(Response::refusal(
+                431,
+                &format!(
+                    "the request carries more than {MAX_HEADERS} headers, which is all this \
+                     surface keeps"
+                ),
+            ));
+        }
+        headers.push((name, value.to_owned()));
     }
     if chunked {
         return Err(Response::refusal(
@@ -192,7 +254,12 @@ pub fn read(reader: &mut std::io::BufReader<std::net::TcpStream>) -> Result<Requ
             &format!("the body was shorter than `Content-Length` announced: {error}"),
         ));
     }
-    Ok(Request { method, path, body })
+    Ok(Request {
+        method,
+        path,
+        headers,
+        body,
+    })
 }
 
 /// Writes one answer, and lets the connection close behind it.
@@ -228,6 +295,7 @@ pub fn reason(status: u16) -> &'static str {
         411 => "Length Required",
         413 => "Content Too Large",
         422 => "Unprocessable Content",
+        431 => "Request Header Fields Too Large",
         501 => "Not Implemented",
         502 => "Bad Gateway",
         _ => "Unknown",

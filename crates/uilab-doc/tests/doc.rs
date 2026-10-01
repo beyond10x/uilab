@@ -22,12 +22,12 @@ fn examples() -> PathBuf {
 
 fn library() -> Document {
     let text = std::fs::read_to_string(examples().join("library/library.ui.yaml")).unwrap();
-    Document::from_yaml(&text).unwrap()
+    Document::from_yaml_in(&text, &examples().join("library")).unwrap()
 }
 
 fn empty() -> Document {
     let text = std::fs::read_to_string(examples().join("empty.ui.yaml")).unwrap();
-    Document::from_yaml(&text).unwrap()
+    Document::from_yaml_in(&text, &examples()).unwrap()
 }
 
 fn path(text: &str) -> NodePath {
@@ -36,6 +36,15 @@ fn path(text: &str) -> NodePath {
 
 fn ids(doc: &Document) -> Vec<&'static str> {
     check(doc).iter().map(|f| f.check).collect()
+}
+
+/// ESS's findings on a document text uilab cannot open, as (check, ESS path).
+fn ess_findings(text: &str) -> Vec<(String, String)> {
+    uilab_doc::ess_ui_check::check_source(text, "case", Path::new("."), None, &Default::default())
+        .findings
+        .into_iter()
+        .map(|f| (f.check.to_string(), f.path.to_string()))
+        .collect()
 }
 
 #[test]
@@ -51,8 +60,8 @@ fn examples_pass_every_check_and_round_trip() {
 fn round_trip_keeps_section_order_and_untyped_props() {
     let doc = library();
     let yaml = doc.to_yaml().unwrap();
-    let on_loan = yaml.find("on_loan:").unwrap();
-    let recent = yaml.find("recent:").unwrap();
+    let on_loan = yaml.find("name: on_loan").unwrap();
+    let recent = yaml.find("name: recent").unwrap();
     assert!(on_loan < recent, "section order is layout order");
     assert!(yaml.contains("row_actions"), "an untyped prop survives");
     assert!(yaml.contains("size: 5"), "a number is written as a number");
@@ -118,13 +127,21 @@ fn patch_schema_offers_only_what_the_node_can_take() {
     let page = patch_schema(&doc, &path("page:loans")).unwrap();
     assert_eq!(layers(page), ["section", "overlay"]);
 
+    // A collection section holds `item` nodes, and as a section, `children` (ESS's schema).
     let collection = patch_schema(&doc, &path("page:loans/section:list")).unwrap();
-    assert_eq!(layers(collection.clone()), ["item"]);
+    assert_eq!(layers(collection.clone()), ["item", "child"]);
 
+    // A metric section holds only its `children`, a form overlay its `parts`; a primitive item
+    // holds nothing.
     let metric = patch_schema(&doc, &path("page:overview/section:on_loan")).unwrap();
-    assert!(metric["properties"].get("child").is_none());
+    assert_eq!(layers(metric), ["child"]);
+    let form = patch_schema(&doc, &path("page:loans/overlay:edit")).unwrap();
+    assert_eq!(layers(form), ["part"]);
+    let items = with_item(ITEM_LIST);
+    let cover = patch_schema(&items, &path("page:overview/section:list/item:cover")).unwrap();
+    assert!(cover["properties"].get("child").is_none());
     assert_eq!(
-        metric["properties"]["op"]["enum"],
+        cover["properties"]["op"]["enum"],
         json!(["replace", "remove", "batch", "decline"])
     );
 
@@ -190,7 +207,7 @@ fn admit_refuses_by_check_id() {
             target: path("page:loans/section:list"),
             node: json!({"component": "carousel"})
         }),
-        "node_shape"
+        "widget_expands"
     );
     assert_eq!(
         refused(Patch::Remove {
@@ -214,7 +231,7 @@ fn admit_accepts_a_page_and_lists_it() {
         child: Child {
             layer: Layer::Page,
             name: "books".into(),
-            node: json!({"kind": "list_page", "title": "Books", "sections": {"list": {"component": "collection", "reads": {"view": "draft.Books"}}}}),
+            node: json!({"kind": "list_page", "title": "Books", "sections": [{"name": "list", "component": "collection", "reads": {"placeholder": "books.All", "fixture": "fixtures/books.yaml"}}]}),
             nav_section: None,
         },
     };
@@ -225,7 +242,7 @@ fn admit_accepts_a_page_and_lists_it() {
             .iter()
             .map(|f| (f.check, f.severity))
             .collect::<Vec<_>>(),
-        [("draft_read", Severity::Warning)]
+        [("unbound_placeholder", Severity::Warning)]
     );
 
     let removed = admit(
@@ -244,17 +261,24 @@ fn admit_accepts_a_page_and_lists_it() {
 
 type Breaks = Box<dyn Fn(&mut Document)>;
 
-/// One broken document per check id: every check can fail.
+/// One broken document per check uilab ran before it read ess-ui/1: each still fails, under the
+/// check uilab still runs or under ESS's check for it; every check uilab runs can fail.
 #[test]
 fn every_check_fails_on_its_own_fixture() {
     let base = library();
-    let broken: Vec<(&str, Breaks)> = vec![
-        ("format_marker", Box::new(|d| d.format = "ui-spec/0".into())),
+    let broken: Vec<(&str, &str, Breaks)> = vec![
         (
+            "format_marker",
+            "document_loads",
+            Box::new(|d| d.format = "ui-spec/0".into()),
+        ),
+        (
+            "nav_resolves",
             "nav_resolves",
             Box::new(|d| d.navigation.home = "nowhere".into()),
         ),
         (
+            "page_reachable",
             "page_reachable",
             Box::new(|d| {
                 d.navigation.sections[1].pages = uilab_doc::model::NavPages::Fixed(vec![])
@@ -262,17 +286,21 @@ fn every_check_fails_on_its_own_fixture() {
         ),
         (
             "nav_unique",
+            "nav_unique",
             Box::new(|d| d.navigation.hidden.push("loans".into())),
         ),
         (
+            "shell_refs",
             "shell_refs",
             Box::new(|d| d.pages["loans"].shell = Some("print".into())),
         ),
         (
             "page_kind_known",
+            "document_loads",
             Box::new(|d| d.pages["loans"].kind = "wizard_page".into()),
         ),
         (
+            "page_outlet",
             "page_outlet",
             Box::new(|d| {
                 d.shells["app"].regions.shift_remove("main");
@@ -280,49 +308,52 @@ fn every_check_fails_on_its_own_fixture() {
         ),
         (
             "opens_resolves",
+            "opens_resolves",
             Box::new(|d| {
                 d.pages["loans"].overlays.shift_remove("edit");
             }),
         ),
         (
             "section_refs",
+            "section_refs",
             Box::new(|d| {
                 let list = d.pages["loans"].sections["list"].as_mut().unwrap();
-                list.props.insert("depends_on".into(), json!("filters"));
+                list.props.insert("depends_on".into(), json!("nowhere"));
             }),
         ),
         (
             "fixture_per_view",
+            "fixture_per_view",
             Box::new(|d| {
-                d.fixtures
-                    .as_mut()
-                    .unwrap()
-                    .views
-                    .shift_remove("members.All");
+                let list = d.pages["members"].sections["list"].as_mut().unwrap();
+                list.reads.as_mut().unwrap().view = Some("members.Unknown".into());
             }),
         ),
         (
             "draft_read",
+            "unbound_placeholder",
             Box::new(|d| {
-                d.pages["members"].sections["list"]
+                *d.pages["members"].sections["list"]
                     .as_mut()
                     .unwrap()
                     .reads
                     .as_mut()
-                    .unwrap()
-                    .view = "draft.Members".into();
+                    .unwrap() = serde_json::from_value(
+                    json!({"placeholder": "members.All", "fixture": "fixtures/members.yaml"}),
+                )
+                .unwrap();
             }),
         ),
         (
             "unmapped_reported",
+            "unmapped_reported",
             Box::new(|d| {
-                d.pages["loans"]
-                    .extra
-                    .insert("note".into(), json!("UNMAPPED: nobody said"));
+                d.pages["loans"].title = Some("UNMAPPED: nobody said".into());
             }),
         ),
         (
             "widget_named_like_builtin",
+            "widget_expands",
             Box::new(|d| {
                 d.widgets
                     .insert("chart".into(), widget("{summary: s, body: []}"));
@@ -330,10 +361,11 @@ fn every_check_fails_on_its_own_fixture() {
         ),
         (
             "widget_args",
+            "widget_expands",
             Box::new(|d| {
                 d.widgets.insert(
                     "w".into(),
-                    widget("{summary: s, params: {p: {type: string, required: true}}, body: []}"),
+                    widget("{summary: s, params: {p: {type: string, required: true, note: n}}, body: []}"),
                 );
                 d.pages["overview"]
                     .sections
@@ -342,6 +374,7 @@ fn every_check_fails_on_its_own_fixture() {
         ),
         (
             "widget_recursion",
+            "widget_expands",
             Box::new(|d| {
                 d.widgets.insert(
                     "w".into(),
@@ -351,6 +384,7 @@ fn every_check_fails_on_its_own_fixture() {
         ),
         (
             "widget_resolves",
+            "widget_expands",
             Box::new(|d| {
                 d.pages["overview"].sections.insert(
                     "card".into(),
@@ -359,6 +393,7 @@ fn every_check_fails_on_its_own_fixture() {
             }),
         ),
         (
+            "names_unique",
             "names_unique",
             Box::new(|d| {
                 d.pages["overview"].sections.insert(
@@ -380,15 +415,26 @@ fn every_check_fails_on_its_own_fixture() {
                 "columns": [{"field": "name"}]}),
         },
     )];
-    assert_eq!(broken.len() + patched.len(), CHECKS.len());
-    for (id, breaks) in &broken {
+    assert_eq!(broken.len() + patched.len(), 18, "the 18 checks uilab ran");
+    for (_, id, _) in &broken {
+        let ours = CHECKS.iter().any(|(c, _, _)| c == id);
+        let ess = uilab_doc::ess_ui_check::CHECKS.iter().any(|c| c.id == *id);
+        assert!(ours != ess, "{id} is a check of uilab or of ESS, not both");
+    }
+    for (id, _, _) in CHECKS {
         assert!(
-            CHECKS.iter().any(|(c, _, _)| c == id),
-            "{id} is not a declared check"
+            broken.iter().any(|(_, now, _)| *now == id) || patched.iter().any(|(c, _)| *c == id),
+            "{id} has a fixture"
         );
+    }
+    for (was, id, breaks) in &broken {
         let mut doc = base.clone();
         breaks(&mut doc);
-        assert!(ids(&doc).contains(id), "{id} did not fire: {:?}", ids(&doc));
+        assert!(
+            ids(&doc).contains(id),
+            "{was}: {id} did not fire: {:?}",
+            ids(&doc)
+        );
     }
     for (id, patch) in &patched {
         assert!(
@@ -412,7 +458,7 @@ fn fixtures_answer_rows_and_drafts_answer_none() {
     assert_eq!(fixtures.rows("loans.All").rows.len(), 4);
     assert_eq!(fixtures.rows("loans.All").total, Some(4));
     assert_eq!(fixtures.rows("members.All").rows.len(), 3);
-    assert!(fixtures.rows("draft.Anything").rows.is_empty());
+    assert!(fixtures.rows("loans.Anything").rows.is_empty());
 }
 
 #[test]
@@ -420,7 +466,11 @@ fn context_names_what_can_go_here() {
     let doc = library();
     let context = node_context(&doc, &path("page:loans")).unwrap();
     assert_eq!(context.allowed_children, [Layer::Section, Layer::Overlay]);
-    assert_eq!(context.composite_kinds.len(), 14);
+    assert_eq!(
+        context.composite_kinds.len(),
+        12,
+        "the members of ESS's composite union"
+    );
     assert_eq!(context.children, ["section:list", "overlay:edit"]);
     assert_eq!(context.ancestors, ["/ (document)"]);
     let tree = outline(&doc);
@@ -449,7 +499,7 @@ fn columns_that_name_no_fixture_field_are_warned() {
     );
     assert!(uilab_doc::field_findings(&doc, &fixtures).is_empty());
     let list = doc.pages["members"].sections["list"].as_mut().unwrap();
-    list.reads.as_mut().unwrap().view = "loans.All".into();
+    list.reads.as_mut().unwrap().view = Some("loans.All".into());
     let found = uilab_doc::field_findings(&doc, &fixtures);
     let named: Vec<&str> = found
         .iter()
@@ -480,7 +530,7 @@ fn a_batch_admits_what_its_parts_cannot_alone() {
         child: Child {
             layer: Layer::Overlay,
             name: "edit_member".into(),
-            node: json!({"kind": "drawer", "component": "form", "fields": ["name"]}),
+            node: json!({"kind": "drawer", "component": "form", "does": "members.EditMember", "fields": ["name"]}),
             nav_section: None,
         },
     };
@@ -508,11 +558,18 @@ fn draft_views_get_sample_rows_shaped_by_their_readers() {
     let chart = uilab_doc::model::Composite {
         component: uilab_doc::model::CompositeKind::Chart.into(),
         reads: Some(uilab_doc::model::Reads {
-            view: "draft.LoansPerMonth".into(),
+            view: None,
+            placeholder: Some("loans.LoansPerMonth".into()),
+            fixture: Some("fixtures/loans_per_month.yaml".into()),
             extra: Default::default(),
+            shorthand: false,
         }),
         widgets: Default::default(),
         item: Default::default(),
+        parts: Default::default(),
+        choices: Default::default(),
+        toolbar: Default::default(),
+        children: Default::default(),
         props: [
             ("x".to_owned(), json!("month")),
             ("series".to_owned(), json!([{"field": "loans"}])),
@@ -523,12 +580,12 @@ fn draft_views_get_sample_rows_shaped_by_their_readers() {
     doc.pages["overview"]
         .sections
         .insert("trend".into(), Some(chart));
-    let rows = uilab_doc::sample_rows(&doc, "draft.LoansPerMonth");
+    let rows = uilab_doc::sample_rows(&doc, "loans.LoansPerMonth");
     assert_eq!(rows.len(), 5);
     assert_eq!(rows[0]["month"], json!("2026-05"));
     assert!(rows[0]["loans"].is_number());
     assert_eq!(
-        uilab_doc::sample_rows(&doc, "draft.Nothing")[0]["name"],
+        uilab_doc::sample_rows(&doc, "loans.Nothing")[0]["name"],
         json!("name 1")
     );
 }
@@ -640,7 +697,7 @@ fn a_patch_that_changes_nothing_is_refused() {
 /// A lending-library document that declares two widgets and uses one in every place a composite
 /// can go: a section, a board widget, a collection item, a page overlay and a shell overlay.
 const WIDGETS: &str = r#"
-format: ui-spec/1
+format: ess-ui/1
 app: library
 title: Lending library
 model: library
@@ -675,7 +732,7 @@ widgets:
   state_badge:
     summary: A loan state as a toned badge.
     params:
-      state: {type: string, required: true}
+      state: {type: string, required: true, note: state param}
     arrange: row
     body:
       - {name: badge, primitive: badge, text: args.state, tone_by: {value: args.state, map: {overdue: danger, out: info}}}
@@ -684,20 +741,20 @@ pages:
     kind: dashboard_page
     title: Overview
     sections:
-      latest:
+      - name: latest
         component: loan_card
         args: {loan: rows.first}
-      board:
+      - name: board
         component: board
         reads: {view: loans.Summary}
         widgets:
           featured: {component: loan_card, args: {loan: row, compact: true}}
-      list:
+      - name: list
         component: collection
         reads: {view: loans.All}
         columns: [{field: title}]
         item:
-          card: {component: loan_card, args: {loan: row}}
+          - {name: card, component: loan_card, args: {loan: row}}
     overlays:
       detail: {kind: dialog, component: loan_card, args: {loan: state.selected}}
 "#;
@@ -873,7 +930,7 @@ fn widget_checks_refuse_at_the_instance_path() {
         .insert("chart".into(), widget("{summary: s, body: []}"));
     assert_eq!(
         errors(&named),
-        [("widget_named_like_builtin", "component:chart".to_owned())]
+        [("widget_expands", "component:chart".to_owned())]
     );
 
     let mut unknown = base.clone();
@@ -882,9 +939,9 @@ fn widget_checks_refuse_at_the_instance_path() {
         json!({"component": "loan_card", "args": {"loan": "row", "colour": "red"}}),
     );
     let found = check(&unknown);
-    assert_eq!(errors(&unknown), [("widget_args", latest.to_owned())]);
+    assert_eq!(errors(&unknown), [("widget_expands", latest.to_owned())]);
     assert!(
-        found[0].message.contains("unknown") && found[0].message.contains("`colour`"),
+        found[0].message.contains("no param") && found[0].message.contains("`colour`"),
         "{}",
         found[0].message
     );
@@ -892,9 +949,9 @@ fn widget_checks_refuse_at_the_instance_path() {
     let mut missing = base.clone();
     set_latest(&mut missing, json!({"component": "loan_card"}));
     let found = check(&missing);
-    assert_eq!(errors(&missing), [("widget_args", latest.to_owned())]);
+    assert_eq!(errors(&missing), [("widget_expands", latest.to_owned())]);
     assert!(
-        found[0].message.contains("missing") && found[0].message.contains("`loan`"),
+        found[0].message.contains("needs the argument") && found[0].message.contains("`loan`"),
         "{}",
         found[0].message
     );
@@ -906,12 +963,10 @@ fn widget_checks_refuse_at_the_instance_path() {
         )
         .unwrap(),
     );
+    // `state_badge` is used (through `loan_card`), so ESS refuses the document at its first use.
     assert_eq!(
         errors(&direct),
-        [(
-            "widget_recursion",
-            "component:state_badge/node:again".to_owned()
-        )]
+        [("widget_expands", "shell:app/overlay:loan".to_owned())]
     );
 
     let mut indirect = base.clone();
@@ -923,38 +978,22 @@ fn widget_checks_refuse_at_the_instance_path() {
     );
     assert_eq!(
         errors(&indirect),
-        [
-            (
-                "widget_recursion",
-                "component:loan_card/node:state".to_owned()
-            ),
-            (
-                "widget_recursion",
-                "component:state_badge/node:back".to_owned()
-            ),
-        ]
+        [("widget_expands", "shell:app/overlay:loan".to_owned())]
     );
 
     let mut unresolved = base.clone();
     set_latest(&mut unresolved, json!({"component": "loan_tile"}));
-    assert_eq!(
-        errors(&unresolved),
-        [("widget_resolves", latest.to_owned())]
-    );
+    assert_eq!(errors(&unresolved), [("widget_expands", latest.to_owned())]);
 
-    for id in [
-        "widget_named_like_builtin",
-        "widget_args",
-        "widget_recursion",
-        "widget_resolves",
-    ] {
-        let declared = CHECKS.iter().find(|(c, _, _)| *c == id);
-        assert_eq!(
-            declared.map(|(_, s, _)| *s),
-            Some(Severity::Error),
-            "{id} is a declared error"
-        );
-    }
+    // The four widget checks uilab ran are ESS's one `widget_expands`, an error.
+    let declared = uilab_doc::ess_ui_check::CHECKS
+        .iter()
+        .find(|c| c.id == "widget_expands");
+    assert_eq!(
+        declared.map(|c| c.severity),
+        Some(uilab_doc::ess_ui_check::Severity::Error),
+        "widget_expands is a declared error"
+    );
 }
 
 #[test]
@@ -1016,7 +1055,7 @@ fn widgets_and_their_nodes_are_patched_by_path() {
         child: Child {
             layer: Layer::Component,
             name: "member_line".into(),
-            node: json!({"summary": "A member as one line.", "params": {"member": {"type": "Member", "required": true}},
+            node: json!({"summary": "A member as one line.", "params": {"member": {"type": "Member", "required": true, "note": "the member row"}},
                 "arrange": "row", "body": [{"name": "name", "primitive": "text", "text": "args.member.name"}]}),
             nav_section: None,
         },
@@ -1059,7 +1098,7 @@ fn widgets_and_their_nodes_are_patched_by_path() {
 
     let replace_widget = Patch::Replace {
         target: path("component:state_badge"),
-        node: json!({"summary": "A loan state as text.", "params": {"state": {"type": "string", "required": true}},
+        node: json!({"summary": "A loan state as text.", "params": {"state": {"type": "string", "required": true, "note": "state param"}},
             "body": [{"name": "label", "primitive": "text", "text": "args.state"}]}),
     };
     let (next, _) = admit(&doc, &replace_widget).unwrap();
@@ -1070,7 +1109,7 @@ fn widgets_and_their_nodes_are_patched_by_path() {
         refused(Patch::Remove {
             target: path("component:state_badge")
         }),
-        "widget_resolves",
+        "widget_expands",
         "a widget still in use cannot be removed"
     );
     assert_eq!(
@@ -1083,7 +1122,7 @@ fn widgets_and_their_nodes_are_patched_by_path() {
                 nav_section: None,
             },
         }),
-        "widget_args"
+        "widget_expands"
     );
     assert_eq!(
         refused(Patch::Insert {
@@ -1107,7 +1146,7 @@ fn widgets_and_their_nodes_are_patched_by_path() {
                 nav_section: None,
             },
         }),
-        "widget_recursion"
+        "widget_expands"
     );
     assert_eq!(
         refused(Patch::Insert {
@@ -1119,7 +1158,7 @@ fn widgets_and_their_nodes_are_patched_by_path() {
                 nav_section: None,
             },
         }),
-        "widget_named_like_builtin"
+        "widget_expands"
     );
     assert_eq!(
         refused(Patch::Insert {
@@ -1285,17 +1324,27 @@ fn docs_list_widgets_with_params_and_use_sites_and_help_names_them() {
     }
 }
 
-/// A param keeps what it declares as written: an explicit `required: false`, an explicit
-/// `default: null`, and a key this subset does not type.
+/// A param keeps what it declares as written: an explicit `required: false` and an explicit
+/// `default: null`. ess-ui/1 closes the param record, so a key it does not type (`label`) is
+/// refused by ESS's loader rather than kept.
 #[test]
 fn a_param_keeps_what_it_declares_as_written() {
     let text = WIDGETS.replace(
-        "      state: {type: string, required: true}\n",
-        "      state: {type: string, required: true}\n      tone: {type: string, required: false, default: null, label: Tone}\n",
+        "      state: {type: string, required: true, note: state param}\n",
+        "      state: {type: string, required: true, note: state param}\n      tone: {type: string, required: false, default: null, note: tone param}\n",
+    );
+    let labelled = text.replace(
+        "default: null, note: tone param",
+        "default: null, label: Tone, note: tone param",
+    );
+    let refused = Document::from_yaml(&labelled).expect_err("ESS closes the param record");
+    assert!(
+        refused.message.contains("unknown field `label`"),
+        "{refused}"
     );
     let doc = Document::from_yaml(&text).unwrap();
     let yaml = doc.to_yaml().unwrap();
-    for kept in ["required: false", "default: null", "label: Tone"] {
+    for kept in ["required: false", "default: null"] {
         assert!(yaml.contains(kept), "`{kept}` was dropped:\n{yaml}");
     }
     assert_eq!(Document::from_yaml(&yaml).unwrap(), doc);
@@ -1337,7 +1386,7 @@ fn widget_instances_in_untyped_node_positions_are_checked() {
         let doc = with_prop(key, value.clone());
         assert_eq!(
             errors(&doc),
-            [("widget_resolves", list.to_owned())],
+            [("widget_expands", list.to_owned())],
             "{key}: {value}"
         );
     }
@@ -1346,10 +1395,10 @@ fn widget_instances_in_untyped_node_positions_are_checked() {
         "children",
         json!([{"name": "badge", "component": "state_badge", "args": {"state": "row.state", "colour": "red"}}]),
     );
-    assert_eq!(errors(&doc), [("widget_args", list.to_owned())]);
+    assert_eq!(errors(&doc), [("widget_expands", list.to_owned())]);
     let message = &check(&doc)[0].message;
     assert!(
-        message.starts_with("`children/badge`: unknown arg `colour`"),
+        message.contains("children/badge/args/colour`: widget `state_badge` has no param `colour`"),
         "{message}"
     );
 
@@ -1357,7 +1406,7 @@ fn widget_instances_in_untyped_node_positions_are_checked() {
         "toolbar",
         json!([{"name": "badge", "component": "state_badge"}]),
     );
-    assert_eq!(errors(&doc), [("widget_args", list.to_owned())]);
+    assert_eq!(errors(&doc), [("widget_expands", list.to_owned())]);
 
     let mut literal = with_widgets();
     literal.pages["overview"].sections.insert(
@@ -1366,9 +1415,14 @@ fn widget_instances_in_untyped_node_positions_are_checked() {
             json!({"component": "loan_card", "args": {"loan": {"component": "loan_tile"}}}),
         )),
     );
+    // ESS refuses a map bound to a param that stands in an expression, but never reads it as a
+    // node: `loan_tile` is not reported as an undeclared widget.
     assert!(
-        errors(&literal).is_empty(),
-        "an args literal is data, not a node"
+        check(&literal)
+            .iter()
+            .all(|f| !f.message.contains("`loan_tile`")),
+        "an args literal is data, not a node: {:#?}",
+        check(&literal)
     );
 
     let mut recursive = with_widgets();
@@ -1379,17 +1433,15 @@ fn widget_instances_in_untyped_node_positions_are_checked() {
     );
     assert_eq!(
         errors(&recursive),
-        [(
-            "widget_recursion",
-            "component:state_badge/node:box".to_owned()
-        )]
+        [("widget_expands", "shell:app/overlay:loan".to_owned())]
     );
 
+    // A collection takes no `parts` in ess-ui/1; a section takes `children`.
     let doc = with_prop(
-        "parts",
+        "children",
         json!([{"name": "badge", "component": "state_badge", "args": {"state": "row.state"}}]),
     );
-    assert!(errors(&doc).is_empty());
+    assert!(errors(&doc).is_empty(), "{:?}", errors(&doc));
     assert_eq!(
         admit(
             &doc,
@@ -1399,7 +1451,7 @@ fn widget_instances_in_untyped_node_positions_are_checked() {
         )
         .unwrap_err()
         .check,
-        "widget_resolves",
+        "widget_expands",
         "a widget used only in an untyped position cannot be removed"
     );
 }
@@ -1416,7 +1468,11 @@ fn the_agent_context_offers_widgets_that_do_not_recurse() {
             .filter(|k| doc.widgets.contains_key(*k))
             .collect()
     };
-    assert_eq!(kinds("page:overview").len(), 16);
+    assert_eq!(
+        kinds("page:overview").len(),
+        14,
+        "ESS's 12 kinds and two widgets"
+    );
     assert_eq!(widgets("page:overview"), ["loan_card", "state_badge"]);
     assert_eq!(
         widgets("page:overview/section:board"),
@@ -1427,7 +1483,8 @@ fn the_agent_context_offers_widgets_that_do_not_recurse() {
         widgets("component:state_badge").is_empty(),
         "loan_card holds state_badge, so neither can go into state_badge"
     );
-    assert!(kinds("page:overview/section:latest").is_empty());
+    // Every section takes `children` (ESS's schema), a widget instance's section too.
+    assert_eq!(kinds("page:overview/section:latest").len(), 14);
 }
 
 /// The Node positions outside composites: a page header's `metrics` and an action's `choice`, and
@@ -1440,9 +1497,11 @@ fn widget_instances_in_page_headers_and_page_kinds_are_checked_and_documented() 
         doc.pages["overview"].extra.insert("header".into(), header);
         doc
     };
+    // ESS checks a page kind where a page uses it: the overview uses `board_page`.
     let with_kind = |kind: serde_json::Value| {
         let mut doc = with_widgets();
         doc.page_kinds.insert("board_page".into(), kind);
+        doc.pages["overview"].kind = "board_page".into();
         doc
     };
     let missing = json!({"component": "loan_tile"});
@@ -1458,22 +1517,25 @@ fn widget_instances_in_page_headers_and_page_kinds_are_checked_and_documented() 
             "page:overview",
         ),
         (
-            with_kind(json!({"sections": {"summary": missing.clone()}})),
-            "/",
+            with_kind(json!({"sections": [{"name": "summary", "component": "loan_tile"}]})),
+            "page:overview",
         ),
         (
             with_kind(json!({"header": {"metrics": [{"name": "due", "component": "loan_tile"}]}})),
-            "/",
+            "page:overview",
         ),
     ] {
-        assert_eq!(errors(&doc), [("widget_resolves", at.to_owned())]);
+        assert_eq!(errors(&doc), [("widget_expands", at.to_owned())]);
     }
     let doc = with_header(json!({"metrics": [{"name": "due", "component": "state_badge"}]}));
-    assert_eq!(errors(&doc), [("widget_args", "page:overview".to_owned())]);
+    assert_eq!(
+        errors(&doc),
+        [("widget_expands", "page:overview".to_owned())]
+    );
     assert!(
-        check(&doc)[0]
-            .message
-            .starts_with("`header/metrics/due`: missing required arg `state`"),
+        check(&doc)[0].message.starts_with(
+            "`pages/overview/header/metrics/due`: widget `state_badge` needs the argument `state`"
+        ),
         "{}",
         check(&doc)[0].message
     );
@@ -1491,7 +1553,7 @@ fn widget_instances_in_page_headers_and_page_kinds_are_checked_and_documented() 
         )
         .unwrap_err()
         .check,
-        "widget_resolves",
+        "widget_expands",
         "a widget used only by a page kind cannot be removed"
     );
     let docs = uilab_doc::docs_markdown(&doc, &Fixtures::default(), &check(&doc));
@@ -1521,8 +1583,9 @@ fn widget_instances_in_page_headers_and_page_kinds_are_checked_and_documented() 
     }
 }
 
-/// The `item` of the collection in [`WIDGETS`], written as the old map.
-const ITEM_MAP: &str = "        item:\n          card: {component: loan_card, args: {loan: row}}\n";
+/// The `item` of the collection in [`WIDGETS`].
+const ITEM_CARD: &str =
+    "        item:\n          - {name: card, component: loan_card, args: {loan: row}}\n";
 
 /// The ess form: a list of named nodes, primitives and widget instances among them, one of them a
 /// collection with its own `item` list.
@@ -1539,10 +1602,10 @@ const ITEM_LIST: &str = "        item:
 /// [`WIDGETS`] with the collection's `item` written as `item`.
 fn with_item(item: &str) -> Document {
     assert!(
-        WIDGETS.contains(ITEM_MAP),
-        "the fixture still carries the map"
+        WIDGETS.contains(ITEM_CARD),
+        "the fixture still carries the item list"
     );
-    Document::from_yaml(&WIDGETS.replace(ITEM_MAP, item)).unwrap_or_else(|e| panic!("{e}"))
+    Document::from_yaml(&WIDGETS.replace(ITEM_CARD, item)).unwrap_or_else(|e| panic!("{e}"))
 }
 
 /// The names of the `item` the document writes at `page:overview/section:<section>`, or at its
@@ -1550,7 +1613,10 @@ fn with_item(item: &str) -> Document {
 /// written as a list.
 fn written_items(doc: &Document, section: &str, nested: Option<usize>) -> Vec<String> {
     let yaml: serde_yaml::Value = serde_yaml::from_str(&doc.to_yaml().unwrap()).unwrap();
-    let mut value = &yaml["pages"]["overview"]["sections"][section];
+    let mut value = yaml["pages"]["overview"]["sections"]
+        .as_sequence()
+        .and_then(|s| s.iter().find(|n| n["name"].as_str() == Some(section)))
+        .expect("the section is written in the list");
     if let Some(i) = nested {
         value = &value["item"][i];
     }
@@ -1625,13 +1691,32 @@ fn an_ess_item_list_parses_and_round_trips_as_a_list() {
 
 #[test]
 fn an_old_item_map_is_read_and_written_as_a_list_in_order() {
-    let doc = with_item(
+    // ess-ui/1 has only the list form: ESS's loader refuses the old map, and uilab relays it.
+    let map = WIDGETS.replace(
+        ITEM_CARD,
         "        item:
           zeta: {component: loan_card, args: {loan: row}}
           alpha:
             component: collection
             reads: {view: loans.All}
             item: {due: {component: metric, from: due}}
+",
+    );
+    let ess = uilab_doc::ess_ui::load_str(&map).expect_err("ESS refuses an item map");
+    let ours = Document::from_yaml(&map).expect_err("uilab refuses it");
+    assert_eq!(
+        (ours.path, ours.message),
+        (ess.path().to_string(), ess.message().to_owned())
+    );
+
+    // The list form, in its written order, reads and writes as it is.
+    let doc = with_item(
+        "        item:
+          - {name: zeta, component: loan_card, args: {loan: row}}
+          - name: alpha
+            component: collection
+            reads: {view: loans.All}
+            item: [{name: due, component: metric, reads: {view: loans.Summary}, from: due}]
 ",
     );
     assert_eq!(errors(&doc), [], "{:#?}", check(&doc));
@@ -1648,12 +1733,6 @@ fn an_old_item_map_is_read_and_written_as_a_list_in_order() {
     assert_eq!(written_items(&doc, "list", None), ["zeta", "alpha"]);
     assert_eq!(written_items(&doc, "list", Some(1)), ["due"]);
     assert_eq!(Document::from_yaml(&doc.to_yaml().unwrap()).unwrap(), doc);
-
-    assert_eq!(
-        with_widgets(),
-        with_item("        item: [{name: card, component: loan_card, args: {loan: row}}]\n"),
-        "the map and the list read to the same document"
-    );
 }
 
 #[test]
@@ -1662,26 +1741,41 @@ fn a_duplicate_item_name_is_refused_with_its_own_check_id() {
           - {name: card, component: loan_card, args: {loan: row}}
           - {name: card, primitive: text, text: row.title}
 ";
-    let doc = with_item(duplicate);
+    // ESS's loader refuses the document; its checker files the refusal under `names_unique`.
+    let text = WIDGETS.replace(ITEM_CARD, duplicate);
+    assert!(Document::from_yaml(&text).is_err());
+    let report = uilab_doc::ess_ui_check::check_source(
+        &text,
+        "case",
+        Path::new("."),
+        None,
+        &Default::default(),
+    );
     assert_eq!(
-        errors(&doc),
+        report
+            .findings
+            .iter()
+            .map(|f| (f.check.to_string(), f.path.to_string()))
+            .collect::<Vec<_>>(),
         [(
-            "names_unique",
-            "page:overview/section:list/item:card".to_owned()
+            "names_unique".to_owned(),
+            "pages/overview/sections/list/item/card".to_owned()
         )]
     );
     assert_eq!(
-        CHECKS
+        uilab_doc::ess_ui_check::CHECKS
             .iter()
-            .find(|(c, _, _)| *c == "names_unique")
-            .map(|(_, s, _)| *s),
-        Some(Severity::Error)
+            .find(|c| c.id == "names_unique")
+            .map(|c| c.severity),
+        Some(uilab_doc::ess_ui_check::Severity::Error)
     );
 
     let clean = with_widgets();
-    let list =
-        serde_json::to_value(with_item(duplicate).pages["overview"].sections["list"].clone())
-            .unwrap();
+    let mut list = serde_json::to_value(clean.pages["overview"].sections["list"].clone()).unwrap();
+    list["item"] = json!([
+        {"name": "card", "component": "loan_card", "args": {"loan": "row"}},
+        {"name": "card", "primitive": "text", "text": "row.title"},
+    ]);
     let refused = admit(
         &clean,
         &Patch::Replace {
@@ -1767,13 +1861,14 @@ fn item_nodes_are_patched_by_path() {
 
     let taken = admit(&doc, &insert(&list, "tag", json!({"primitive": "divider"}))).unwrap_err();
     assert_eq!(taken.check, "name_unique");
+    // A component that names neither a kind nor a widget is ESS's `widget_expands`.
     let unknown = admit(&doc, &insert(&list, "x", json!({"component": "nowhere"}))).unwrap_err();
-    assert_eq!(unknown.check, "node_shape");
+    assert_eq!(unknown.check, "widget_expands");
     let unchecked = Patch::Replace {
         target: path("page:overview/section:list/item:card"),
         node: json!({"component": "loan_card", "args": {}}),
     };
-    assert_eq!(admit(&doc, &unchecked).unwrap_err().check, "widget_args");
+    assert_eq!(admit(&doc, &unchecked).unwrap_err().check, "widget_expands");
 
     let record = Patch::Insert {
         target: path("page:overview"),
@@ -1788,7 +1883,8 @@ fn item_nodes_are_patched_by_path() {
     let detail = path("page:overview/section:detail");
     assert_eq!(
         allowed_children(&with_record, &detail).unwrap(),
-        [Layer::Item]
+        [Layer::Item, Layer::Child],
+        "a record section takes `item` nodes and, as a section, `children` (ESS's schema)"
     );
     let (next, _) = admit(
         &with_record,
@@ -1823,12 +1919,17 @@ fn checks_over_props_hold_primitive_nodes_too() {
     let button = |opens: &str| {
         format!("{{name: go, primitive: button, label: Go, action: {{name: go, opens: {opens}}}}}")
     };
-    let nested = |node: &str| {
-        with_item(&ITEM_LIST.replace(
-            "[{name: due, primitive: text, text: row.due}]",
-            &format!("[{{name: due, primitive: text, text: row.due}}, {node}]"),
-        ))
+    let nested_text = |node: &str| {
+        WIDGETS.replace(
+            ITEM_CARD,
+            &ITEM_LIST.replace(
+                "[{name: due, primitive: text, text: row.due}]",
+                &format!("[{{name: due, primitive: text, text: row.due}}, {node}]"),
+            ),
+        )
     };
+    let nested =
+        |node: &str| Document::from_yaml(&nested_text(node)).unwrap_or_else(|e| panic!("{e}"));
     let inner_go = "page:overview/section:list/item:inner/item:go".to_owned();
 
     assert_eq!(errors(&nested(&button("detail"))), [], "a page overlay");
@@ -1845,18 +1946,13 @@ fn checks_over_props_hold_primitive_nodes_too() {
         )
     };
     assert_eq!(errors(&nested(&choosing("state_badge"))), []);
+    // An undeclared widget in a `choice` is refused by ESS's loader, at the `choice` itself.
     assert_eq!(
-        errors(&nested(&choosing("nowhere"))),
-        [("widget_resolves", inner_go.clone())]
-    );
-    let finding = check(&nested(&choosing("nowhere")))
-        .into_iter()
-        .find(|f| f.check == "widget_resolves")
-        .unwrap();
-    assert!(
-        finding.message.starts_with("`action/choice`: "),
-        "{}",
-        finding.message
+        ess_findings(&nested_text(&choosing("nowhere"))),
+        [(
+            "widget_expands".to_owned(),
+            "pages/overview/sections/list/item/inner/item/go/action/choice/component".to_owned()
+        )]
     );
     let docs =
         uilab_doc::docs_markdown(&nested(&choosing("state_badge")), &Fixtures::default(), &[]);
@@ -1870,12 +1966,12 @@ fn checks_over_props_hold_primitive_nodes_too() {
         "      - {name: extend, primitive: button, label: Extend, action: {name: extend, does: loans.ExtendLoan, choice: {component: nowhere}}}",
     );
     assert_ne!(body_choice, WIDGETS, "the fixture changed");
-    assert_eq!(
-        errors(&Document::from_yaml(&body_choice).unwrap()),
-        [(
-            "widget_resolves",
-            "component:loan_card/node:extend".to_owned()
-        )]
+    let found = ess_findings(&body_choice);
+    assert!(
+        found.len() == 1
+            && found[0].0 == "widget_expands"
+            && found[0].1.ends_with("/extend/action/choice/component"),
+        "{found:?}"
     );
 
     let recursive = WIDGETS.replace(
@@ -1883,13 +1979,12 @@ fn checks_over_props_hold_primitive_nodes_too() {
         "      - {name: rows, component: collection, reads: {view: loans.All}, item: [{name: go, primitive: button, label: Go, action: {name: go, does: loans.Pick, choice: {component: state_badge, args: {state: row.state}}}}]}\n      - {name: badge, primitive: badge, text: args.state,",
     );
     assert_ne!(recursive, WIDGETS, "the fixture changed");
+    let found = ess_findings(&recursive);
     assert!(
-        errors(&Document::from_yaml(&recursive).unwrap()).contains(&(
-            "widget_recursion",
-            "component:state_badge/node:rows/item:go".to_owned()
-        )),
-        "{:?}",
-        errors(&Document::from_yaml(&recursive).unwrap())
+        found
+            .iter()
+            .any(|(c, p)| c == "widget_expands" && p.contains("/rows/item/go/action/choice")),
+        "{found:?}"
     );
 
     let insert = Patch::Insert {
@@ -1904,7 +1999,7 @@ fn checks_over_props_hold_primitive_nodes_too() {
     };
     assert_eq!(
         admit(&with_item(ITEM_LIST), &insert).unwrap_err().check,
-        "widget_resolves"
+        "widget_expands"
     );
 }
 
@@ -1934,10 +2029,10 @@ fn replacing_a_page_that_drops_a_section_warns_naming_it() {
     let doc = library();
     let renamed = replace(
         "page:members",
-        json!({"kind": "list_page", "title": "Members", "sections": {"cards": {
+        json!({"kind": "list_page", "title": "Members", "sections": [{"name": "cards",
             "component": "collection", "reads": {"view": "members.All"},
             "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"},
-                {"field": "standing", "as": "tag"}]}}}),
+                {"field": "standing", "as": "tag"}]}]}),
     );
     assert_eq!(
         drops(&doc, &renamed),
@@ -1970,7 +2065,7 @@ fn a_replace_that_only_adds_or_changes_warns_nothing() {
     let doc = library();
     let section = replace(
         "page:members/section:list",
-        json!({"component": "collection", "reads": {"view": "members.All"}, "title": "Members",
+        json!({"component": "collection", "reads": {"view": "members.All"},
             "columns": [{"field": "name", "label": "Name"}, {"field": "joined"}, {"field": "loans"},
                 {"field": "standing", "as": "badge"}, {"field": "email"}],
             "item": [{"name": "tag", "primitive": "badge", "text": "row.standing"}]}),
@@ -1978,11 +2073,11 @@ fn a_replace_that_only_adds_or_changes_warns_nothing() {
     assert_eq!(drops(&doc, &section), []);
     let page = replace(
         "page:members",
-        json!({"kind": "list_page", "title": "People", "sections": {
-            "filters": {"component": "filter_bar"},
-            "list": {"component": "collection", "reads": {"view": "members.All"},
+        json!({"kind": "list_page", "title": "People", "sections": [
+            {"name": "filters", "component": "filter_bar"},
+            {"name": "list", "component": "collection", "reads": {"view": "members.All"},
                 "columns": [{"field": "name"}, {"field": "joined"}, {"field": "loans"},
-                    {"field": "standing", "as": "tag"}]}}}),
+                    {"field": "standing", "as": "tag"}]}]}),
     );
     assert_eq!(drops(&doc, &page), []);
 }
@@ -1998,7 +2093,7 @@ fn a_batch_whose_replace_drops_something_warns() {
                 child: Child {
                     layer: Layer::Overlay,
                     name: "edit_member".into(),
-                    node: json!({"kind": "drawer", "component": "form", "fields": ["name"]}),
+                    node: json!({"kind": "drawer", "component": "form", "does": "members.EditMember", "fields": ["name"]}),
                     nav_section: None,
                 },
             },
@@ -2024,9 +2119,9 @@ fn a_page_replace_that_keeps_a_section_but_drops_its_columns_warns_at_the_sectio
     let doc = library();
     let kept = replace(
         "page:members",
-        json!({"kind": "list_page", "title": "Members", "sections": {"list": {
+        json!({"kind": "list_page", "title": "Members", "sections": [{"name": "list",
             "component": "collection", "reads": {"view": "members.All"},
-            "columns": [{"field": "name"}]}}}),
+            "columns": [{"field": "name"}]}]}),
     );
     assert_eq!(
         drops(&doc, &kept),
@@ -2047,12 +2142,12 @@ fn every_kind_of_child_and_list_entry_a_replace_drops_is_named() {
             &widgets,
             replace(
                 "page:overview",
-                json!({"kind": "dashboard_page", "title": "Overview", "sections": {
-                    "board": {"component": "board", "reads": {"view": "loans.Summary"},
+                json!({"kind": "dashboard_page", "title": "Overview", "sections": [
+                    {"name": "board", "component": "board", "reads": {"view": "loans.Summary"},
                         "widgets": {"featured": {"component": "loan_card", "args": {"loan": "row", "compact": true}}}},
-                    "list": {"component": "collection", "reads": {"view": "loans.All"},
+                    {"name": "list", "component": "collection", "reads": {"view": "loans.All"},
                         "columns": [{"field": "title"}],
-                        "item": {"card": {"component": "loan_card", "args": {"loan": "row"}}}}}}),
+                        "item": [{"name": "card", "component": "loan_card", "args": {"loan": "row"}}]}]}),
             ),
             "page:overview",
             "replace at page:overview drops section latest; overlay detail",
@@ -2082,8 +2177,8 @@ fn every_kind_of_child_and_list_entry_a_replace_drops_is_named() {
             replace(
                 "component:loan_card",
                 json!({"summary": "A loan as a card.",
-                    "params": {"loan": {"type": "Loan", "required": true},
-                        "compact": {"type": "boolean", "default": false}},
+                    "params": {"loan": {"type": "Loan", "required": true, "note": "the loan row"},
+                        "compact": {"type": "boolean", "default": false, "note": "hides the cover"}},
                     "body": [{"name": "title", "primitive": "text", "text": "args.loan.title"}]}),
             ),
             "component:loan_card",
@@ -2152,7 +2247,7 @@ fn every_kind_of_child_and_list_entry_a_replace_drops_is_named() {
                 "page:overview/section:recent",
                 json!({"component": "collection", "reads": {"view": "loans.All"},
                     "columns": [{"field": "title"}],
-                    "actions": [{"name": "export", "label": "Export"}]}),
+                    "actions": [{"name": "export", "label": "Export", "does": "loans.Export"}]}),
             ),
             "page:overview/section:recent",
             "replace at page:overview/section:recent drops columns member, due",
@@ -2173,13 +2268,13 @@ fn every_kind_of_child_and_list_entry_a_replace_drops_is_named() {
         .props
         .insert(
             "actions".into(),
-            json!([{"name": "export", "label": "Export"}, {"label": "Print"}, "refresh"]),
+            json!([{"name": "export", "label": "Export", "does": "loans.Export"}, {"label": "Print", "does": "loans.Print"}, "refresh"]),
         );
     let fewer = replace(
         "page:overview/section:recent",
         json!({"component": "collection", "reads": {"view": "loans.All", "params": {"size": 5}},
             "columns": [{"field": "title"}, {"field": "member"}, {"field": "due"}],
-            "actions": [{"name": "export", "label": "Download"}]}),
+            "actions": [{"name": "export", "label": "Download", "does": "loans.Export"}]}),
     );
     assert_eq!(
         drops(&acting, &fewer),
@@ -2238,12 +2333,14 @@ fn a_batch_replacing_a_node_and_its_child_names_each_drop_once() {
     let doc = library();
     let list = json!({"component": "collection", "reads": {"view": "members.All"},
         "columns": [{"field": "name"}]});
+    let mut named = list.clone();
+    named["name"] = json!("list");
     let batch = Patch::Batch {
         target: path("page:members"),
         patches: vec![
             replace(
                 "page:members",
-                json!({"kind": "list_page", "title": "Members", "sections": {"list": list.clone()}}),
+                json!({"kind": "list_page", "title": "Members", "sections": [named]}),
             ),
             replace("page:members/section:list", list),
         ],

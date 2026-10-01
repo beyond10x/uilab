@@ -90,7 +90,7 @@ fn insert(document_id: &s::DocumentId, target: &str, child: Value) -> s::Propose
 }
 
 fn section(name: &str) -> Value {
-    json!({"layer": "section", "name": name, "node": {"component": "record", "title": "Alerts"}})
+    json!({"layer": "section", "name": name, "node": {"component": "record", "fields": ["alerts"]}})
 }
 
 macro_rules! proposed {

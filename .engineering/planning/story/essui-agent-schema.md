@@ -19,7 +19,7 @@ scope:
   path: crates/uilab-doc/tests/eval_suite.rs
 - confidence: cited
   path: evals/library.yaml
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":5}}}
@@ -60,6 +60,11 @@ Tests in `crates/uilab-doc/tests/agent_schema.rs` unless named otherwise.
   cannot hold, so its `say` becomes another in-place change to that collection). `eval.rs` is not
   edited by this story.
 - `task check` exits 0.
+
+- `batch_patches_carry_nodes` (demo gap, 2026-10-01): a `batch` whose patches hold no node (round 4
+  case `creative`: "batch holds no node") is not valid against the patch schema: every insert and
+  replace inside a batch requires its `child`/`node`; a test feeds the round-4 answer and asserts
+  the schema refuses it, and `schema_patches_pass_ess` covers a valid batch.
 
 ## Scope
 
