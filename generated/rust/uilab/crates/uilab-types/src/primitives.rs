@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
-// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
+// model digest 8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455
+// contract digest c789fcd30e3ffcc51487d00315741eca272a88a53a2be1e3be26a919b30c4bfb
 // do not edit: regenerate with `ess synthesize`
 
 //! How the specification's primitives are spelled in this workspace.
@@ -16,7 +16,7 @@
 ///
 /// Never a float: money does not round the way a float does. Equality and order are over the
 /// rendering, so `1.5` and `1.50` are different values here; arithmetic is deliberately absent,
-/// because what a decimal *does* is behaviour, and behaviour is not synthesised.
+/// because the specification declares no operation on a decimal, so there is none to generate.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Decimal(pub String);
 

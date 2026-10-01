@@ -1335,7 +1335,7 @@ fn page_nodes(doc: &Document, pages: &[&str]) -> String {
             let path = page_path.child(Layer::Section, section);
             let _ = write!(out, "\n- {path}: {}", composite.component.as_str());
             if let Some(reads) = &composite.reads {
-                let _ = write!(out, " reads {}", reads.view);
+                let _ = write!(out, " reads {}", reads.name());
             }
             if let Some(columns) = columns(composite) {
                 let _ = write!(out, "; columns {columns}");
@@ -1426,7 +1426,12 @@ fn request(
 fn known_views(doc: &Document) -> Vec<String> {
     let mut views: Vec<String> = uilab_doc::check::composites(doc)
         .into_iter()
-        .filter_map(|(_, composite)| composite.reads.as_ref().map(|reads| reads.view.clone()))
+        .filter_map(|(_, composite)| {
+            composite
+                .reads
+                .as_ref()
+                .map(|reads| reads.name().to_owned())
+        })
         .chain(
             doc.fixtures
                 .iter()

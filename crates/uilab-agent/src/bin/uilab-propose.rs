@@ -11,10 +11,10 @@ use uilab_doc::{Document, NodePath};
 #[derive(Debug, Parser)]
 #[command(
     name = "uilab-propose",
-    about = "Propose one patch of a ui-spec/1 document from one spoken instruction"
+    about = "Propose one patch of an ess-ui/1 document from one spoken instruction"
 )]
 struct Args {
-    /// The `ui-spec/1` document.
+    /// The `ess-ui/1` document.
     #[arg(long)]
     doc: PathBuf,
     /// The node the instruction is about, for example `page:loans`.
@@ -54,7 +54,7 @@ fn run(args: Args) -> Result<(), String> {
         .map_err(|error| format!("reading `{}`: {error}", args.doc.display()))?;
     let doc = Document::from_yaml(&text).map_err(|error| {
         format!(
-            "`{}` is not a ui-spec/1 document: {error}",
+            "`{}` is not an ess-ui/1 document: {error}",
             args.doc.display()
         )
     })?;

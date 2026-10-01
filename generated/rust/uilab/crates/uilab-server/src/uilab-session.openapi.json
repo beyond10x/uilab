@@ -3,13 +3,13 @@
   "info": {
     "title": "uilab-session",
     "summary": "Holds the open document, the selection and every proposal made against it.",
-    "description": "The HTTP surface of `uilab-session`, one of the components of `uilab` v1.\n\nEvery path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport; they are not returned here.\n\nThis component declares `reached_by: network`, so its callers are not deployed with it and this contract is the surface they reach it through. That declaration is also why the views its domains declare have paths here: a GET under `views` per projection, answering every row it holds. There is no page size, no cursor, no ordering and no filter parameter, because the specification states none — a view's filter is part of the projection, not of the request.",
+    "description": "The HTTP surface of `uilab-session`, one of the components of `uilab` v1.\n\nEvery path here is one semantic command, so the method is always POST and the path is the command's wire name under its domain's: a command is not a resource, and this document does not invent one. A status code is the outcome the specification declares — 202 for a branch that was taken, 422 for a refusal the input decides, 502 for a refusal decided outside the request — and the `outcome` property of every response body names the branch. Events emitted by a branch are published to consumers through the event transport, and the `published` property of every response body lists them too, in publication order.\n\nThis component declares `reached_by: network`, so its callers are not deployed with it and this contract is the surface they reach it through. That declaration is also why the views its domains declare have paths here: a GET under `views` per projection, answering every row it holds. There is no page size, no cursor, no ordering and no filter parameter, because the specification states none — a view's filter is part of the projection, not of the request.",
     "version": "v1",
     "x-ess-provenance": {
       "system": "uilab",
       "specification_version": "v1",
-      "source_digest": "823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24",
-      "contract_digest": "slice-sha256/2:efb7b0f3ed15c411619f395acaebf4f25c8688f35200d2b779dc1dfd35b1ebcd"
+      "source_digest": "8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455",
+      "contract_digest": "slice-sha256/2:4512dad0d6f5df2490b4bedbceb45300838613f50a7b6a3bccede170620ee2ee"
     },
     "x-ess-reached-by": "network"
   },
@@ -43,7 +43,7 @@
         },
         "responses": {
           "202": {
-            "description": "Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "description": "Outcome `accepted`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -58,6 +58,31 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/uilab.session.AcceptProposal.wrong-state.Response"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command's effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "committed": {
+                      "description": "`true` when the command's effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.",
+                      "type": "boolean"
+                    },
+                    "refused": {
+                      "description": "What was left unfinished, in words.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "refused",
+                    "committed"
+                  ],
+                  "type": "object"
                 }
               }
             }
@@ -98,11 +123,36 @@
         },
         "responses": {
           "202": {
-            "description": "Outcome `opened`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "description": "Outcome `opened`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/uilab.session.OpenDocument.opened.Response"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command's effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "committed": {
+                      "description": "`true` when the command's effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.",
+                      "type": "boolean"
+                    },
+                    "refused": {
+                      "description": "What was left unfinished, in words.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "refused",
+                    "committed"
+                  ],
+                  "type": "object"
                 }
               }
             }
@@ -143,11 +193,36 @@
         },
         "responses": {
           "202": {
-            "description": "Outcome `proposed`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "description": "Outcome `proposed`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/uilab.session.ProposePatch.proposed.Response"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command's effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "committed": {
+                      "description": "`true` when the command's effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.",
+                      "type": "boolean"
+                    },
+                    "refused": {
+                      "description": "What was left unfinished, in words.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "refused",
+                    "committed"
+                  ],
+                  "type": "object"
                 }
               }
             }
@@ -188,7 +263,7 @@
         },
         "responses": {
           "202": {
-            "description": "Outcome `rejected`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "description": "Outcome `rejected`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -203,6 +278,31 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/uilab.session.RejectProposal.wrong-state.Response"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command's effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "committed": {
+                      "description": "`true` when the command's effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.",
+                      "type": "boolean"
+                    },
+                    "refused": {
+                      "description": "What was left unfinished, in words.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "refused",
+                    "committed"
+                  ],
+                  "type": "object"
                 }
               }
             }
@@ -233,11 +333,36 @@
         },
         "responses": {
           "202": {
-            "description": "Outcome `selected`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "description": "Outcome `selected`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/uilab.session.SelectNode.selected.Response"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command's effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "committed": {
+                      "description": "`true` when the command's effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.",
+                      "type": "boolean"
+                    },
+                    "refused": {
+                      "description": "What was left unfinished, in words.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "refused",
+                    "committed"
+                  ],
+                  "type": "object"
                 }
               }
             }
@@ -292,7 +417,7 @@
         },
         "responses": {
           "202": {
-            "description": "Outcome `undone`: the branch the specification declares for this input. Events this branch emits are published to consumers, not returned here.",
+            "description": "Outcome `undone`: the branch the specification declares for this input. Events this branch emits are published to consumers and listed under `published`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -307,6 +432,31 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/uilab.session.UndoProposal.wrong-state.Response"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "No declared outcome: the realization is unfinished. Either a port this command runs reported an unmet obligation, and nothing was written: `committed` is `false`. Or the command's effect was committed and delivering what this command published to a binding failed: `committed` is `true`, the effect and its events stand, and each binding whose delivery failed keeps its event and is attempted again on a later delivery, while no other binding receives it twice. Do not retry: after a failed delivery a retry performs the command a second time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "committed": {
+                      "description": "`true` when the command's effect and events were committed and delivering what it published failed; `false` when an unmet obligation stopped the command before anything was written.",
+                      "type": "boolean"
+                    },
+                    "refused": {
+                      "description": "What was left unfinished, in words.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "refused",
+                    "committed"
+                  ],
+                  "type": "object"
                 }
               }
             }
@@ -410,15 +560,42 @@
       },
       "uilab.session.AcceptProposal.accepted.Response": {
         "additionalProperties": false,
-        "description": "The patch is applied and the document is saved. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Accepted`, along `accept`. The instance is the one `proposal_id` names. Emits `ProposalAccepted`, published to consumers rather than returned here.",
+        "description": "The patch is applied and the document is saved. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Accepted`, along `accept`. The instance is the one `proposal_id` names. Emits `ProposalAccepted`, published to consumers and listed under `published`.",
         "properties": {
           "outcome": {
             "const": "accepted",
             "description": "Which declared outcome the command took."
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "items": false,
+            "maxItems": 1,
+            "minItems": 1,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "const": "uilab.session.ProposalAccepted",
+                    "type": "string"
+                  },
+                  "payload": {
+                    "$ref": "#/components/schemas/uilab.session.ProposalAccepted.Event"
+                  }
+                },
+                "required": [
+                  "event",
+                  "payload"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
           }
         },
         "required": [
-          "outcome"
+          "outcome",
+          "published"
         ],
         "type": "object"
       },
@@ -437,10 +614,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.PatchRefused.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error",
           "payload"
         ],
@@ -461,10 +644,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.ProposalStateConflict.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error"
         ],
         "type": "object"
@@ -493,9 +682,28 @@
         ],
         "additionalProperties": false
       },
+      "uilab.session.DocumentOpened.Event": {
+        "title": "DocumentOpened payload",
+        "x-ess-name": "uilab.session.DocumentOpened",
+        "x-ess-kind": "event-payload",
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "$ref": "#/components/schemas/uilab.session.DocumentId"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "path"
+        ],
+        "additionalProperties": false
+      },
       "uilab.session.DocumentUnreadable.Error": {
         "title": "DocumentUnreadable payload",
-        "description": "The file is not a ui-spec/1 document, so nothing was opened.",
+        "description": "The file is not an ess-ui/1 document, so nothing was opened.",
         "x-ess-name": "uilab.session.DocumentUnreadable",
         "x-ess-kind": "error-payload",
         "type": "object",
@@ -571,6 +779,25 @@
         "x-ess-kind": "newtype",
         "type": "string"
       },
+      "uilab.session.NodeSelected.Event": {
+        "title": "NodeSelected payload",
+        "x-ess-name": "uilab.session.NodeSelected",
+        "x-ess-kind": "event-payload",
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "$ref": "#/components/schemas/uilab.session.DocumentId"
+          },
+          "path": {
+            "$ref": "#/components/schemas/uilab.session.NodePath"
+          }
+        },
+        "required": [
+          "document_id",
+          "path"
+        ],
+        "additionalProperties": false
+      },
       "uilab.session.OpenDocument.Input": {
         "title": "Open a document input",
         "x-ess-name": "uilab.session.OpenDocument",
@@ -588,25 +815,52 @@
       },
       "uilab.session.OpenDocument.opened.Response": {
         "additionalProperties": false,
-        "description": "The document is open with its root selected. Taken when no other outcome's condition matched. A `uilab.session.Document` now exists, in `Open`. Its identity is published as `document_id` on `uilab.session.DocumentOpened`. Emits `DocumentOpened`, published to consumers rather than returned here.",
+        "description": "The document is open with its root selected. Taken when no other outcome's condition matched. A `uilab.session.Document` now exists, in `Open`. Its identity is published as `document_id` on `uilab.session.DocumentOpened`. Emits `DocumentOpened`, published to consumers and listed under `published`.",
         "properties": {
           "outcome": {
             "const": "opened",
             "description": "Which declared outcome the command took."
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "items": false,
+            "maxItems": 1,
+            "minItems": 1,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "const": "uilab.session.DocumentOpened",
+                    "type": "string"
+                  },
+                  "payload": {
+                    "$ref": "#/components/schemas/uilab.session.DocumentOpened.Event"
+                  }
+                },
+                "required": [
+                  "event",
+                  "payload"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
           }
         },
         "required": [
-          "outcome"
+          "outcome",
+          "published"
         ],
         "type": "object"
       },
       "uilab.session.OpenDocument.unreadable.Response": {
         "additionalProperties": false,
-        "description": "Nothing was opened. Decided outside the request: the file does not parse as a ui-spec/1 document.",
+        "description": "Nothing was opened. Decided outside the request: the file does not parse as an ess-ui/1 document.",
         "properties": {
           "error": {
             "const": "uilab.session.DocumentUnreadable",
-            "description": "The file is not a ui-spec/1 document, so nothing was opened.",
+            "description": "The file is not an ess-ui/1 document, so nothing was opened.",
             "type": "string"
           },
           "outcome": {
@@ -615,10 +869,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.DocumentUnreadable.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error",
           "payload"
         ],
@@ -640,6 +900,33 @@
           "Remove",
           "Batch"
         ]
+      },
+      "uilab.session.PatchProposed.Event": {
+        "title": "PatchProposed payload",
+        "x-ess-name": "uilab.session.PatchProposed",
+        "x-ess-kind": "event-payload",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          },
+          "document_id": {
+            "$ref": "#/components/schemas/uilab.session.DocumentId"
+          },
+          "target": {
+            "$ref": "#/components/schemas/uilab.session.NodePath"
+          },
+          "op": {
+            "$ref": "#/components/schemas/uilab.session.PatchOp"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "document_id",
+          "target",
+          "op"
+        ],
+        "additionalProperties": false
       },
       "uilab.session.PatchRefused.Error": {
         "title": "PatchRefused payload",
@@ -709,6 +996,21 @@
           "Undone"
         ]
       },
+      "uilab.session.ProposalAccepted.Event": {
+        "title": "ProposalAccepted payload",
+        "x-ess-name": "uilab.session.ProposalAccepted",
+        "x-ess-kind": "event-payload",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "additionalProperties": false
+      },
       "uilab.session.ProposalId": {
         "title": "ProposalId",
         "x-ess-name": "uilab.session.ProposalId",
@@ -716,6 +1018,21 @@
         "type": "string",
         "format": "uuid",
         "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+      },
+      "uilab.session.ProposalRejected.Event": {
+        "title": "ProposalRejected payload",
+        "x-ess-name": "uilab.session.ProposalRejected",
+        "x-ess-kind": "event-payload",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          }
+        },
+        "required": [
+          "proposal_id"
+        ],
+        "additionalProperties": false
       },
       "uilab.session.ProposalStateConflict.Error": {
         "title": "ProposalStateConflict payload",
@@ -730,6 +1047,21 @@
         },
         "required": [
           "state"
+        ],
+        "additionalProperties": false
+      },
+      "uilab.session.ProposalUndone.Event": {
+        "title": "ProposalUndone payload",
+        "x-ess-name": "uilab.session.ProposalUndone",
+        "x-ess-kind": "event-payload",
+        "type": "object",
+        "properties": {
+          "proposal_id": {
+            "$ref": "#/components/schemas/uilab.session.ProposalId"
+          }
+        },
+        "required": [
+          "proposal_id"
         ],
         "additionalProperties": false
       },
@@ -817,15 +1149,42 @@
       },
       "uilab.session.ProposePatch.proposed.Response": {
         "additionalProperties": false,
-        "description": "The patch passes every document check and waits for the operator. Taken when no other outcome's condition matched. A `uilab.session.Proposal` now exists, in `Proposed`. Its identity is published as `proposal_id` on `uilab.session.PatchProposed`. Emits `PatchProposed`, published to consumers rather than returned here.",
+        "description": "The patch passes every document check and waits for the operator. Taken when no other outcome's condition matched. A `uilab.session.Proposal` now exists, in `Proposed`. Its identity is published as `proposal_id` on `uilab.session.PatchProposed`. Emits `PatchProposed`, published to consumers and listed under `published`.",
         "properties": {
           "outcome": {
             "const": "proposed",
             "description": "Which declared outcome the command took."
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "items": false,
+            "maxItems": 1,
+            "minItems": 1,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "const": "uilab.session.PatchProposed",
+                    "type": "string"
+                  },
+                  "payload": {
+                    "$ref": "#/components/schemas/uilab.session.PatchProposed.Event"
+                  }
+                },
+                "required": [
+                  "event",
+                  "payload"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
           }
         },
         "required": [
-          "outcome"
+          "outcome",
+          "published"
         ],
         "type": "object"
       },
@@ -844,10 +1203,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.PatchRefused.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error",
           "payload"
         ],
@@ -870,15 +1235,42 @@
       },
       "uilab.session.RejectProposal.rejected.Response": {
         "additionalProperties": false,
-        "description": "The patch is dropped and the document is unchanged. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Rejected`, along `reject`. The instance is the one `proposal_id` names. Emits `ProposalRejected`, published to consumers rather than returned here.",
+        "description": "The patch is dropped and the document is unchanged. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Rejected`, along `reject`. The instance is the one `proposal_id` names. Emits `ProposalRejected`, published to consumers and listed under `published`.",
         "properties": {
           "outcome": {
             "const": "rejected",
             "description": "Which declared outcome the command took."
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "items": false,
+            "maxItems": 1,
+            "minItems": 1,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "const": "uilab.session.ProposalRejected",
+                    "type": "string"
+                  },
+                  "payload": {
+                    "$ref": "#/components/schemas/uilab.session.ProposalRejected.Event"
+                  }
+                },
+                "required": [
+                  "event",
+                  "payload"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
           }
         },
         "required": [
-          "outcome"
+          "outcome",
+          "published"
         ],
         "type": "object"
       },
@@ -897,10 +1289,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.ProposalStateConflict.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error"
         ],
         "type": "object"
@@ -939,10 +1337,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.NodeNotFound.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error",
           "payload"
         ],
@@ -950,15 +1354,42 @@
       },
       "uilab.session.SelectNode.selected.Response": {
         "additionalProperties": false,
-        "description": "The node at the path is selected; proposals are made there. Taken when no other outcome's condition matched. A `uilab.session.Document` has changed, and its state is unchanged. The instance is the one `document_id` names. Emits `NodeSelected`, published to consumers rather than returned here.",
+        "description": "The node at the path is selected; proposals are made there. Taken when no other outcome's condition matched. A `uilab.session.Document` has changed, and its state is unchanged. The instance is the one `document_id` names. Emits `NodeSelected`, published to consumers and listed under `published`.",
         "properties": {
           "outcome": {
             "const": "selected",
             "description": "Which declared outcome the command took."
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "items": false,
+            "maxItems": 1,
+            "minItems": 1,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "const": "uilab.session.NodeSelected",
+                    "type": "string"
+                  },
+                  "payload": {
+                    "$ref": "#/components/schemas/uilab.session.NodeSelected.Event"
+                  }
+                },
+                "required": [
+                  "event",
+                  "payload"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
           }
         },
         "required": [
-          "outcome"
+          "outcome",
+          "published"
         ],
         "type": "object"
       },
@@ -977,10 +1408,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.DocumentNotOpen.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error",
           "payload"
         ],
@@ -1016,10 +1453,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.PatchRefused.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error",
           "payload"
         ],
@@ -1027,15 +1470,42 @@
       },
       "uilab.session.UndoProposal.undone.Response": {
         "additionalProperties": false,
-        "description": "The document is back to what it was before the patch, and saved. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Undone`, along `undo`. The instance is the one `proposal_id` names. Emits `ProposalUndone`, published to consumers rather than returned here.",
+        "description": "The document is back to what it was before the patch, and saved. Taken when no other outcome's condition matched. A `uilab.session.Proposal` has moved to `Undone`, along `undo`. The instance is the one `proposal_id` names. Emits `ProposalUndone`, published to consumers and listed under `published`.",
         "properties": {
           "outcome": {
             "const": "undone",
             "description": "Which declared outcome the command took."
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "items": false,
+            "maxItems": 1,
+            "minItems": 1,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "const": "uilab.session.ProposalUndone",
+                    "type": "string"
+                  },
+                  "payload": {
+                    "$ref": "#/components/schemas/uilab.session.ProposalUndone.Event"
+                  }
+                },
+                "required": [
+                  "event",
+                  "payload"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
           }
         },
         "required": [
-          "outcome"
+          "outcome",
+          "published"
         ],
         "type": "object"
       },
@@ -1054,10 +1524,16 @@
           },
           "payload": {
             "$ref": "#/components/schemas/uilab.session.ProposalStateConflict.Error"
+          },
+          "published": {
+            "description": "Every event this branch published, in publication order: its qualified name and its payload.",
+            "maxItems": 0,
+            "type": "array"
           }
         },
         "required": [
           "outcome",
+          "published",
           "error"
         ],
         "type": "object"

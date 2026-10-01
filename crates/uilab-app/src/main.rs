@@ -30,7 +30,7 @@ use crate::wire::{Client, Server};
 #[derive(Parser)]
 #[command(
     name = "uilab",
-    about = "Edit a ui-spec/1 document by voice, in the browser"
+    about = "Edit an ess-ui/1 document by voice, in the browser"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -47,7 +47,7 @@ enum Command {
 
 #[derive(clap::Args)]
 struct Serve {
-    /// The ui-spec/1 document to edit; accepted patches are written back to it.
+    /// The ess-ui/1 document to edit; accepted patches are written back to it.
     #[arg(long)]
     doc: PathBuf,
     /// Address to listen on.

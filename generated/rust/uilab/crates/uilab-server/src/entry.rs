@@ -1,0 +1,70 @@
+// generated from uilab v1
+// model digest 8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455
+// contract digest c789fcd30e3ffcc51487d00315741eca272a88a53a2be1e3be26a919b30c4bfb
+// do not edit: regenerate with `ess synthesize`
+
+//! The transport-free entry point's refusals.
+//!
+//! Each served component's `handle` runs a command or view by its qualified name, through the
+//! same code the HTTP routes run. What it cannot answer with a declared outcome it answers with a
+//! [`Refused`]: the same refusal a route answers, without the status, which [`Refused::status`]
+//! still names for a caller that serves it.
+
+/// Why `handle` answered no declared outcome.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refused {
+    /// The surface declares no command and no view by this qualified name.
+    Unknown(String),
+    /// The input is not the command's declared input; the route answers this `400`.
+    Input(String),
+    /// A port reported an unmet obligation, and nothing was written; the route answers this
+    /// `501`, which the contract declares, with `committed: false`.
+    Unmet(String),
+    /// The command's effect and events were committed, and delivering what it published to a
+    /// binding failed; the route answers this `501` with `committed: true`.
+    ///
+    /// The detail begins `delivering what the command published`. Not to be retried: a retry
+    /// performs the command twice.
+    Undelivered(String),
+}
+
+impl Refused {
+    /// The status the HTTP surface answers this refusal with.
+    pub fn status(&self) -> u16 {
+        match self {
+            Self::Unknown(_) => 404,
+            Self::Input(_) => 400,
+            Self::Unmet(_) | Self::Undelivered(_) => 501,
+        }
+    }
+
+    /// `true` when the command's effect was committed before the refusal: the `501` body's
+    /// `committed` member.
+    pub fn committed(&self) -> bool {
+        matches!(self, Self::Undelivered(_))
+    }
+}
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unknown(name) => write!(
+                f,
+                "`{name}` is not a command or view this surface declares"
+            ),
+            Self::Input(detail) | Self::Unmet(detail) | Self::Undelivered(detail) => {
+                f.write_str(detail)
+            }
+        }
+    }
+}
+
+impl std::error::Error for Refused {}
+
+/// A rendered outcome, read back as the value it renders.
+///
+/// The body is written by this crate's own encoders, so it is JSON by construction; reading it
+/// back, rather than building the value a second way, keeps one rendering of every outcome.
+pub(crate) fn read(body: &str) -> crate::json::Value {
+    crate::json::parse(body).expect("this crate's encoders write JSON its reader reads")
+}

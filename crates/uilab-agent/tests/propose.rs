@@ -95,7 +95,6 @@ fn overdue_section() -> Value {
             "name": "overdue",
             "node": {
                 "component": "collection",
-                "title": "Overdue loans",
                 "reads": {"view": "loans.All", "params": {"state": "overdue"}},
                 "columns": [{"field": "title"}, {"field": "member"}, {"field": "due"}]
             }

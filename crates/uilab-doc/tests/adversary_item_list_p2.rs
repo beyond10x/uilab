@@ -5,10 +5,12 @@
 use std::time::{Duration, Instant};
 
 use serde_json::json;
-use uilab_doc::{Child, Document, Fixtures, Layer, NodePath, Patch, admit, check, docs_markdown};
+use uilab_doc::{
+    Child, Document, EXPANSION_LIMIT, Fixtures, Layer, NodePath, Patch, admit, check, docs_markdown,
+};
 
 const DOC: &str = r#"
-format: ui-spec/1
+format: ess-ui/1
 app: library
 title: Lending library
 model: library
@@ -28,14 +30,14 @@ widgets:
   loan_card:
     summary: A loan as a card with an extend button.
     params:
-      loan: {type: Loan, required: true}
+      loan: {type: Loan, required: true, note: the loan row}
     body:
       - {name: title, primitive: text, text: args.loan.title}
       - {name: extend, primitive: button, label: Extend, action: {name: extend, opens: extend}}
   state_badge:
     summary: A loan state as a toned badge.
     params:
-      state: {type: string, required: true}
+      state: {type: string, required: true, note: the loan state}
     body:
       - {name: badge, primitive: badge, text: args.state}
 pages:
@@ -43,14 +45,15 @@ pages:
     kind: dashboard_page
     title: Overview
     sections:
-      latest: {component: loan_card, args: {loan: rows.first}}
+      - {name: board, remove: true}
+      - {name: latest, component: loan_card, args: {loan: rows.first}}
     overlays:
       extend: {kind: dialog, component: record, reads: {view: loans.All}}
   members:
     kind: list_page
     title: Members
     sections:
-      list:
+      - name: list
         component: collection
         reads: {view: loans.All}
         item:
@@ -100,7 +103,7 @@ fn an_opens_in_a_widget_body_is_checked_at_each_use_site() {
         refused
             .message
             .starts_with("page:members/section:list/item:card: ")
-            && refused.message.contains("body `body/extend`"),
+            && refused.message.contains("item/card/body/extend/action`"),
         "{refused}"
     );
 }
@@ -161,8 +164,8 @@ fn a_widget_used_on_two_pages_is_reported_only_where_its_opens_does_not_resolve(
     assert_eq!(found[0].severity, uilab_doc::Severity::Error);
     assert!(
         found[0].message.contains("`loan_card`")
-            && found[0].message.contains("body `body/extend`")
-            && found[0].message.contains("opens `extend`"),
+            && found[0].message.contains("item/card/body/extend/action`")
+            && found[0].message.contains("`extend` names no overlay"),
         "{}",
         found[0].message
     );
@@ -182,21 +185,21 @@ fn a_widget_in_a_header_a_board_or_a_shell_overlay_is_checked_where_it_sits() {
             "    kind: list_page\n    title: Members\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}]}\n",
         )
         .replace(
-            "    sections:\n      list:\n",
-            "    sections:\n      board:\n        component: board\n        widgets:\n          top: {component: loan_card, args: {loan: rows.first}}\n      list:\n",
+            "    sections:\n      - name: list\n",
+            "    sections:\n      - name: board\n        component: board\n        reads: {view: loans.All}\n        widgets:\n          top: {component: loan_card, args: {loan: rows.first}}\n      - name: list\n",
         );
     let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
     assert_opens(
         &doc,
         &[
-            ("shell:app/overlay:quick", "body `body/extend`"),
+            ("page:members", "header/metrics/due/body/extend/action`"),
             (
                 "page:members/section:board/widget:top",
-                "body `body/extend`",
+                "board/widgets/top/body/extend/action`",
             ),
             (
-                "page:members",
-                "at `header/metrics/due`, body `body/extend`",
+                "shell:app/overlay:quick",
+                "overlays/quick/body/extend/action`",
             ),
         ],
     );
@@ -208,8 +211,8 @@ fn a_widget_in_a_header_a_board_or_a_shell_overlay_is_checked_where_it_sits() {
 fn a_nested_widget_body_is_checked_at_the_outer_use_site() {
     let shelf = "  shelf:\n    summary: Loans on a shelf.\n    body:\n      - name: rows\n        component: collection\n        reads: {view: loans.All}\n        item:\n          - {name: card, component: loan_card, args: {loan: row}}\n      - {name: pick, primitive: button, label: Pick, action: {name: pick, does: loans.Pick, choice: {component: loan_card, args: {loan: rows.first}}}}\n";
     let text = with_widgets(DOC, shelf).replace(
-        "      latest: {component: loan_card, args: {loan: rows.first}}\n",
-        "      latest: {component: loan_card, args: {loan: rows.first}}\n      shelf: {component: shelf}\n",
+        "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n",
+        "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n      - {name: shelf, component: shelf}\n",
     );
     let on_overview = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(opens_at(&on_overview), Vec::<String>::new());
@@ -221,11 +224,11 @@ fn a_nested_widget_body_is_checked_at_the_outer_use_site() {
         &[
             (
                 "page:members/section:list/item:shelf",
-                "body `body/rows/item:card/body/extend`",
+                "item/shelf/body/pick/action/choice/body/extend/action`",
             ),
             (
                 "page:members/section:list/item:shelf",
-                "body `body/pick/action/choice/body/extend`",
+                "item/shelf/body/rows/item/card/body/extend/action`",
             ),
         ],
     );
@@ -245,8 +248,24 @@ fn an_opens_in_a_widget_body_with_no_use_reports_nothing() {
     assert_eq!(opens_at(&doc), Vec::<String>::new());
 }
 
-/// Two widgets that contain each other: the expansion stops where a widget recurs, the recursion
-/// is reported, and the `opens` of the outer body is reported once.
+/// The findings ESS's checker reports on a document text, as (check, ESS path).
+fn ess_findings(text: &str) -> Vec<(String, String)> {
+    uilab_doc::ess_ui_check::check_source(
+        text,
+        "case",
+        std::path::Path::new("."),
+        None,
+        &Default::default(),
+    )
+    .findings
+    .into_iter()
+    .map(|f| (f.check.to_string(), f.path.to_string()))
+    .collect()
+}
+
+/// Two widgets that contain each other: the expansion stops where a widget recurs and the
+/// recursion is reported, once, as ESS's `widget_expands`. ESS refuses the document, so uilab
+/// does not open it, and a patch that closes the loop is refused under the same check.
 #[test]
 fn a_recursive_widget_body_is_expanded_once() {
     let widgets = "  loop_a:\n    summary: Holds loop_b.\n    body:\n      - {name: go, primitive: button, label: Go, action: {name: go, opens: nowhere}}\n      - {name: b, component: loop_b}\n  loop_b:\n    summary: Holds loop_a.\n    body:\n      - {name: a, component: loop_a}\n";
@@ -254,31 +273,75 @@ fn a_recursive_widget_body_is_expanded_once() {
         &with_widgets(DOC, widgets),
         "{name: loop, component: loop_a}",
     );
-    let doc = Document::from_yaml(&text).unwrap();
-    assert!(check(&doc).iter().any(|f| f.check == "widget_recursion"));
-    assert_opens(
-        &doc,
-        &[("page:members/section:list/item:loop", "body `body/go`")],
+    let started = Instant::now();
+    let refused =
+        Document::from_yaml(&text).expect_err("ESS refuses a widget that contains itself");
+    assert!(refused.message.contains("contains itself"), "{refused}");
+    let found = ess_findings(&text);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert_eq!(
+        found.iter().filter(|(c, _)| c == "widget_expands").count(),
+        1,
+        "{found:#?}"
     );
+
+    let open = with_widgets(
+        DOC,
+        &widgets.replace(
+            "{name: a, component: loop_a}",
+            "{name: a, primitive: divider}",
+        ),
+    );
+    let doc = Document::from_yaml(&open).unwrap_or_else(|e| panic!("{e}"));
+    let close = Patch::Replace {
+        target: path("component:loop_b/node:a"),
+        node: json!({"component": "loop_a"}),
+    };
+    assert_eq!(admit(&doc, &close).unwrap_err().check, "widget_expands");
 }
 
-const OPENER: &str = "  opener:\n    summary: A button that opens the overlay it is given.\n    params:\n      target: {type: {ref: overlay}}\n    body:\n      - {name: go, primitive: button, label: Open, action: {name: go, opens: args.target}}\n  opens_extend:\n    summary: An opener that opens extend by default.\n    params:\n      target: {type: {ref: overlay}, default: extend}\n    body:\n      - {name: go, primitive: button, label: Open, action: {name: go, opens: args.target}}\n";
+const OPENER: &str = "  opener:\n    summary: A button that opens the overlay it is given.\n    params:\n      target: {type: {ref: overlay}, note: the overlay to open}\n    body:\n      - {name: go, primitive: button, label: Open, action: {name: go, opens: args.target}}\n  opens_extend:\n    summary: An opener that opens extend by default.\n    params:\n      target: {type: {ref: overlay}, default: extend, note: the overlay to open}\n    body:\n      - {name: go, primitive: button, label: Open, action: {name: go, opens: args.target}}\n";
 
 /// ess WidgetInstance.expansion substitutes `args.<param>` before the body is checked. An
 /// `opens: args.target` is held to the overlay the instance binds, or the param's default when it
 /// binds none. The same widget bound differently at two uses is judged per use, in either order.
-/// An unbound param with no default, or one bound to a runtime reference or a non-string, cannot
-/// be judged statically and reports nothing.
+/// In ess-ui/1 `opens` is `{ref: overlay}`, a name: one bound to `row.overlay` or `rows.first` is
+/// held to the overlays like any other name and reported. ESS refuses three bindings outright, so a document
+/// holding one never opens: `args.other` outside every widget names a param nothing declares
+/// (`widget_expands`), `3` is not an overlay name, and an unbound param with no default leaves
+/// the action with nothing to do (`document_loads`).
 #[test]
 fn an_args_opens_is_held_to_the_bound_literal_or_the_default_and_skipped_otherwise() {
+    for (item, check, at) in [
+        (
+            "{name: c, component: opener}",
+            "document_loads",
+            "pages/members/sections/list/item/c/body/go/action",
+        ),
+        (
+            "{name: f, component: opener, args: {target: args.other}}",
+            "widget_expands",
+            "pages/members/sections/list/item/f/body",
+        ),
+        (
+            "{name: g, component: opener, args: {target: 3}}",
+            "document_loads",
+            "pages/members/sections/list/item/g/body/go/action",
+        ),
+    ] {
+        let refused = with_member_item(&with_widgets(DOC, OPENER), item);
+        assert!(Document::from_yaml(&refused).is_err(), "{item}");
+        assert_eq!(
+            ess_findings(&refused),
+            [(check.to_owned(), at.to_owned())],
+            "{item}"
+        );
+    }
     let items = [
         "{name: a, component: opener, args: {target: extend}}",
         "{name: b, component: opener, args: {target: help}}",
-        "{name: c, component: opener}",
         "{name: d, component: opener, args: {target: row.overlay}}",
         "{name: e, component: opener, args: {target: rows.first}}",
-        "{name: f, component: opener, args: {target: args.other}}",
-        "{name: g, component: opener, args: {target: 3}}",
         "{name: h, component: opens_extend}",
         "{name: i, component: opens_extend, args: {target: help}}",
     ]
@@ -289,9 +352,9 @@ fn an_args_opens_is_held_to_the_bound_literal_or_the_default_and_skipped_otherwi
     );
     let used = |overview: &str| {
         let text = with_member_item(&with_widgets(&with_help, OPENER), &items).replace(
-            "      latest: {component: loan_card, args: {loan: rows.first}}\n",
+            "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n",
             &format!(
-                "      latest: {{component: loan_card, args: {{loan: rows.first}}}}\n{overview}"
+                "      - {{name: latest, component: loan_card, args: {{loan: rows.first}}}}\n{overview}"
             ),
         );
         Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"))
@@ -299,17 +362,25 @@ fn an_args_opens_is_held_to_the_bound_literal_or_the_default_and_skipped_otherwi
     let expected = [
         (
             "page:members/section:list/item:a",
-            "widget `opener`, body `body/go`, opens `extend`,",
+            "widget `opener`, `pages/members/sections/list/item/a/body/go/action`: `extend` names no overlay",
+        ),
+        (
+            "page:members/section:list/item:d",
+            "widget `opener`, `pages/members/sections/list/item/d/body/go/action`: `row.overlay` names no overlay",
+        ),
+        (
+            "page:members/section:list/item:e",
+            "widget `opener`, `pages/members/sections/list/item/e/body/go/action`: `rows.first` names no overlay",
         ),
         (
             "page:members/section:list/item:h",
-            "widget `opens_extend`, body `body/go`, opens `extend`,",
+            "widget `opens_extend`, `pages/members/sections/list/item/h/body/go/action`: `extend` names no overlay",
         ),
     ];
     assert_opens(&used(""), &expected);
     assert_opens(
         &used(
-            "      o1: {component: opener, args: {target: extend}}\n      o2: {component: opens_extend}\n",
+            "      - {name: o1, component: opener, args: {target: extend}}\n      - {name: o2, component: opens_extend}\n",
         ),
         &expected,
     );
@@ -320,7 +391,7 @@ fn an_args_opens_is_held_to_the_bound_literal_or_the_default_and_skipped_otherwi
 /// `args.<param>`, bound at the outer use.
 #[test]
 fn a_nested_instance_is_expanded_with_the_args_its_holder_binds() {
-    let holders = "  holds_literal:\n    summary: Opens nowhere through an opener.\n    body:\n      - {name: inner, component: opener, args: {target: nowhere}}\n  passes_through:\n    summary: Hands its target to an opener.\n    params:\n      target: {type: {ref: overlay}}\n    body:\n      - {name: inner, component: opener, args: {target: args.target}}\n";
+    let holders = "  holds_literal:\n    summary: Opens nowhere through an opener.\n    body:\n      - {name: inner, component: opener, args: {target: nowhere}}\n  passes_through:\n    summary: Hands its target to an opener.\n    params:\n      target: {type: {ref: overlay}, note: the overlay to open}\n    body:\n      - {name: inner, component: opener, args: {target: args.target}}\n";
     let widgets = format!("{OPENER}{holders}");
     let text = with_member_item(
         &with_member_item(
@@ -335,37 +406,39 @@ fn a_nested_instance_is_expanded_with_the_args_its_holder_binds() {
         &[
             (
                 "page:members/section:list/item:l",
-                "body `body/inner/body/go`, opens `nowhere`,",
+                "item/l/body/inner/body/go/action`: `nowhere` names no overlay",
             ),
             (
                 "page:members/section:list/item:p",
-                "body `body/inner/body/go`, opens `nowhere`,",
+                "item/p/body/inner/body/go/action`: `nowhere` names no overlay",
             ),
         ],
     );
 }
 
-/// path.rs: "Adding a sibling never changes an existing path." An unnamed header metric holding an
-/// undeclared widget, and an unnamed header action whose `choice` holds a widget whose body opens
-/// an overlay the page lacks, are errors already there. A replace of the page that puts a clean
-/// entry in front of each brings nothing new and is admitted.
+/// path.rs: "Adding a sibling never changes an existing path." A header metric holding a widget,
+/// and an action without a `name` (named after its `does`) whose `choice` holds one, whose body
+/// opens an overlay the page lacks, are errors already there. ess-ui/1 makes every metric carry a
+/// `name`, and ESS refuses a document holding an undeclared widget, so neither of those is a
+/// pre-existing error any more. A replace of the page that puts a clean entry in front of each
+/// brings nothing new and is admitted.
 #[test]
 fn a_clean_unnamed_entry_in_front_of_a_broken_one_is_not_refused_for_the_old_error() {
     let text = DOC.replace(
         "    kind: list_page\n    title: Members\n",
-        "    kind: list_page\n    title: Members\n    header: {metrics: [{component: missing}], actions: [{label: Pick, choice: {component: loan_card, args: {loan: rows.first}}}]}\n",
+        "    kind: list_page\n    title: Members\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}], actions: [{label: Pick, does: loans.Pick, choice: {component: loan_card, args: {loan: rows.first}}}]}\n",
     );
     let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
     let errors: Vec<_> = check(&doc)
         .into_iter()
-        .filter(|f| f.check == "widget_resolves" || f.check == "opens_resolves")
+        .filter(|f| f.check == "opens_resolves")
         .collect();
     assert_eq!(errors.len(), 2, "{errors:#?}");
     let mut page = serde_json::to_value(&doc.pages["members"]).unwrap();
-    page["header"]["metrics"] = json!([{"component": "state_badge", "args": {"state": "rows.first"}}, {"component": "missing"}]);
+    page["header"]["metrics"] = json!([{"name": "state", "component": "state_badge", "args": {"state": "rows.first"}}, {"name": "due", "component": "loan_card", "args": {"loan": "rows.first"}}]);
     page["header"]["actions"] = json!([
-        {"label": "Other"},
-        {"label": "Pick", "choice": {"component": "loan_card", "args": {"loan": "rows.first"}}},
+        {"label": "Other", "does": "loans.Other"},
+        {"label": "Pick", "does": "loans.Pick", "choice": {"component": "loan_card", "args": {"loan": "rows.first"}}},
     ]);
     let replace = Patch::Replace {
         target: path("page:members"),
@@ -429,19 +502,47 @@ fn admitting_beside_sixteen_thousand_body_findings_stays_near_the_cost_of_a_chec
 
 /// The two walks (`nodes` for widget uses, `check_composite` for opens) meet at every primitive
 /// item and every widget-body primitive: each fault is reported once, and each use site is listed
-/// once in the docs.
+/// once in the docs. An undeclared widget in a primitive's `choice`, in an item or in a widget
+/// body, is ESS's `widget_expands`, which refuses the document: reported once, at its node.
 #[test]
 fn a_fault_in_a_primitive_node_is_reported_once_and_a_use_site_listed_once() {
+    let items = "          - {name: tag, primitive: badge, text: row.state}\n          - {name: go, primitive: button, label: Go, action: {name: go, opens: nowhere}}\n          - {name: pick, primitive: button, label: Pick, action: {name: pick, does: loans.Pick, choice: {component: state_badge, args: {state: row.state}}}}\n";
+    let body = "      - {name: badge, primitive: badge, text: args.state}\n      - {name: more, primitive: button, label: More, action: {name: more, opens: nowhere}}\n";
     let text = DOC
         .replace(
             "          - {name: tag, primitive: badge, text: row.state}\n",
-            "          - {name: tag, primitive: badge, text: row.state}\n          - {name: go, primitive: button, label: Go, action: {name: go, opens: nowhere, choice: {component: missing}}}\n          - {name: pick, primitive: button, label: Pick, action: {name: pick, does: loans.Pick, choice: {component: state_badge, args: {state: row.state}}}}\n",
+            items,
         )
         .replace(
             "      - {name: badge, primitive: badge, text: args.state}\n",
-            "      - {name: badge, primitive: badge, text: args.state}\n      - {name: more, primitive: button, label: More, action: {name: more, does: loans.More, choice: {component: missing}}}\n",
+            body,
         );
-    let doc = Document::from_yaml(&text).unwrap();
+    for (missing, at) in [
+        (
+            text.replace(
+                "{name: go, opens: nowhere}",
+                "{name: go, opens: nowhere, choice: {component: missing}}",
+            ),
+            "pages/members/sections/list/item/go/action/choice/component",
+        ),
+        (
+            text.replace(
+                "{name: more, opens: nowhere}",
+                "{name: more, does: loans.More, choice: {component: missing}}",
+            ),
+            "pages/members/sections/list/item/pick/action/choice/body/more/action/choice/component",
+        ),
+    ] {
+        assert!(Document::from_yaml(&missing).is_err());
+        let found = ess_findings(&missing);
+        let expands: Vec<_> = found
+            .iter()
+            .filter(|(c, _)| c == "widget_expands")
+            .collect();
+        assert_eq!(expands.len(), 1, "{found:#?}");
+        assert_eq!(expands[0].1, at, "{found:#?}");
+    }
+    let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
     let findings: Vec<_> = check(&doc)
         .into_iter()
         .map(|f| (f.check, f.path, f.message))
@@ -460,10 +561,9 @@ fn a_fault_in_a_primitive_node_is_reported_once_and_a_use_site_listed_once() {
     };
     assert_eq!(at("opens_resolves", "page:members/section:list/item:go"), 1);
     assert_eq!(
-        at("widget_resolves", "page:members/section:list/item:go"),
+        at("opens_resolves", "page:members/section:list/item:pick"),
         1
     );
-    assert_eq!(at("widget_resolves", "component:state_badge/node:more"), 1);
 
     let docs = docs_markdown(&doc, &Fixtures::default(), &check(&doc));
     let site = "`page:members/section:list/item:pick` (`action/choice`)";
@@ -471,8 +571,9 @@ fn a_fault_in_a_primitive_node_is_reported_once_and_a_use_site_listed_once() {
 }
 
 /// A large document: a collection with 3000 item nodes and a chain of 200 widgets, each using the
-/// next in a body collection item and in a body button's choice. Checking it and admitting one
-/// insert stay fast.
+/// next in a body collection item and in a body button's choice. ESS expands every use in full
+/// (2^199 nodes per use), so uilab refuses it before ESS sees it (`expansion_bound`): loading it,
+/// checking the chain without its uses and refusing a patch that adds one use all stay fast.
 #[test]
 fn checking_a_large_document_stays_fast() {
     let mut text = String::from(DOC);
@@ -505,8 +606,25 @@ fn checking_a_large_document_stays_fast() {
         "          - {name: tag, primitive: badge, text: row.state}\n",
         &format!("          - {{name: tag, primitive: badge, text: row.state}}\n{items}"),
     );
-    let doc = Document::from_yaml(&text).unwrap_or_else(|e| panic!("{e}"));
+    let started = Instant::now();
+    let refused = Document::from_yaml(&text).expect_err("the chain expands to 2^199 nodes");
+    let loaded = started.elapsed();
+    assert!(
+        refused.message.contains(&EXPANSION_LIMIT.to_string()),
+        "{refused}"
+    );
+    assert_eq!(
+        refused.path, "pages/members/sections/list/item/n1",
+        "{refused}"
+    );
 
+    // The same chain with its uses removed loads and checks; a patch adding one use is refused.
+    let unused = text
+        .lines()
+        .filter(|line| !line.contains("component: chain0}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let doc = Document::from_yaml(&unused).unwrap_or_else(|e| panic!("{e}"));
     let started = Instant::now();
     let findings = check(&doc);
     let checked = started.elapsed();
@@ -524,14 +642,23 @@ fn checking_a_large_document_stays_fast() {
         child: Child {
             layer: Layer::Item,
             name: "extra".into(),
-            node: json!({"primitive": "divider"}),
+            node: json!({"component": "chain0"}),
             nav_section: None,
         },
     };
-    admit(&doc, &insert).unwrap_or_else(|e| panic!("{e}"));
+    let refusal = admit(&doc, &insert).expect_err("one use of the chain is over the limit");
     let admitted = started.elapsed();
+    assert_eq!(refusal.check, "expansion_bound", "{refusal}");
     assert!(
-        checked < Duration::from_secs(5) && admitted < Duration::from_secs(10),
-        "check took {checked:?}, admit took {admitted:?}"
+        refusal
+            .message
+            .starts_with("page:members/section:list/item:extra"),
+        "{refusal}"
+    );
+    assert!(
+        loaded < Duration::from_secs(5)
+            && checked < Duration::from_secs(5)
+            && admitted < Duration::from_secs(10),
+        "load took {loaded:?}, check took {checked:?}, admit took {admitted:?}"
     );
 }

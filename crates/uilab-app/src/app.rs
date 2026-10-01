@@ -234,7 +234,7 @@ impl App {
         {
             s::OpenDocumentOutcome::Opened { document_opened } => document_opened.document_id,
             s::OpenDocumentOutcome::Unreadable { .. } => {
-                return Err(format!("{file} is not a ui-spec/1 document"));
+                return Err(format!("{file} is not an ess-ui/1 document"));
             }
         };
         let doc = handle
@@ -1075,7 +1075,11 @@ impl App {
                         }
                         _ => uilab_doc::sample_rows(&self.doc(), &read.view),
                     };
-                    uilab_doc::ViewRows { total: None, rows }
+                    uilab_doc::ViewRows {
+                        total: None,
+                        rows,
+                        sample: true,
+                    }
                 };
                 self.send(wire::rows(&read.view, rows.total, rows.rows));
             }
@@ -1909,8 +1913,8 @@ mod tests {
   loan_card:
     summary: A loan as a card.
     params:
-      loan: {type: Loan, required: true}
-      compact: {type: boolean, default: false}
+      loan: {type: Loan, required: true, note: loan param}
+      compact: {type: boolean, default: false, note: compact param}
     body:
       - {name: title, primitive: text, text: args.loan.title, style: heading}
       - {name: due, primitive: badge, text: args.loan.due}
@@ -1919,10 +1923,10 @@ pages:
 
     /// The library with the widget `loan_card`, used once as a section of the overview.
     fn with_loan_card(text: String) -> String {
-        assert!(text.contains("\npages:\n") && text.contains("    sections:\n      on_loan:\n"));
+        assert!(text.contains("\npages:\n") && text.contains("      - name: on_loan\n"));
         text.replacen("\npages:\n", &format!("\n{LOAN_CARD}"), 1).replacen(
-            "    sections:\n      on_loan:\n",
-            "    sections:\n      latest: {component: loan_card, args: {loan: rows.first}}\n      on_loan:\n",
+            "      - name: on_loan\n",
+            "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n      - name: on_loan\n",
             1,
         )
     }
@@ -1962,8 +1966,8 @@ pages:
         assert_eq!(
             card["props"]["params"],
             serde_json::json!({
-                "loan": {"type": "Loan", "required": true},
-                "compact": {"type": "boolean", "default": false},
+                "loan": {"type": "Loan", "required": true, "note": "loan param"},
+                "compact": {"type": "boolean", "default": false, "note": "compact param"},
             })
         );
         assert_eq!(card["props"]["arrange"], "column");
@@ -2313,10 +2317,10 @@ pages:
     #[test]
     fn a_proposal_card_names_only_the_findings_the_proposal_brings() {
         let mut rig = rig_over(true, |text| {
-            assert!(text.contains("    sections:\n      on_loan:\n"));
+            assert!(text.contains("      - name: on_loan\n"));
             text.replacen(
-                "    sections:\n      on_loan:\n",
-                "    sections:\n      trend: {component: chart, reads: {view: draft.LoansPerMonth}}\n      on_loan:\n",
+                "      - name: on_loan\n",
+                "      - {name: trend, component: chart, chart: bar, reads: {placeholder: loans.LoansPerMonth, fixture: fixtures/loans_per_month.yaml}}\n      - name: on_loan\n",
                 1,
             )
         });
@@ -2327,7 +2331,7 @@ pages:
                 child: uilab_doc::Child {
                     layer: Layer::Section,
                     name: "by_state".into(),
-                    node: json!({"component": "chart", "reads": {"view": "draft.LoansByState"}}),
+                    node: json!({"component": "chart", "chart": "bar", "reads": {"placeholder": "loans.LoansByState", "fixture": "fixtures/loans_by_state.yaml"}}),
                     nav_section: None,
                 },
             },
@@ -2384,21 +2388,21 @@ pages:
             .expect("the rows are answered")
     }
 
-    /// A proposal preview reads a draft view the document does not: its sample rows carry the
+    /// A proposal preview reads a placeholder the document does not: its sample rows carry the
     /// fields the preview's composites name while the proposal waits, and the document's again
     /// once it is rejected.
     #[test]
     fn sample_rows_follow_the_waiting_proposal_and_not_the_document_it_would_change() {
         let mut rig = rig(true);
-        let view = "draft.MembersWithOverdue";
+        let view = "loans.MembersWithOverdue";
         let sent = accept_patch_reviewed(
             &mut rig,
             Patch::Replace {
                 target: "page:overview/section:on_loan".parse().unwrap(),
                 node: json!({
                     "component": "metric",
-                    "title": "Members with overdue loans",
-                    "reads": {"view": view},
+                    "label": "Members with overdue loans",
+                    "reads": {"placeholder": view, "fixture": "fixtures/members_with_overdue.yaml"},
                     "from": "members",
                 }),
             },

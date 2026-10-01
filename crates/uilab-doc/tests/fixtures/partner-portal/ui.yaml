@@ -1,0 +1,636 @@
+# A SaaS partner portal written in ess-ui/1. It exists to exercise every construct of
+# schemas/ui/ess-ui.schema.yaml, and most shorthands; the schema's examples are taken from this
+# file. Invented domain, invented data. Fixtures live under fixtures/, relative to this file.
+
+format: ess-ui/1
+app: portal
+title: Partner portal
+model: partners.platform
+actor: from_session
+placement_profile: hybrid
+placement_defaults: {page_state: url, selection: memory, component_state: memory, draft: session_storage, view_cache: memory, channel_buffer: memory, preference: server, credential: server_session}
+fixtures: {dir: fixtures, index: fixtures/index.yaml}
+
+# ── Types ─────────────────────────────────────────────────────────────────────────────────────
+types:
+  Sort:          {record: {by: string, dir: {enum: [asc, desc]}}}
+  TimeWindow:    {record: {from: timestamp, to: timestamp, preset: {enum: [this_month, last_30d, this_quarter, custom]}}}
+  Money:         {record: {amount: number, currency: {enum: [EUR, USD, GBP]}}}
+  Tone:          {enum: [neutral, info, success, warning, danger]}
+  PartnerTier:   {enum: [registered, silver, gold, platinum]}
+  DealStage:     {enum: [lead, qualified, proposal, won, lost]}
+  InvoiceStatus: {enum: [draft, sent, paid, overdue]}
+  TicketPriority: {enum: [low, normal, high, urgent]}
+  Tag:           string
+
+# ── Widgets: app-defined composites ─────────────────────────────────────────────────────────
+widgets:
+  money:
+    summary: An amount with its currency.
+    params:
+      value:    {type: Money, required: true, note: amount to show}
+    arrange: row
+    body:
+      - {name: amount, primitive: text, text: args.value.amount, format: currency, currency: args.value.currency, style: body}
+  status_badge:
+    summary: A status value rendered as a toned badge.
+    params:
+      status: {type: string, required: true, note: the status value}
+      tones:  {type: {map: {key: string, value: Tone}}, required: true, note: tone per status value}
+    arrange: row
+    body:
+      - {name: badge, primitive: badge, text: args.status, tone_by: {value: args.status, map: args.tones}}
+  partner_card:
+    summary: A partner as a card with logo, tier and revenue.
+    params:
+      partner: {type: Partner, required: true, note: the partner row}
+    arrange: column
+    body:
+      - {name: logo,    primitive: image, src: args.partner.logo_url, alt: Partner logo, fit: contain}
+      - {name: title,   primitive: text, text: args.partner.name, style: heading}
+      - {name: tier,    component: status_badge, args: {status: args.partner.tier, tones: {registered: neutral, silver: info, gold: warning, platinum: success}}}
+      - {name: revenue, component: money, args: {value: args.partner.revenue_ytd}}
+      - {name: rule,    primitive: divider}
+      - {name: open,    primitive: link, text: Open, to: {to: partners.detail, params: {id: args.partner.id}}}
+
+# ── Shells ────────────────────────────────────────────────────────────────────────────────────
+shells:
+  app:
+    regions:
+      nav:     {kind: navigation, props: {collapsible: true, search: {over: [label, synonyms]}}}
+      account: {kind: account_menu, props: {actions: [{name: switch_org, opens: switch_org, label: Switch organization}, {name: sign_out, does: session.SignOut, label: Sign out}]}}
+      main:    {kind: page_outlet}
+      overlay: {kind: overlay_outlet, props: {one_at_a_time: true}}
+      notify:  {kind: notifications}
+      helper:  {kind: assistant, visible: shell.assistant_enabled, props: {does: [assistant.Ask]}}
+    state:
+      nav_expanded:      {type: boolean, class: preference, default: true}
+      theme:             {type: {enum: [light, dark]}, class: preference, store: local_storage, pinned: true, default: light}
+      assistant_enabled: {type: boolean, class: preference, default: false}
+      credentials:       {type: {record: {access_token: string, refresh_token: string}}, class: credential, sensitive: true, store: server_session, pinned: true}
+    preload:
+      policy: in_background
+      except_on: [auth.sign_in]
+      views: [{view: session.Me}, {view: tags.All}]
+    guards:
+      - {name: signed_in,   when: "not actor.signed_in", then: {redirect: auth.sign_in}}
+      - {name: invite_link, when: url.query.invite, then: {set: {shell.invite_token: url.query.invite}}}
+    overlays:
+      switch_org:
+        kind: dialog
+        component: form
+        title: Switch organization
+        does: session.SwitchOrganization
+        fields: [{field: organization_id, as: choice, choice: {component: choice, reads: {view: session.Organizations}}}]
+  auth:
+    regions:
+      main:   {kind: page_outlet}
+      notify: {kind: notifications}
+
+# ── Navigation ────────────────────────────────────────────────────────────────────────────────
+navigation:
+  home: overview
+  visibility: by_actor_grants
+  search: {over: [label, synonyms]}
+  sections:
+    - {name: home,    label: Home,    icon: home,      pages: [overview, activity.feed]}
+    - {name: sales,   label: Sales,   icon: briefcase, pages: [partners.list, deals.list, deals.pipeline, forecast.quarterly]}
+    - {name: billing, label: Billing, icon: receipt,   pages: [invoices.list]}
+    - {name: support, label: Support, icon: lifebuoy,  pages: [tickets.list]}
+    - name: saved
+      label: Saved views
+      icon: bookmark
+      pages: {from_view: saved_views.Mine, page: deals.saved, param: view_id, label: row.label, synonyms: [filter, view]}
+    - {name: admin,   label: Admin,   icon: settings,  pages: [settings.organization, users.list, workflows.editor]}
+  hidden: [partners.detail, tickets.detail, auth.sign_in]
+  restrictions:
+    - {when: "actor.roles == {partner}", sections: [home, billing, support]}
+
+
+# ── Page kinds ────────────────────────────────────────────────────────────────────────────────
+page_kinds:
+  entity_list_page:
+    extends: list_page
+    purpose: rows of one entity with a drawer to create and edit and a confirm to delete
+    state:
+      tags: {type: {list: Tag}, class: page_state, store: url, pinned: true}
+    sections:
+      - name: filters
+        component: filter_bar
+        binds: [state.search, state.tags]
+        search: {binds: state.search}
+        choices:
+          - {name: tags, component: choice, reads: {view: tags.All}, multiple: true, style: tags}
+    overlays:
+      create: {kind: drawer, component: form}
+      edit:   {kind: drawer, component: form}
+      delete: {kind: dialog, component: confirm, confirm_label: Delete}
+    header: {title: from_page, total: list, filters: filters, actions: [{name: create, opens: create, label: New}]}
+
+# ── Channels ──────────────────────────────────────────────────────────────────────────────────
+channels:
+  activity:
+    carries: {events: [activity.ActivityRecorded]}
+    direction: server_to_client
+    delivery: every_event
+    resume: from_last_seen
+    scope: account
+    lifecycle: [connecting, live, reconnecting, stale, closed]
+    reconnect: {backoff: {from: 1s, to: 30s}}
+    stale_after: 60s
+    buffer: {type: {list: ActivityEvent}, class: channel_buffer}
+  metrics:
+    carries: {view: metrics.Live}
+    direction: server_to_client
+    delivery: latest_value
+    resume: refetch
+    stale_after: 30s
+    buffer: {type: LiveMetrics, class: channel_buffer}
+    fields: {revenue_mtd: revenue_mtd, open_deals: open_deals, overdue_invoices: overdue_invoices}
+  tickets:
+    carries: {events: [tickets.TicketOpened, tickets.TicketUpdated, tickets.TicketClosed]}
+    direction: server_to_client
+    delivery: every_event
+    resume: refetch
+    buffer: {type: {list: TicketEvent}, class: channel_buffer}
+  ticket_chat:
+    carries: {events: [tickets.ReplyPosted, tickets.TypingStarted]}
+    direction: both
+    sends: [tickets.PostReply, tickets.StartTyping]
+    delivery: every_event
+    resume: from_last_seen
+    scope: param
+    session: {per: ticket_id}
+    fields: {typing: "true while a TypingStarted event is younger than 5s"}
+    buffer: {type: {list: ChatEvent}, class: channel_buffer}
+
+# ── Pages ─────────────────────────────────────────────────────────────────────────────────────
+pages:
+
+  overview:
+    kind: dashboard_page
+    title: Overview
+    nav: {label: Overview, synonyms: [home, kpi]}
+    profile: fat
+    layout:
+      areas:
+        grid:
+          - [kpis, kpis]
+          - [pipeline, feed]
+          - [board, board]
+        place: {kpis: [kpis], pipeline: [pipeline], feed: [feed], board: [board]}
+    header: {live: [metrics, activity]}
+    sections:
+      - name: kpis
+        component: record
+        reads: {view: metrics.Live}
+        item:
+          - {name: revenue, component: metric, from: channel.metrics.revenue_mtd, format: number, label: Revenue this month}
+          - {name: deals,   component: metric, from: channel.metrics.open_deals, label: Open deals}
+          - {name: overdue, component: metric, from: channel.metrics.overdue_invoices, label: Overdue invoices}
+        states: {loading: skeleton, stale: {mark: badge}}
+      - name: pipeline
+        component: chart
+        chart: bar
+        reads: {view: deals.StageTotals, params: {window: state.window}}
+        x: stage
+        series: [count, value]
+        degrades: {no_charts: table}
+      - name: feed
+        component: collection
+        style: list
+        reads: {view: activity.Recent, paging: none}
+        columns: [{field: at, as: time}, actor, {field: summary, label: What happened}]
+        live: {channel: activity, effect: insert_top, max_rows: 50}
+        states: {empty: {message: No activity yet}}
+      - name: board
+        component: board
+        load: on_visible
+        reads: {view: dashboards.Mine}
+        widget_by: type
+        widgets:
+          top_partners: {component: collection, reads: {view: partners.Top}, columns: [name, {field: revenue_ytd, as: number}]}
+          win_rate:     {component: metric, reads: {view: deals.WinRate}, format: percent, label: Win rate}
+        item_actions: [{name: remove, does: dashboards.RemoveWidget, label: Remove, confirm: {title: Remove widget}}]
+        layout: {persisted_by: dashboards.SaveLayout, state: state.layout}
+        degrades: {no_free_layout: stack}
+    state:
+      window: {type: TimeWindow, class: page_state, store: url, pinned: true, default: {preset: this_month}}
+      layout: {type: {list: {record: {widget: string, x: integer, y: integer, w: integer, h: integer}}}, class: preference, store: server, scope: user,
+               fallback: {when: "not actor.may(dashboards.SaveLayout)", store: local_storage}}
+
+  activity.feed:
+    kind: report_page
+    title: Activity
+    nav: {label: Activity, synonyms: [events, audit]}
+    profile: thin
+    state:
+      types:  {type: {list: {enum: [deal, invoice, ticket, partner]}}, class: page_state, store: url, pinned: true}
+      paused: {type: boolean, class: component_state, default: false}
+    header: {live: [activity], actions: [{name: pause, sets: {state.paused: toggle}, as: toggle, label: Pause live updates}]}
+    sections:
+      - name: filters
+        component: filter_bar
+        binds: [state.window, state.types]
+        window: {binds: state.window, time: true}
+        choices:
+          - {name: types, component: choice, multiple: true, style: segmented, options: [deal, invoice, ticket, partner]}
+      - name: list
+        component: collection
+        reads: {view: activity.Page, params: {from: state.window.from, to: state.window.to, types: state.types, size: state.size}, paging: cursor}
+        columns: [{field: at, as: time}, actor, {field: type, as: badge}, summary]
+        live: {channel: activity, on: [activity.ActivityRecorded], effect: insert_top, only_if: matches(params), when_paged_away: count_new}
+        states: {loading: skeleton, empty: {message: Nothing happened in this window}, stale: {mark: both}}
+
+  partners.list:
+    kind: entity_list_page
+    title: Partners
+    nav: {label: Partners, synonyms: [resellers, accounts]}
+    state:
+      tier:     {type: {list: PartnerTier}, class: page_state, store: url, pinned: true}
+      selected: {type: {list: PartnerId, unique: true}, class: selection}
+    header:
+      actions:
+        - {name: create, opens: create, label: New partner}
+        - {name: import, upload: {accept: [text/csv], does: partners.ImportPartners}, label: Import CSV}
+        - {name: export, export: {reads: partners.Page, as: csv, params: same_as(list)}, label: Export}
+    sections:
+      - name: filters
+        binds: [state.search, state.tags, state.tier]
+        choices:
+          - {name: tier, component: choice, multiple: true, options: PartnerTier}
+      - name: list
+        component: collection
+        style: cards
+        selection: multiple
+        reads: {view: partners.Page, params: {q: state.search, tags: state.tags, tier: state.tier, sort: state.sort, page: state.page, size: state.size}, paging: server, debounce: 300ms}
+        columns: [{field: name, sortable: true}, {field: tier, as: badge}, {field: revenue_ytd, as: number, sortable: true}, {field: tags, as: tags}]
+        sort: {by: name, allowed: [name, revenue_ytd], mode: server}
+        item:
+          - {name: card, component: partner_card, args: {partner: row}}
+        row_actions:
+          - {name: open, navigate: {to: partners.detail, params: {id: row.id}}, label: Open}
+          - {name: edit, opens: edit, as: icon}
+          - {name: delete, opens: delete, as: icon}
+        bulk_actions:
+          - {does: partners.TagPartners, bulk: true, bind: {partner_ids: state.selected}, label: Add tag}
+        children:
+          - {name: hint, primitive: text, text: "Tip: drop a CSV here to import partners", style: caption}
+        states: {loading: skeleton, empty: {message: No partners yet, action: {name: create, opens: create, label: New partner}}}
+    overlays:
+      create:
+        title: New partner
+        does: partners.CreatePartner
+        fields: [name, {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}, {field: tags, as: tags}, website]
+      edit:
+        title: Edit partner
+        does: partners.UpdatePartner
+        loads: {view: partners.ById, params: {id: params.id}}
+        fields: [name, {field: tier, as: choice, choice: {component: choice, options: PartnerTier}}, {field: tags, as: tags}, website]
+      delete:
+        title: Delete partner
+        does: partners.DeletePartner
+        references: partners.UsedBy
+        consequences: [Open deals are reassigned to the house account]
+
+  partners.detail:
+    kind: detail_page
+    title: Partner
+    params: {id: PartnerId}
+    layout:
+      columns:
+        - {name: side, sections: [summary, contacts], width: narrow}
+        - {name: main, sections: [deals, invoices, usage], width: wide}
+    header: {actions: [{name: edit, opens: edit, label: Edit}, {name: note, opens: note, label: Add note}]}
+    sections:
+      - name: summary
+        component: record
+        reads: {view: partners.ById, params: {id: params.id}}
+        fields: [name, {field: tier, as: badge}, website, {field: created_at, as: date}]
+        item:
+          - {name: revenue, component: money, args: {value: row.revenue_ytd}}
+      - name: contacts
+        component: collection
+        load: on_visible
+        reads: {view: contacts.ByPartner, params: {partner_id: params.id}}
+        columns: [name, email, {field: role, as: badge}]
+      - name: deals
+        component: collection
+        reads: {view: deals.ByPartner, params: {partner_id: params.id}}
+        columns: [title, {field: stage, as: badge}, {field: value, as: number}]
+        item:
+          - {name: stage, component: status_badge, args: {status: row.stage, tones: {lead: neutral, qualified: info, proposal: warning, won: success, lost: danger}}}
+        expand: {component: record, reads: {view: deals.ById, params: {id: row.id}}, fields: [owner, {field: close_date, as: date}, notes]}
+      - name: invoices
+        component: collection
+        depends_on: deals
+        reads: {view: invoices.ByPartner, params: {partner_id: params.id, deal_id: section.deals.selection.id}}
+        columns: [number, {field: status, as: badge}, {field: due, as: date}]
+        item:
+          - {name: amount, component: money, args: {value: row.amount}}
+      - name: usage
+        component: references
+        load: on_demand
+        reads: {view: partners.UsedBy, params: {id: params.id}}
+    overlays:
+      edit:
+        kind: drawer
+        component: form
+        same_as: partners.list.edit
+      note:
+        kind: dialog
+        component: form
+        title: Add note
+        does: partners.AddNote
+        fields: [{field: body, as: rich_text}]
+
+  deals.list:
+    kind: entity_list_page
+    title: Deals
+    nav: {synonyms: [opportunities, pipeline]}
+    switch_to: [deals.pipeline]
+    header:
+      help: {text: Deals move through five stages, link: "https://docs.example.com/deals"}
+    state:
+      stage: {type: {list: DealStage}, class: page_state, store: url, pinned: true}
+      owner: {type: {optional: UserId}, class: page_state, store: url, pinned: true}
+      min_value: {type: {optional: number}, class: page_state, store: url, pinned: true}
+    sections:
+      - name: filters
+        binds: [state.search, state.tags, state.stage, state.owner, state.min_value]
+        choices:
+          - {name: stage, component: choice, multiple: true, options: DealStage}
+          - {name: owner, component: choice, reads: {view: users.All}}
+        inputs:
+          - {field: min_value, as: number, binds: state.min_value}
+      - name: list
+        component: collection
+        reads: {view: deals.Page, params: {q: state.search, stage: state.stage, owner: state.owner, min_value: state.min_value, sort: state.sort, page: state.page, size: state.size}, paging: server, debounce: 300ms}
+        columns: [{field: title, sortable: true}, partner, {field: stage, as: choice}, {field: value, as: number, sortable: true}, {field: close_date, as: date, sortable: true}]
+        sort: {by: close_date, dir: asc, allowed: [title, value, close_date], mode: server}
+        row_actions:
+          - {name: move, does: deals.MoveDeal, bind: {deal_id: row.id}, as: choice, choice: {component: choice, options: DealStage}, optimistic: true}
+          - {name: edit, opens: edit, as: icon}
+          - {name: delete, opens: delete, as: icon}
+    overlays:
+      create:
+        title: New deal
+        does: deals.CreateDeal
+        tabs:
+          - {name: basics, label: Basics, fields: [title, {field: partner_id, as: choice, choice: {component: choice, reads: {view: partners.Page}}}, {field: value, as: number}]}
+          - {name: schedule, label: Schedule, fields: [{field: close_date, as: date}, {field: owner_id, as: choice, choice: {component: choice, reads: {view: users.All}}}]}
+      edit:
+        title: Edit deal
+        does: deals.UpdateDeal
+        loads: {view: deals.ById, params: {id: params.id}}
+        fields: [title, {field: value, as: number}, {field: close_date, as: date}]
+      delete:
+        title: Delete deal
+        does: deals.DeleteDeal
+
+  deals.saved:
+    kind: list_page
+    title: Saved view
+    params: {view_id: SavedViewId}
+    sections:
+      - {name: filters, remove: true}
+      - name: list
+        component: collection
+        reads: {view: deals.BySavedView, params: {view_id: params.view_id}, paging: server}
+        columns: [title, partner, {field: stage, as: badge}, {field: value, as: number}]
+    header: {filters: null}
+
+  deals.pipeline:
+    kind: list_page
+    title: Pipeline
+    nav: {label: Pipeline, synonyms: [kanban, stages]}
+    switch_to: [deals.list]
+    profile: fat
+    sections:
+      - {name: filters, remove: true}
+      - name: list
+        component: collection
+        style: cards
+        group_by: stage
+        reads: {view: deals.Open}
+        columns: [title, partner, {field: value, as: number}]
+        reorder: {does: deals.MoveDeal}
+        degrades: {no_drag: move_buttons}
+    header: {filters: null}
+
+  forecast.quarterly:
+    kind: report_page
+    title: Forecast
+    nav: {label: Forecast, synonyms: [projection, quarter]}
+    sections:
+      - name: filters
+        component: filter_bar
+        binds: [state.window]
+        window: {binds: state.window}
+      - {name: list, remove: true}
+      - name: chart
+        component: chart
+        chart: line
+        reads: {placeholder: forecast.Quarterly, fixture: fixtures/forecast.yaml}
+        x: month
+        series: [committed, best_case]
+    header: {total: null}
+
+  invoices.list:
+    kind: report_page
+    title: Invoices
+    nav: {label: Invoices, synonyms: [billing, payments]}
+    profile: thin
+    state:
+      status: {type: {list: InvoiceStatus}, class: page_state, store: url, pinned: true}
+    header:
+      actions: [{name: export, export: {reads: invoices.Page, as: csv, params: same_as(list)}, label: Export CSV}]
+      metrics:
+        - {name: overdue, component: metric, from: channel.metrics.overdue_invoices, label: Overdue}
+    sections:
+      - name: filters
+        component: filter_bar
+        binds: [state.window, state.status]
+        window: {binds: state.window}
+        choices:
+          - {name: status, component: choice, multiple: true, options: InvoiceStatus}
+      - name: list
+        component: collection
+        reads: {view: invoices.Page, params: {from: state.window.from, to: state.window.to, status: state.status, page: state.page, size: state.size}, paging: server}
+        columns: [number, partner, {field: status, as: badge}, {field: due, as: date}]
+        item:
+          - {name: amount, component: money, args: {value: row.amount}}
+        row_actions:
+          - {name: remind, does: invoices.SendReminder, bind: {invoice_id: row.id}, visible: "row.status == overdue", confirm: {title: Send payment reminder}}
+          - {name: open, opens: invoice, as: icon}
+    overlays:
+      invoice:
+        kind: drawer
+        component: record
+        title: Invoice
+        reads: {view: invoices.ById, params: {id: params.id}}
+        fields: [number, partner, {field: status, as: badge}, {field: due, as: date}, {field: lines, as: json}]
+        actions: [{name: pdf, export: {reads: invoices.Pdf, as: zip}, label: Download PDF}]
+
+  tickets.list:
+    kind: list_page
+    title: Tickets
+    nav: {label: Tickets, synonyms: [support, cases]}
+    state:
+      priority: {type: {list: TicketPriority}, class: page_state, store: url, pinned: true}
+    header: {live: [tickets], actions: [{name: create, opens: create, label: New ticket}]}
+    sections:
+      - name: filters
+        binds: [state.search, state.priority]
+        choices:
+          - {name: priority, component: choice, multiple: true, options: TicketPriority}
+      - name: list
+        component: collection
+        reads: {view: tickets.Page, params: {q: state.search, priority: state.priority, page: state.page, size: state.size}, paging: server}
+        columns: [subject, partner, {field: priority, as: badge}, {field: updated_at, as: time}]
+        live: {channel: tickets, effect: insert_or_patch, only_if: matches(params), when_paged_away: count_new, coalesce: 500ms}
+        row_actions: [{name: open, navigate: {to: tickets.detail, params: {id: row.id}}, label: Open}]
+    overlays:
+      create:
+        kind: drawer
+        component: form
+        title: New ticket
+        does: tickets.OpenTicket
+        fields: [subject, {field: priority, as: choice, choice: {component: choice, options: TicketPriority}}, {field: body, as: rich_text}]
+
+  tickets.detail:
+    kind: detail_page
+    title: Ticket
+    params: {id: TicketId}
+    layout: stack
+    header: {live: [ticket_chat], actions: [{name: close, opens: close, label: Close ticket}, {name: copy_id, copy: params.id, label: Copy ticket ID, as: icon}]}
+    sections:
+      - name: summary
+        component: record
+        reads: {view: tickets.ById, params: {id: params.id}}
+        fields: [subject, partner, {field: priority, as: badge}, {field: opened_at, as: time}]
+      - name: conversation
+        component: collection
+        style: list
+        reads: {view: tickets.Messages, params: {ticket_id: params.id}, paging: append}
+        columns: [{field: at, as: time}, author, body]
+        live: {channel: ticket_chat, on: [tickets.ReplyPosted], effect: insert_or_patch}
+      - name: reply
+        component: form
+        does: tickets.PostReply
+        fields:
+          - {field: body, as: rich_text}
+          - {field: internal, as: toggle, label: Internal note}
+        parts:
+          - {name: editor, component: rich_text, completes: templates.Expressions, syntax: expression, binds: draft.body}
+        draft: {type: ReplyDraft, class: draft, store: session_storage}
+        children:
+          - {name: send, primitive: button, label: Send, tone: primary, action: {name: send, does: tickets.PostReply}}
+          - {name: typing, primitive: icon, icon: typing, tone: info, label: Someone is typing, visible: channel.ticket_chat.typing}
+    overlays:
+      close:
+        kind: dialog
+        component: confirm
+        title: Close ticket
+        does: tickets.CloseTicket
+        input: {label: Type CLOSE to confirm, must_equal: CLOSE}
+        alternatives: [{name: snooze, does: tickets.SnoozeTicket, label: Snooze for a day}]
+
+  settings.organization:
+    kind: settings_page
+    title: Organization
+    nav: {label: Organization, synonyms: [company, billing address, api key]}
+    profile: thin
+    sections:
+      - name: settings
+        component: form
+        does: settings.UpdateOrganization
+        loads: settings.Organization
+        groups:
+          - {name: profile, label: Profile, save: on_change, fields: [name, website, {field: logo, as: file}]}
+          - {name: billing, label: Billing, save: with_form, fields: [billing_email, {field: currency, as: choice, choice: {component: choice, options: [EUR, USD, GBP]}}]}
+          - name: api
+            label: API access
+            save: with_form
+            does: settings.RotateApiKey
+            fields: [{field: api_key, as: secret}]
+            actions: [{name: rotate, does: settings.RotateApiKey, label: Rotate key, confirm: {title: Rotate the API key}}]
+        draft: {type: OrganizationDraft, class: draft, sensitive: true, store: memory, pinned: true}
+        children:
+          - {name: api_toggle, primitive: toggle, label: Allow API access, binds: draft.api_enabled}
+          - {name: api_help, primitive: input, as: search, placeholder: Search settings, binds: state.settings_search}
+
+  users.list:
+    kind: entity_list_page
+    title: Users
+    nav: {label: Users, synonyms: [team, members, roles]}
+    state:
+      roles: {type: {list: Role}, class: page_state, store: url, pinned: true}
+    sections:
+      - name: filters
+        binds: [state.search, state.roles]
+        choices:
+          - {name: tags, remove: true}
+          - {name: roles, component: choice, multiple: true, reads: {view: users.Roles}}
+      - name: list
+        reads: {view: users.All, paging: client}
+        columns: [name, {field: email, sortable: true}, {field: roles, as: tags}]
+        row_actions: [{name: edit, opens: edit, as: icon}, {name: delete, opens: delete, as: icon}]
+    overlays:
+      create:
+        title: Invite user
+        does: users.InviteUser
+        fields: [name, email, {field: roles, as: choice, choice: {component: choice, multiple: true, reads: {view: users.Roles}}}]
+      edit:
+        title: Edit user
+        does: users.UpdateUser
+        fields: [name, {field: roles, as: choice, choice: {component: choice, multiple: true, reads: {view: users.Roles}}}, {field: password, as: secret}]
+        draft: {type: UserDraft, class: draft, sensitive: true, store: memory, pinned: true}
+      delete:
+        title: Remove user
+        does: users.RemoveUser
+        references: users.UsedBy
+
+  workflows.editor:
+    kind: editor_page
+    title: Approval workflow
+    nav: {label: Approval workflow, synonyms: [approvals, rules]}
+    profile: fat
+    sections:
+      - name: editor
+        component: graph_editor
+        reads: {view: workflows.Graph}
+        nodes: {kind_by: step_type, opens: edit_step}
+        edges: {from: from_step, to: to_step, kind_by: outcome}
+        node_actions: [{name: edit, opens: edit_step, label: Edit}, {name: remove, does: workflows.RemoveStep, label: Remove, confirm: {title: Remove step}}]
+        edge_actions: [{name: insert, does: workflows.InsertStep, label: Insert step}]
+        toolbar:
+          - {name: zoom, primitive: input, as: number, binds: state.zoom}
+          - {name: reset, primitive: button, label: Reset, action: {sets: {state.zoom: "1"}}}
+        degrades: {no_graph_editor: collection}
+        state:
+          zoom:      {type: number, class: preference, default: 1}
+          positions: {type: {map: {key: StepId, value: {record: {x: number, y: number}}}}, class: preference, store: server, scope: account, pinned: true}
+    overlays:
+      edit_step:
+        kind: drawer
+        component: form
+        title: Step
+        does: workflows.UpdateStep
+        loads: {view: workflows.StepById, params: {id: params.id}}
+        variant_by: {field: step_type, forms: {approval: workflows.form.approval, notify: workflows.form.notify}}
+        fields: [label, {field: approver_role, as: choice, choice: {component: choice, reads: {view: users.Roles}}}]
+
+  auth.sign_in:
+    kind: form_page
+    title: Sign in
+    shell: auth
+    sections:
+      - name: form
+        component: form
+        does: session.SignIn
+        fields: [email, {field: password, as: secret}]
+        draft: {type: SignInDraft, class: draft, sensitive: true, store: memory, pinned: true}
+        states: {failed: {message: Wrong email or password, retry: false}}
+        children:
+          - {name: logo, primitive: image, src: shell.logo_url, alt: Portal logo, fit: contain}

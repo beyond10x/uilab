@@ -50,9 +50,37 @@ pub enum Layer {
     Component,
     /// One named node of a widget body: a composite, a widget instance or a primitive.
     Node,
+    /// One of a section's extra named nodes (`children`).
+    Child,
+    /// One named node of a form (`parts`).
+    Part,
+    /// One choice of a filter bar (`choices`).
+    Choice,
+    /// One named node of a graph editor's toolbar (`toolbar`).
+    Tool,
 }
 
 impl Layer {
+    /// Every layer, in the order uilab lists a node's children.
+    pub const ALL: [Layer; 16] = [
+        Layer::Root,
+        Layer::Shell,
+        Layer::Region,
+        Layer::Nav,
+        Layer::NavSection,
+        Layer::Page,
+        Layer::Section,
+        Layer::Overlay,
+        Layer::Widget,
+        Layer::Item,
+        Layer::Part,
+        Layer::Choice,
+        Layer::Tool,
+        Layer::Child,
+        Layer::Component,
+        Layer::Node,
+    ];
+
     /// The name a path spells.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -68,31 +96,40 @@ impl Layer {
             Layer::Item => "item",
             Layer::Component => "component",
             Layer::Node => "node",
+            Layer::Child => "child",
+            Layer::Part => "part",
+            Layer::Choice => "choice",
+            Layer::Tool => "tool",
         }
     }
 
     fn parse(text: &str) -> Option<Layer> {
-        Some(match text {
-            "shell" => Layer::Shell,
-            "region" => Layer::Region,
-            "nav" => Layer::Nav,
-            "nav_section" => Layer::NavSection,
-            "page" => Layer::Page,
-            "section" => Layer::Section,
-            "overlay" => Layer::Overlay,
-            "widget" => Layer::Widget,
-            "item" => Layer::Item,
-            "component" => Layer::Component,
-            "node" => Layer::Node,
-            _ => return None,
-        })
+        Layer::ALL
+            .into_iter()
+            .find(|l| *l != Layer::Root && l.as_str() == text)
     }
 
-    /// Whether a node of this layer is, or may be, a composite (and may hold widgets or items).
+    /// Whether a node of this layer is, or may be, a composite (and may hold named nodes).
     pub fn is_composite(self) -> bool {
         matches!(
             self,
-            Layer::Section | Layer::Overlay | Layer::Widget | Layer::Item | Layer::Node
+            Layer::Section
+                | Layer::Overlay
+                | Layer::Widget
+                | Layer::Item
+                | Layer::Node
+                | Layer::Child
+                | Layer::Part
+                | Layer::Choice
+                | Layer::Tool
+        )
+    }
+
+    /// Whether nodes of this layer sit in one of a composite's lists of named nodes.
+    pub fn is_node_list(self) -> bool {
+        matches!(
+            self,
+            Layer::Item | Layer::Child | Layer::Part | Layer::Choice | Layer::Tool
         )
     }
 }
@@ -255,9 +292,9 @@ impl<'de> Deserialize<'de> for NodePath {
     }
 }
 
-/// Whether a node of layer `child` can sit under one of layer `parent`, by the `layers` table of
-/// `ui-spec/1`. Whether a composite holds widgets or items also depends on its kind; see
-/// [`allowed_children`].
+/// Whether a node of layer `child` can sit under one of layer `parent` in some document: the
+/// grammar of a path. Which children a node holds also depends on its kind; see
+/// [`allowed_children`], which reads that from ESS's schema.
 pub fn may_contain(parent: Layer, child: Layer) -> bool {
     use Layer::*;
     match parent {
@@ -265,10 +302,38 @@ pub fn may_contain(parent: Layer, child: Layer) -> bool {
         Shell => matches!(child, Region | Overlay),
         Nav => child == NavSection,
         Page => matches!(child, Section | Overlay),
-        Section | Overlay | Widget | Item | Node => matches!(child, Widget | Item),
+        Section => matches!(child, Widget | Item | Child | Part | Choice | Tool),
+        Overlay | Widget | Item | Node | Child | Part | Choice | Tool => {
+            matches!(child, Widget | Item | Part | Choice | Tool)
+        }
         Component => child == Node,
         Region | NavSection => false,
     }
+}
+
+/// A composite's list of named nodes of `layer`: `item`, `children`, `parts`, `choices` or
+/// `toolbar`.
+pub(crate) fn node_list(composite: &Composite, layer: Layer) -> Option<&Vec<Node>> {
+    Some(match layer {
+        Layer::Item => &composite.item,
+        Layer::Child => &composite.children,
+        Layer::Part => &composite.parts,
+        Layer::Choice => &composite.choices,
+        Layer::Tool => &composite.toolbar,
+        _ => return None,
+    })
+}
+
+/// [`node_list`], to change.
+pub(crate) fn node_list_mut(composite: &mut Composite, layer: Layer) -> Option<&mut Vec<Node>> {
+    Some(match layer {
+        Layer::Item => &mut composite.item,
+        Layer::Child => &mut composite.children,
+        Layer::Part => &mut composite.parts,
+        Layer::Choice => &mut composite.choices,
+        Layer::Tool => &mut composite.toolbar,
+        _ => return None,
+    })
 }
 
 /// A borrowed node of a document.
@@ -368,16 +433,17 @@ pub fn resolve<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeRef<'a>, Pa
                     .and_then(Option::as_ref)
                     .ok_or_else(not_found)?,
             ),
-            (parent, Layer::Widget) => NodeRef::Composite(
+            (parent, Layer::Widget) => node_ref(
                 parent
                     .composite()
                     .and_then(|c| c.widgets.get(name))
                     .ok_or_else(not_found)?,
             ),
-            (parent, Layer::Item) => node_ref(
+            (parent, layer) if layer.is_node_list() => node_ref(
                 parent
                     .composite()
-                    .and_then(|c| c.item_node(name))
+                    .and_then(|c| node_list(c, layer))
+                    .and_then(|nodes| nodes.iter().find(|n| n.name == name))
                     .ok_or_else(not_found)?,
             ),
             _ => return Err(not_found()),
@@ -393,26 +459,44 @@ fn node_ref(node: &Node) -> NodeRef<'_> {
     }
 }
 
-/// The layers a node at `path` can take a new child in, given what the node is.
+/// The layers a node at `path` can take a new child in, given what the node is, as ESS's schema
+/// declares it: each field of the node's construct that holds a list or a map of nodes uilab
+/// addresses.
 ///
-/// Composites follow their kind: only a `board` holds widgets and only a `collection` or a
-/// `record` holds items; a widget instance and a primitive hold nothing. A widget takes nodes in
-/// its body.
+/// A composite follows its kind (a `board` holds widgets, a `collection` or a `record` items, a
+/// `form` parts, a `filter_bar` choices, a `graph_editor` its toolbar) and a section adds its
+/// `children`; a widget instance and a primitive hold nothing an author writes. A widget takes
+/// nodes in its body.
 pub fn allowed_children(doc: &Document, path: &NodePath) -> Result<Vec<Layer>, PathError> {
     let node = resolve(doc, path)?;
     Ok(match node {
-        NodeRef::Root(_) => vec![Layer::Shell, Layer::Page, Layer::Component],
-        NodeRef::Shell(_) => vec![Layer::Region, Layer::Overlay],
-        NodeRef::Nav(_) => vec![Layer::NavSection],
-        NodeRef::Page(_) => vec![Layer::Section, Layer::Overlay],
-        NodeRef::Component(_) => vec![Layer::Node],
-        NodeRef::Region(_) | NodeRef::NavSection(_) | NodeRef::Primitive(_) => vec![],
+        NodeRef::Root(_)
+        | NodeRef::Shell(_)
+        | NodeRef::Nav(_)
+        | NodeRef::NavSection(_)
+        | NodeRef::Page(_)
+        | NodeRef::Region(_)
+        | NodeRef::Component(_) => crate::ess::layers_under(path.layer()),
+        NodeRef::Primitive(_) => vec![],
         NodeRef::Overlay(_) | NodeRef::Composite(_) => {
-            match node.composite().and_then(|c| c.component.kind()) {
-                Some(CompositeKind::Board) => vec![Layer::Widget],
-                Some(CompositeKind::Collection | CompositeKind::Record) => vec![Layer::Item],
-                _ => vec![],
-            }
+            let component = node.composite().map(|c| &c.component);
+            // A section that refines its kind's section holds what the inherited component holds.
+            let inherited = match (component, path.0.as_slice()) {
+                (Some(c), [page, section])
+                    if c.is_inherited() && section.layer == Layer::Section =>
+                {
+                    crate::ess::inherited_component(doc, &page.name, &section.name)
+                }
+                _ => None,
+            };
+            let kind = match &inherited {
+                Some(name) => CompositeKind::parse(name),
+                None => component.and_then(|c| c.kind()),
+            };
+            crate::ess::layers_in_composite(
+                kind.map(CompositeKind::as_str),
+                path.layer() == Layer::Section,
+            )
         }
     })
 }
@@ -465,9 +549,13 @@ pub fn children(doc: &Document, path: &NodePath) -> Result<Vec<(Layer, String)>,
             let c = node
                 .composite()
                 .expect("overlays and composites carry a composite");
-            names(Layer::Widget, c.widgets.keys().collect())
-                .chain(c.item.iter().map(|n| (Layer::Item, n.name.clone())))
-                .collect()
+            let mut out: Vec<(Layer, String)> =
+                names(Layer::Widget, c.widgets.keys().collect()).collect();
+            for layer in Layer::ALL.into_iter().filter(|l| l.is_node_list()) {
+                let nodes = node_list(c, layer).into_iter().flatten();
+                out.extend(nodes.map(|n| (layer, n.name.clone())));
+            }
+            out
         }
     })
 }

@@ -23,7 +23,7 @@ types:
     kind: newtype
     of: String
 
-  # The node a patch inserts or replaces with, as ui-spec/1 YAML read into JSON; `{patches: [...]}`
+  # The node a patch inserts or replaces with, as ess-ui/1 YAML read into JSON; `{patches: [...]}`
   # for a Batch, whose patches are admitted together. Absent for Remove.
   - name: uilab.session.PatchBody
     kind: newtype
@@ -104,7 +104,7 @@ actors:
 
 errors:
   - name: uilab.session.DocumentUnreadable
-    summary: The file is not a ui-spec/1 document, so nothing was opened.
+    summary: The file is not an ess-ui/1 document, so nothing was opened.
     fields:
       - name: path
         type: String
@@ -156,7 +156,7 @@ commands:
         summary: The document is open with its root selected.
 
       - name: unreadable
-        external: the file does not parse as a ui-spec/1 document
+        external: the file does not parse as an ess-ui/1 document
         error: uilab.session.DocumentUnreadable
         summary: Nothing was opened.
 

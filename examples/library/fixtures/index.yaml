@@ -1,0 +1,5 @@
+views:
+  loans.All: loans.yaml
+  loans.Summary: loans.yaml
+  members.All: members.yaml
+  staff.Me: staff.yaml
