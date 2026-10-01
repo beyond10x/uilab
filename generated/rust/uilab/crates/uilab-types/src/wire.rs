@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455
-// contract digest c789fcd30e3ffcc51487d00315741eca272a88a53a2be1e3be26a919b30c4bfb
+// model digest d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13
+// contract digest 9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0
 // do not edit: regenerate with `ess synthesize`
 
 //! wire — `uilab.wire`.
@@ -243,6 +243,8 @@ pub struct OutlineNode {
     pub view: Option<String>,
     /// `props` — `Optional<Json>`.
     pub props: Option<crate::json::Value>,
+    /// `inherited` — `Optional<Boolean>`.
+    pub inherited: Option<bool>,
     /// `children` — `List<uilab.wire.OutlineNode>`.
     pub children: Vec<OutlineNode>,
 }
@@ -315,6 +317,8 @@ pub struct Rows {
     pub total: Option<i64>,
     /// `rows` — `List<Json>`.
     pub rows: Vec<crate::json::Value>,
+    /// `sample` — `Optional<Boolean>`.
+    pub sample: Option<bool>,
 }
 
 /// Say — `uilab.wire.Say`.

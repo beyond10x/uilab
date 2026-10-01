@@ -23,6 +23,8 @@ types:
         type: Optional<String>
       - name: props
         type: Optional<Json>
+      - name: inherited
+        type: Optional<Boolean>
       - name: children
         type: List<uilab.wire.OutlineNode>
 
@@ -51,6 +53,8 @@ types:
         type: Optional<Integer>
       - name: rows
         type: List<Json>
+      - name: sample
+        type: Optional<Boolean>
 
   # Client to server.
   - name: uilab.wire.Select

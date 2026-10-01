@@ -15,9 +15,10 @@ use indexmap::IndexMap;
 use serde_json::json;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use uilab_behaviour::{FileSource, Handle, body_from_json};
+use uilab_doc::outline::{authored_at, rendered, rendered_at};
 use uilab_doc::{
     Document, Finding, Fixtures, Layer, NodePath, Patch, admit, check, field_findings, outline,
-    outline_at, vocabulary, yaml_at,
+    vocabulary, yaml_at,
 };
 use uilab_session::UilabSession;
 use uilab_types::primitives::Uuid;
@@ -149,6 +150,12 @@ pub struct App {
     shown: Option<Server>,
     operators: IndexMap<String, Operator>,
     selected_by: Option<String>,
+    /// An inherited node selected in the browser, and the node the author wrote that the session
+    /// selected for it ([`authored_at`]): the browser is shown the inherited node while the
+    /// session's selection is still that node.
+    inherited_selection: Option<(String, NodePath)>,
+    /// The directory the document's fixture paths are relative to.
+    dir: PathBuf,
     revision: u64,
     review: bool,
     next_api_operator: u64,
@@ -233,9 +240,7 @@ impl App {
             .map_err(|e| e.to_string())?
         {
             s::OpenDocumentOutcome::Opened { document_opened } => document_opened.document_id,
-            s::OpenDocumentOutcome::Unreadable { .. } => {
-                return Err(format!("{file} is not an ess-ui/1 document"));
-            }
+            s::OpenDocumentOutcome::Unreadable { .. } => return Err(unreadable(doc_path)),
         };
         let doc = handle
             .document(&document_id)
@@ -258,6 +263,8 @@ impl App {
             shown: None,
             operators: IndexMap::new(),
             selected_by: None,
+            inherited_selection: None,
+            dir: dir.to_path_buf(),
             revision: 0,
             review,
             next_api_operator: 0,
@@ -301,6 +308,19 @@ impl App {
         findings
     }
 
+    /// The rows a renderer shows for `view` in `doc`: those of the fixture that answers it (the
+    /// index's, or a placeholder read's own `fixture` file, read now, so a placeholder a patch
+    /// added is answered too), else rows made up from what reads it, marked as samples.
+    fn rows_for(&self, doc: &Document, view: &str) -> uilab_doc::ViewRows {
+        if self.fixtures.has(view) {
+            return self.fixtures.rows(view);
+        }
+        match Fixtures::load(doc, &self.dir) {
+            Ok(fixtures) => fixtures.rows_for(doc, view),
+            Err(_) => self.fixtures.rows_for(doc, view),
+        }
+    }
+
     fn doc(&self) -> Document {
         self.handle
             .document(&self.document_id)
@@ -311,11 +331,75 @@ impl App {
         self.handle.selected(&self.document_id).unwrap_or_default()
     }
 
+    /// The selection the browser is shown: the inherited node an operator selected, while the
+    /// session's selection is still the node the author wrote for it and the document still
+    /// renders that node; otherwise the session's.
+    fn shown_selection(&self, doc: &Document) -> String {
+        let selected = self.selected();
+        match &self.inherited_selection {
+            Some((shown, at))
+                if *at == selected && authored_at(doc, shown).as_ref() == Some(at) =>
+            {
+                shown.clone()
+            }
+            _ => selected.to_string(),
+        }
+    }
+
+    /// Selects `path` for `by`. A node the author wrote is selected in the session; an inherited
+    /// node selects the node the author wrote for it ([`authored_at`]), where an instruction then
+    /// lands, and the browser is shown the inherited node.
+    fn select(&mut self, by: &str, path: &str) {
+        let doc = self.doc();
+        let written = path
+            .parse::<NodePath>()
+            .is_ok_and(|p| uilab_doc::resolve(&doc, &p).is_ok());
+        let (at, inherited) = match authored_at(&doc, path) {
+            Some(at) if !written => (at.to_string(), Some((path.to_owned(), at))),
+            _ => (path.to_owned(), None),
+        };
+        let outcome = self.port.select_node(s::SelectNode {
+            document_id: self.document_id.clone(),
+            path: s::NodePath(at),
+        });
+        match outcome {
+            Ok(s::SelectNodeOutcome::Selected { .. }) => {
+                self.inherited_selection = inherited;
+                self.selected_by = Some(by.to_owned());
+                self.send_document();
+                self.send_presence();
+            }
+            Ok(_) => self.send(Server::refused(
+                "path_resolves",
+                format!("no node at `{path}`"),
+                Some(by),
+            )),
+            Err(e) => self.send(Server::failed(e.to_string(), Some(by))),
+        }
+    }
+
+    /// Where an instruction an operator gave at `path` is asked: the node itself when the author
+    /// wrote it, the nearest node the author wrote above it when it is inherited. A path that does
+    /// not parse is refused; one that names no node is the session's to refuse, as before.
+    fn instruction_target(&self, path: &str) -> Result<NodePath, String> {
+        let parsed = path.parse::<NodePath>();
+        let doc = self.doc();
+        if let Ok(at) = &parsed
+            && uilab_doc::resolve(&doc, at).is_ok()
+        {
+            return Ok(at.clone());
+        }
+        match authored_at(&doc, path) {
+            Some(at) => Ok(at),
+            None => parsed.map_err(|e| e.to_string()),
+        }
+    }
+
     fn document_message(&self) -> Server {
         let doc = self.doc();
-        let tree = outline(&doc);
+        let tree = rendered(&doc);
         let findings = self.findings(&doc);
-        let selected = self.selected().to_string();
+        let selected = self.shown_selection(&doc);
         let undoable = self
             .handle
             .last_undoable(&self.document_id)
@@ -698,7 +782,7 @@ impl App {
             document_id: self.document_id.clone(),
             path: s::NodePath(to.to_string()),
         }) {
-            Ok(s::SelectNodeOutcome::Selected { .. }) => {}
+            Ok(s::SelectNodeOutcome::Selected { .. }) => self.inherited_selection = None,
             Ok(_) => {
                 return Err(MoveRefused::Refused {
                     check: "path_resolves".to_owned(),
@@ -828,7 +912,7 @@ impl App {
             return;
         }
         let target = match &start.target {
-            uilab_wire::EssPresence::Present(path) => match path.0.parse::<NodePath>() {
+            uilab_wire::EssPresence::Present(path) => match self.instruction_target(&path.0) {
                 Ok(path) => path,
                 Err(e) => {
                     self.send(Server::refused("path_resolves", e.to_string(), Some(by)));
@@ -961,25 +1045,7 @@ impl App {
                 self.send_presence();
             }
             Client::Resync(_) => self.send_document(),
-            Client::Select(select) => {
-                let outcome = self.port.select_node(s::SelectNode {
-                    document_id: self.document_id.clone(),
-                    path: s::NodePath(select.path.0.clone()),
-                });
-                match outcome {
-                    Ok(s::SelectNodeOutcome::Selected { .. }) => {
-                        self.selected_by = Some(by.to_owned());
-                        self.send_document();
-                        self.send_presence();
-                    }
-                    Ok(_) => self.send(Server::refused(
-                        "path_resolves",
-                        format!("no node at `{}`", select.path.0),
-                        Some(by),
-                    )),
-                    Err(e) => self.send(Server::failed(e.to_string(), Some(by))),
-                }
-            }
+            Client::Select(select) => self.select(by, &select.path.0),
             Client::Mic(mic) if wire::mic_open(&mic) => {
                 if self.goal.as_ref().is_some_and(Goal::is_active) {
                     // Failed rather than refused: the browser lets go of the microphone on it.
@@ -1008,13 +1074,19 @@ impl App {
             }
             Client::Say(say) => {
                 let target = match &say.target {
-                    uilab_wire::EssPresence::Present(path) => match path.0.parse::<NodePath>() {
-                        Ok(path) => Some(path),
-                        Err(e) => {
-                            self.send(Server::refused("path_resolves", e.to_string(), Some(by)));
-                            return;
+                    uilab_wire::EssPresence::Present(path) => {
+                        match self.instruction_target(&path.0) {
+                            Ok(path) => Some(path),
+                            Err(e) => {
+                                self.send(Server::refused(
+                                    "path_resolves",
+                                    e.to_string(),
+                                    Some(by),
+                                ));
+                                return;
+                            }
                         }
-                    },
+                    }
                     uilab_wire::EssPresence::Absent => None,
                 };
                 let review = match say.review {
@@ -1065,23 +1137,14 @@ impl App {
                 }
             }
             Client::Rows(read) => {
-                let rows = if self.fixtures.has(&read.view) {
-                    self.fixtures.rows(&read.view)
-                } else {
-                    // A waiting proposal is what the canvas shows, so its composites shape the rows.
-                    let rows = match (&self.preview, &self.pending) {
-                        (Some((id, after)), Some(pending)) if id == pending => {
-                            uilab_doc::sample_rows(after, &read.view)
-                        }
-                        _ => uilab_doc::sample_rows(&self.doc(), &read.view),
-                    };
-                    uilab_doc::ViewRows {
-                        total: None,
-                        rows,
-                        sample: true,
-                    }
+                // A waiting proposal is what the canvas shows, so it names the fixture files and
+                // its composites shape the rows made up where no fixture answers.
+                let doc = match (&self.preview, &self.pending) {
+                    (Some((id, after)), Some(pending)) if id == pending => after.clone(),
+                    _ => self.doc(),
                 };
-                self.send(wire::rows(&read.view, rows.total, rows.rows));
+                let rows = self.rows_for(&doc, &read.view);
+                self.send(wire::rows(&read.view, rows.total, rows.rows, rows.sample));
             }
             Client::Goal(start) => self.start_goal(by, start),
             Client::StopGoal(stop) => self.stop_goal(by, &stop.goal_id),
@@ -1090,8 +1153,11 @@ impl App {
 
     /// Broadcasts an accepted proposal as a delta. A page or a menu section changes the menu as
     /// well, which a delta at one path cannot carry, and a change that adds or drops a widget
-    /// instance changes the use sites on component nodes elsewhere in the tree: those go out as a
-    /// full snapshot.
+    /// instance changes the use sites on component nodes elsewhere in the tree, and a change
+    /// inside a widget's declaration changes the body every instance of it is shown holding:
+    /// those go out as a full snapshot. So does any delta that, applied by a browser to what ESS
+    /// rendered before, would not leave what ESS renders now ([`delta_holds`]): a removed
+    /// section the page kind still renders, a refinement that changes what the kind merges in.
     fn announce_change(&self, by: &str, id: &s::ProposalId, before: &Document) {
         let Some(patch) = self.handle.patch(id) else {
             self.send_document();
@@ -1099,7 +1165,12 @@ impl App {
         };
         let changed = patch.changed_path();
         let doc = self.doc();
+        let in_widget = changed
+            .0
+            .first()
+            .is_some_and(|segment| segment.layer == Layer::Component);
         if matches!(patch, Patch::Batch { .. })
+            || in_widget
             || matches!(
                 changed.layer(),
                 Layer::Page | Layer::NavSection | Layer::Shell
@@ -1111,9 +1182,22 @@ impl App {
         }
         let node = match patch {
             Patch::Remove { .. } => None,
-            _ => outline_at(&doc, &changed),
+            _ => rendered_at(&doc, &changed.to_string()),
         };
         let parent = changed.parent().unwrap_or_default().to_string();
+        let shown_before = rendered(before);
+        let shown_after = rendered(&doc);
+        if !delta_holds(
+            &shown_before,
+            &shown_after,
+            patch.op_name(),
+            &changed.to_string(),
+            &parent,
+            node.as_ref(),
+        ) {
+            self.send_document();
+            return;
+        }
         let findings = self.findings(&doc);
         self.send(wire::changed(ChangedParts {
             revision: self.revision,
@@ -1382,7 +1466,7 @@ impl App {
             changed: wire::node_path(&changed.to_string()),
             findings: wire::findings(&findings),
             op: wire::op(patch.op_name()),
-            outline: wire::outline(&outline(&after)),
+            outline: wire::outline(&rendered(&after)),
             proposal_id: wire::proposal_id(&proposal_id.0.0),
             target: wire::node_path(&patch.target().to_string()),
             utterance,
@@ -1398,6 +1482,19 @@ fn proposal(id: &str) -> s::ProposalId {
     s::ProposalId(Uuid(id.to_owned()))
 }
 
+/// Why the document at `path` cannot be opened: the file cannot be read, or ESS's loader refuses
+/// it, in ESS's words (the path of the node at fault and its message).
+fn unreadable(path: &Path) -> String {
+    let file = path.display();
+    match std::fs::read_to_string(path) {
+        Err(e) => format!("{file}: {e}"),
+        Ok(text) => match Document::from_yaml(&text) {
+            Err(e) => format!("{file} is not an ess-ui/1 document: {e}"),
+            Ok(_) => format!("{file} is not an ess-ui/1 document"),
+        },
+    }
+}
+
 /// Where an instruction lands: in the Components workspace, a selection outside the widgets (a
 /// page left selected in the app canvas) gives way to the root, where widgets are declared.
 fn placed(target: NodePath, workspace: uilab_agent::Workspace) -> NodePath {
@@ -1409,6 +1506,72 @@ fn placed(target: NodePath, workspace: uilab_agent::Workspace) -> NodePath {
         uilab_agent::Workspace::Components if !in_widgets => NodePath::root(),
         _ => target,
     }
+}
+
+/// Whether a browser showing `before` that applies the delta `op` at `changed` under `parent`
+/// with `node` (as `widget/src/lib/collab.ts` `applyChange` does) ends up showing every node of
+/// `after`, each as `after` has it, and nothing else. Order among siblings is not compared: an
+/// insert lands last on the browser and in its place on the next snapshot.
+fn delta_holds(
+    before: &uilab_doc::OutlineNode,
+    after: &uilab_doc::OutlineNode,
+    op: &str,
+    changed: &str,
+    parent: &str,
+    node: Option<&uilab_doc::OutlineNode>,
+) -> bool {
+    let mut shown = before.clone();
+    let target = changed.trim_matches('/');
+    let Some(holder) = outline_node_mut(&mut shown, parent.trim_matches('/')) else {
+        return false;
+    };
+    let at = holder
+        .children
+        .iter()
+        .position(|c| c.path.trim_matches('/') == target);
+    match (op, at, node) {
+        ("Insert", None, Some(node)) => holder.children.push(node.clone()),
+        ("Replace", Some(i), Some(node)) => holder.children[i] = node.clone(),
+        ("Remove", Some(i), _) => {
+            holder.children.remove(i);
+        }
+        _ => return false,
+    }
+    flat(&shown) == flat(after)
+}
+
+/// The node of `node`'s tree at `target` (slashes trimmed), to change.
+fn outline_node_mut<'o>(
+    node: &'o mut uilab_doc::OutlineNode,
+    target: &str,
+) -> Option<&'o mut uilab_doc::OutlineNode> {
+    let here = node.path.trim_matches('/');
+    if here == target {
+        return Some(node);
+    }
+    let next = node.children.iter_mut().find(|c| {
+        let at = c.path.trim_matches('/');
+        target == at || target.strip_prefix(at).is_some_and(|r| r.starts_with('/'))
+    })?;
+    outline_node_mut(next, target)
+}
+
+/// Every node of a tree by path, each without its children.
+fn flat(
+    tree: &uilab_doc::OutlineNode,
+) -> std::collections::BTreeMap<String, uilab_doc::OutlineNode> {
+    fn walk(
+        node: &uilab_doc::OutlineNode,
+        out: &mut std::collections::BTreeMap<String, uilab_doc::OutlineNode>,
+    ) {
+        let mut bare = node.clone();
+        bare.children = Vec::new();
+        out.insert(node.path.clone(), bare);
+        node.children.iter().for_each(|c| walk(c, out));
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(tree, &mut out);
+    out
 }
 
 /// The use sites each component node of the outline carries, in outline order.
@@ -2819,5 +2982,474 @@ pages:
         rig.app.handle_cmd(Cmd::Tick);
         assert!(rig.app.operators.contains_key(AGENT_OPERATOR));
         assert_eq!(rig.app.selected_by.as_deref(), Some(AGENT_OPERATOR));
+    }
+
+    // ── story:essui-app-widget ─────────────────────────────────────────────────────────────────
+
+    /// A copy of the library example as `edit` rewrites it, in a directory removed on drop, and
+    /// the path of its document.
+    struct Scratch(PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn scratch_library(edit: impl FnOnce(String) -> String) -> (Scratch, PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "uilab-app-test-{}-{}",
+            std::process::id(),
+            RIGS.fetch_add(1, Ordering::Relaxed)
+        ));
+        let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/library");
+        copy_dir(&example, &root.join("library"));
+        let file = root.join("library/library.ui.yaml");
+        let text = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, edit(text)).unwrap();
+        (Scratch(root), file)
+    }
+
+    /// The last document message among `messages`.
+    fn last_document(messages: &[Server]) -> &uilab_wire::UilabWireDocumentState {
+        messages
+            .iter()
+            .rev()
+            .find_map(|m| match m {
+                Server::Document(d) => Some(d),
+                _ => None,
+            })
+            .expect("a document was sent")
+    }
+
+    /// The node at `path` in a wire outline, however deep.
+    fn node_in<'v>(node: &'v serde_json::Value, path: &str) -> Option<&'v serde_json::Value> {
+        if node["path"] == path {
+            return Some(node);
+        }
+        node["children"]
+            .as_array()?
+            .iter()
+            .find_map(|c| node_in(c, path))
+    }
+
+    /// `serve_refuses_draft_format`: a `ui-spec/1` document is not opened, and the server says why
+    /// in ESS's words.
+    #[test]
+    fn serve_refuses_draft_format() {
+        let (scratch, file) = scratch_library(|text| {
+            assert!(text.starts_with("format: ess-ui/1\n"));
+            text.replacen("format: ess-ui/1\n", "format: ui-spec/1\n", 1)
+        });
+        let ess = uilab_doc::ess_ui::load_str(&std::fs::read_to_string(&file).unwrap())
+            .expect_err("ESS refuses a ui-spec/1 document");
+        let (out, _) = broadcast::channel(16);
+        let (back, _back) = mpsc::channel(16);
+        let refused = App::open(&file, &scratch.0.join("journal"), true, out, back)
+            .err()
+            .expect("the server does not open a ui-spec/1 document");
+        assert!(
+            refused.contains(ess.message()),
+            "ESS's message `{}` is not in `{refused}`",
+            ess.message()
+        );
+        assert!(refused.contains(&file.display().to_string()), "{refused}");
+    }
+
+    /// `inherited_instruction_targets_author_node`: the browser is shown the `filters` section the
+    /// Loans page's kind contributes and the body of a widget instance, inherited; with one of
+    /// them selected, an instruction is asked at, and proposed against, the nearest node the
+    /// author wrote: the page for the kind's section, the instance for a body node.
+    #[test]
+    fn inherited_instruction_targets_author_node() {
+        let mut rig = rig_over(true, with_loan_card);
+        rig.connect("ws-9");
+        let outline = serde_json::to_value(&last_document(&rig.drain_direct()).outline).unwrap();
+        rig.drain();
+        let cases = [
+            ("page:loans/section:filters", "page:loans"),
+            (
+                "page:overview/section:latest/node:title",
+                "page:overview/section:latest",
+            ),
+        ];
+        for (inherited, author) in cases {
+            let shown = node_in(&outline, inherited)
+                .unwrap_or_else(|| panic!("the browser is not shown {inherited}"));
+            assert_eq!(shown["inherited"], true, "{inherited}");
+            assert!(
+                node_in(&outline, author)
+                    .unwrap()
+                    .get("inherited")
+                    .is_none(),
+                "{author}"
+            );
+
+            // Selecting the inherited node shows it selected; the session holds the author's.
+            rig.client(
+                "ws-9",
+                &format!(r#"{{"type":"select","value":{{"path":"{inherited}"}}}}"#),
+            );
+            let messages = rig.drain();
+            assert_eq!(refusals(&messages), [], "{inherited}");
+            assert_eq!(last_document(&messages).selected.0, inherited);
+            assert_eq!(rig.app.selected().to_string(), author);
+
+            // Said at the selection, and with the selection as the target, as the browser sends it.
+            for say in [
+                r#"{"type":"say","value":{"text":"add a caption here"}}"#.to_owned(),
+                format!(
+                    r#"{{"type":"say","value":{{"text":"add a caption here","target":"{inherited}"}}}}"#
+                ),
+            ] {
+                rig.client("ws-9", &say);
+                assert_eq!(thinking_at(&rig.drain()), author, "{say}");
+                rig.app.busy = false;
+            }
+        }
+
+        // The agent, asked at the instance, answers there: the proposal's target is the instance.
+        let latest: NodePath = "page:overview/section:latest".parse().unwrap();
+        let sent = accept_patch_reviewed(
+            &mut rig,
+            Patch::Replace {
+                target: latest.clone(),
+                node: json!({"component": "loan_card", "args": {"loan": "rows.first", "compact": true}}),
+            },
+        );
+        let target = sent
+            .iter()
+            .find_map(|m| match m {
+                Server::Proposal(p) => Some(p.target.0.clone()),
+                _ => None,
+            })
+            .expect("the replace is shown as a proposal");
+        assert_eq!(target, latest.to_string());
+
+        // A path ESS renders nothing at is refused, as before.
+        rig.client(
+            "ws-9",
+            r#"{"type":"select","value":{"path":"page:loans/section:ghost"}}"#,
+        );
+        assert_eq!(
+            refusals(&rig.drain())
+                .into_iter()
+                .map(|(check, _)| check)
+                .collect::<Vec<_>>(),
+            ["path_resolves"]
+        );
+    }
+
+    /// The loans page with a section reading the placeholder `LoanHistory`, answered by
+    /// `fixtures/history.yaml`.
+    fn with_history(text: String) -> String {
+        let anchor = "  members:\n";
+        assert!(text.contains(anchor));
+        text.replacen(
+            anchor,
+            "  history:\n    kind: list_page\n    title: History\n    sections:\n      - name: list\n        component: collection\n        reads: {placeholder: LoanHistory, fixture: fixtures/history.yaml}\n        columns: [{field: title}, {field: returned_on}]\n  members:\n",
+            1,
+        )
+    }
+
+    /// The `rows` message the session answers a request for `view` with.
+    fn rows_message(rig: &mut Rig, view: &str) -> uilab_wire::UilabWireRows {
+        rig.drain();
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"rows","value":{{"view":"{view}"}}}}"#),
+        );
+        rig.drain()
+            .into_iter()
+            .find_map(|m| match m {
+                Server::Rows(r) if r.view == view => Some(r),
+                _ => None,
+            })
+            .expect("the rows are answered")
+    }
+
+    /// `placeholder_rows_from_fixture`: a placeholder read whose fixture file exists gets that
+    /// file's rows, not made-up ones.
+    #[test]
+    fn placeholder_rows_from_fixture() {
+        let mut rig = rig_over(true, with_history);
+        std::fs::write(
+            rig.root.join("library/fixtures/history.yaml"),
+            "view: LoanHistory\nrows:\n  - {title: Dune, returned_on: 2026-09-12}\n  - {title: Emma, returned_on: 2026-09-20}\n",
+        )
+        .unwrap();
+        let rows = rows_message(&mut rig, "LoanHistory");
+        assert_eq!(
+            rows.rows,
+            [
+                json!({"title": "Dune", "returned_on": "2026-09-12"}),
+                json!({"title": "Emma", "returned_on": "2026-09-20"}),
+            ]
+        );
+        assert_eq!(rows.sample, uilab_wire::EssPresence::Present(false));
+    }
+
+    /// `placeholder_rows_generated`: the same section with its fixture file missing gets rows
+    /// made up from the columns that read it, each marked as a sample (`sample` on the message).
+    #[test]
+    fn placeholder_rows_generated() {
+        let mut rig = rig_over(true, with_history);
+        assert!(!rig.root.join("library/fixtures/history.yaml").exists());
+        let rows = rows_message(&mut rig, "LoanHistory");
+        assert!(!rows.rows.is_empty());
+        for row in &rows.rows {
+            assert!(
+                row.get("title").is_some() && row.get("returned_on").is_some(),
+                "{row}"
+            );
+        }
+        assert_eq!(rows.sample, uilab_wire::EssPresence::Present(true));
+        let sent = serde_json::to_value(Server::Rows(rows)).unwrap();
+        assert_eq!(sent["value"]["sample"], true, "the browser is told: {sent}");
+    }
+
+    /// `session_writes_ess_ui`: every write through the session (insert, replace, remove, each
+    /// accepted, and an undo) leaves a file ESS's own checker finds no error in.
+    #[test]
+    fn session_writes_ess_ui() {
+        let mut rig = rig(true);
+        let file = rig.root.join("library/library.ui.yaml");
+        let errors = |file: &Path| {
+            let report = uilab_doc::ess_ui_check::check(file, None).expect("the file is read");
+            (
+                report.errors(),
+                report.render(uilab_doc::ess_ui_check::OutputFormat::Text),
+            )
+        };
+        assert_eq!(errors(&file).0, 0, "the example: {}", errors(&file).1);
+        let before = std::fs::read_to_string(&file).unwrap();
+
+        let patches = [
+            Patch::Insert {
+                target: "page:members".parse().unwrap(),
+                child: uilab_doc::Child {
+                    layer: Layer::Section,
+                    name: "newest".into(),
+                    node: json!({"component": "collection", "reads": {"view": "members.All"}, "columns": [{"field": "name"}]}),
+                    nav_section: None,
+                },
+            },
+            Patch::Replace {
+                target: "page:loans/section:list".parse().unwrap(),
+                node: json!({
+                    "component": "collection",
+                    "reads": {"view": "loans.All", "paging": "server"},
+                    "columns": [{"field": "title"}, {"field": "member"}, {"field": "due"}, {"field": "state", "as": "tag"}],
+                    "row_actions": [{"opens": "edit", "label": "Extend loan"}],
+                }),
+            },
+            Patch::Remove {
+                target: "page:overview/section:recent".parse().unwrap(),
+            },
+        ];
+        let mut last = None;
+        for patch in patches {
+            let shown = accept_patch_reviewed(&mut rig, patch.clone());
+            let id = proposals(&shown)
+                .pop()
+                .unwrap_or_else(|| panic!("{patch:?} is not proposed: {shown:?}"));
+            rig.client(
+                "api-1",
+                &format!(r#"{{"type":"accept","value":{{"proposal_id":"{id}"}}}}"#),
+            );
+            assert_eq!(refusals(&rig.drain()), [], "{patch:?}");
+            let (n, report) = errors(&file);
+            assert_eq!(n, 0, "after {patch:?}: {report}");
+            last = Some(id);
+        }
+        assert_ne!(
+            std::fs::read_to_string(&file).unwrap(),
+            before,
+            "the writes landed"
+        );
+
+        let id = last.expect("a proposal was accepted");
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"undo","value":{{"proposal_id":"{id}"}}}}"#),
+        );
+        assert_eq!(refusals(&rig.drain()), [], "the undo");
+        let (n, report) = errors(&file);
+        assert_eq!(n, 0, "after the undo: {report}");
+        let saved = std::fs::read_to_string(&file).unwrap();
+        assert!(saved.starts_with("format: ess-ui/1\n"), "{saved}");
+        assert!(
+            saved.contains("name: recent"),
+            "the undo restored the removed section"
+        );
+    }
+
+    // ── adversary pass 1, story:essui-app-widget ───────────────────────────────────────────────
+
+    /// Every `path` in a wire outline, however deep.
+    fn adversary_paths(node: &serde_json::Value, out: &mut std::collections::BTreeSet<String>) {
+        if let Some(p) = node["path"].as_str() {
+            out.insert(p.to_owned());
+        }
+        for c in node["children"].as_array().into_iter().flatten() {
+            adversary_paths(c, out);
+        }
+    }
+
+    /// What `widget/src/lib/collab.ts` `applyChange` does with a `Remove` delta: drops the node at
+    /// `path` from its parent's children.
+    fn adversary_drop(node: &mut serde_json::Value, path: &str) {
+        if let Some(children) = node["children"].as_array_mut() {
+            children.retain(|c| c["path"] != path);
+            for c in children.iter_mut() {
+                adversary_drop(c, path);
+            }
+        }
+    }
+
+    /// Adversary pass 1. Brief: "the canvas shows what ESS renders". The Loans page is a
+    /// `list_page`, whose kind contributes a section `list`; the author's `list` refines it. Removing
+    /// the author's `list` is admitted (ESS checks the result clean), and ESS then renders the
+    /// kind's `list`, which `rendered` holds as inherited. `announce_change` sends a `Remove` delta
+    /// for a section, and the browser applying it drops `page:loans/section:list`: the browser's
+    /// outline no longer matches the server's until the next snapshot.
+    #[test]
+    fn adversary_a_removed_section_the_page_kind_still_renders_stays_on_the_browser() {
+        let mut rig = rig(true);
+        rig.connect("ws-a1");
+        let mut shown = serde_json::to_value(&last_document(&rig.drain_direct()).outline).unwrap();
+        rig.drain();
+        let list = "page:loans/section:list";
+        let sent = accept_patch_reviewed(
+            &mut rig,
+            Patch::Remove {
+                target: list.parse().unwrap(),
+            },
+        );
+        let id = proposals(&sent)
+            .pop()
+            .unwrap_or_else(|| panic!("the removal is proposed: {sent:?}"));
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"accept","value":{{"proposal_id":"{id}"}}}}"#),
+        );
+        let messages = rig.drain();
+        assert_eq!(refusals(&messages), [], "the removal is admitted");
+
+        let server = serde_json::to_value(wire::outline(&rendered(&rig.app.doc()))).unwrap();
+        assert_eq!(
+            node_in(&server, list).map(|n| n["inherited"].clone()),
+            Some(json!(true)),
+            "ESS renders the kind's `list` once the author's is gone"
+        );
+
+        // The browser: a snapshot replaces its outline, a Remove delta drops the node.
+        for m in &messages {
+            match m {
+                Server::Document(d) => shown = serde_json::to_value(&d.outline).unwrap(),
+                Server::Changed(c) => {
+                    let c = serde_json::to_value(c).unwrap();
+                    assert_eq!(c["op"], "Remove", "{c}");
+                    adversary_drop(&mut shown, c["changed"].as_str().unwrap());
+                }
+                _ => {}
+            }
+        }
+        let (mut on_browser, mut on_server) = Default::default();
+        adversary_paths(&shown, &mut on_browser);
+        adversary_paths(&server, &mut on_server);
+        let missing: Vec<_> = on_server.difference(&on_browser).collect();
+        assert!(
+            missing.is_empty(),
+            "the server renders and the browser was told to drop: {missing:?}"
+        );
+    }
+
+    /// Adversary pass 1. Session writes that are not in `session_writes_ess_ui`: a batch, its undo,
+    /// a rejected proposal, and a placeholder read whose fixture file is missing. After every write
+    /// the saved file passes ESS's own checker with 0 errors.
+    #[test]
+    fn adversary_batches_undos_and_rejects_leave_a_file_ess_checks_clean() {
+        let mut rig = rig(true);
+        let file = rig.root.join("library/library.ui.yaml");
+        let errors = |file: &Path| {
+            let report = uilab_doc::ess_ui_check::check(file, None).expect("the file is read");
+            (
+                report.errors(),
+                report.render(uilab_doc::ess_ui_check::OutputFormat::Text),
+            )
+        };
+        let accept = |rig: &mut Rig, patch: Patch| -> String {
+            let shown = accept_patch_reviewed(rig, patch.clone());
+            let id = proposals(&shown)
+                .pop()
+                .unwrap_or_else(|| panic!("{patch:?} is not proposed: {shown:?}"));
+            rig.client(
+                "api-1",
+                &format!(r#"{{"type":"accept","value":{{"proposal_id":"{id}"}}}}"#),
+            );
+            assert_eq!(refusals(&rig.drain()), [], "{patch:?}");
+            id
+        };
+
+        let batch = Patch::Batch {
+            target: "page:members".parse().unwrap(),
+            patches: vec![
+                Patch::Insert {
+                    target: "page:members".parse().unwrap(),
+                    child: uilab_doc::Child {
+                        layer: Layer::Section,
+                        name: "history".into(),
+                        node: json!({"component": "collection", "reads": {"placeholder": "MemberHistory", "fixture": "fixtures/member_history.yaml"}, "columns": [{"field": "title"}]}),
+                        nav_section: None,
+                    },
+                },
+                Patch::Remove {
+                    target: "page:loans/overlay:edit".parse().unwrap(),
+                },
+                Patch::Replace {
+                    target: "page:loans/section:list".parse().unwrap(),
+                    node: json!({"component": "collection", "reads": {"view": "loans.All", "paging": "server"}, "columns": [{"field": "title"}]}),
+                },
+            ],
+        };
+        let id = accept(&mut rig, batch);
+        let (n, report) = errors(&file);
+        assert_eq!(n, 0, "after the batch: {report}");
+
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"undo","value":{{"proposal_id":"{id}"}}}}"#),
+        );
+        assert_eq!(refusals(&rig.drain()), [], "the undo");
+        let (n, report) = errors(&file);
+        assert_eq!(n, 0, "after the undo of the batch: {report}");
+
+        let shown = accept_patch_reviewed(
+            &mut rig,
+            Patch::Remove {
+                target: "page:overview/section:on_loan".parse().unwrap(),
+            },
+        );
+        let rejected = proposals(&shown).pop().expect("proposed");
+        rig.client(
+            "api-1",
+            &format!(r#"{{"type":"reject","value":{{"proposal_id":"{rejected}"}}}}"#),
+        );
+        rig.drain();
+        let (n, report) = errors(&file);
+        assert_eq!(n, 0, "after the reject: {report}");
+
+        accept(
+            &mut rig,
+            Patch::Remove {
+                target: "page:loans/section:list".parse().unwrap(),
+            },
+        );
+        let (n, report) = errors(&file);
+        assert_eq!(
+            n, 0,
+            "after removing the list a page kind contributes: {report}"
+        );
     }
 }

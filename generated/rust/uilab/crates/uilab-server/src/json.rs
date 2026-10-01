@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455
-// contract digest c789fcd30e3ffcc51487d00315741eca272a88a53a2be1e3be26a919b30c4bfb
+// model digest d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13
+// contract digest 9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0
 // do not edit: regenerate with `ess synthesize`
 
 //! JSON at this system's boundary: the types crate's own module, re-exported.
