@@ -1376,9 +1376,3 @@ input[type='text'] {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-
-.card-remove {
-  margin-left: 8px;
-  font-size: 11px;
-  color: var(--remove);
-}

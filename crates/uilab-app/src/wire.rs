@@ -700,6 +700,38 @@ mod tests {
         );
     }
 
+    /// A placeholder read is sent as ESS's `unbound_placeholder` on the section that reads it, its
+    /// message naming ESS's path of the read and then ESS's words: exactly the shape
+    /// `widget/src/lib/sidebar.drafts.adversary.test.ts` builds, so the sidebar lists it as a draft.
+    #[test]
+    fn a_placeholder_read_is_sent_as_the_sidebar_reads_it() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/library/library.ui.yaml"
+        ))
+        .unwrap();
+        let anchor = "  members:\n";
+        assert!(text.contains(anchor), "fixture anchor is missing");
+        let text = text.replacen(
+            anchor,
+            "  history:\n    kind: list_page\n    title: History\n    sections:\n      - name: list\n        component: collection\n        reads: {placeholder: LoanHistory, fixture: fixtures/history.yaml}\n        columns: [{field: title}]\n  members:\n",
+            1,
+        );
+        let doc = uilab_doc::Document::from_yaml(&text).unwrap();
+        let sent: Vec<Box<UilabWireFinding>> = findings(&uilab_doc::check(&doc))
+            .into_iter()
+            .filter(|f| f.check == "unbound_placeholder")
+            .collect();
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert_eq!(sent[0].path, "page:history/section:list");
+        assert_eq!(
+            sent[0].message,
+            "`pages/history/sections/list/reads`: `LoanHistory` is a placeholder read answered by \
+             `fixtures/history.yaml`; bind it to a view"
+        );
+        assert_eq!(serde_json::to_value(&sent[0].severity).unwrap(), "warning");
+    }
+
     /// The outline a browser is shown carries the inherited mark through the generated type: the
     /// library's Loans page holds its kind's `filters` section, marked.
     #[test]

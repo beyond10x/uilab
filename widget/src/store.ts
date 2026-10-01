@@ -27,7 +27,6 @@ import {
   type InFlight,
 } from './lib/collab.ts';
 import { settleCard } from './lib/card.ts';
-import { removeInstruction } from './lib/canvasmode.ts';
 import { bannerLabel, goalEnded, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
 import { targetIn, workspaceOf } from './lib/workspace.ts';
 import { markClasses, outlineMarks, previewBase, withRemoved, type Mark } from './lib/marks.ts';
@@ -438,12 +437,6 @@ export function select(path: string): void {
   if (!state.doc) return;
   if (send({ type: 'select', value: { path } })) state.doc = { ...state.doc, selected: path };
   reveal(path);
-}
-
-/** A canvas remove: selects the node and asks the agent to remove it there (`removeInstruction`). */
-export function removeNode(node: OutlineNode): void {
-  select(node.path);
-  say(removeInstruction(node));
 }
 
 export function showPage(path: string): void {

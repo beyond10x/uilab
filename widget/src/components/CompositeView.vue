@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
-import { canvasMode, emptyLine as emptyLineText, nodeActions } from '../lib/canvasmode.ts';
+import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
 import { entityViews, fixtureRowOf, viewsRead } from '../lib/components.ts';
 import { bodyNodes, compositeKind, drawsAsPrimitive, instanceBody, itemScopes, missingReference, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
 import { columnsOf, fieldsOf, isDraftView, nodeClasses, propsOf } from '../lib/outline.ts';
 import { isSample } from '../lib/rows.ts';
-import { marks, removeNode, requestRows, select, shownOutline, state, tint } from '../store.ts';
+import { marks, requestRows, select, shownOutline, state, tint } from '../store.ts';
 import PrimitiveView from './PrimitiveView.vue';
 
 /** `scope`: what a widget instance's `row` and `rows.…` args read here, given by the composite
@@ -55,8 +55,6 @@ const unboundLine = computed(() => (view.value && !rows.value ? (preview.value ?
 
 /** Rows the server made up for a read no fixture answers (`Rows.sample`), or rows of a `draft.` view. */
 const sampled = computed(() => isSample(rows.value) || (draft.value && rowObjects.value.length > 0));
-/** What the canvas offers here, on the selected node only. */
-const offers = computed(() => (state.doc?.selected === props.node.path ? nodeActions(props.node, canvasMode.mode.value) : []));
 
 watchEffect(() => {
   if (needsRows.value) requestRows(view.value);
@@ -133,7 +131,7 @@ function display(v: unknown): string {
     :data-path="node.path"
     @click.stop="select(node.path)"
   >
-    <div v-if="!preview || sampled" class="card-label"><template v-if="!preview">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span></template><span v-if="sampled" class="sample-tag" title="made-up rows: no fixture answers this read yet">sample data</span><button v-if="offers.includes('remove')" type="button" class="link card-remove" :title="`ask the agent to remove ${node.path}`" @click.stop="removeNode(node)">remove</button></div>
+    <div v-if="!preview || sampled" class="card-label"><template v-if="!preview">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span></template><span v-if="sampled" class="sample-tag" title="made-up rows: no fixture answers this read yet">sample data</span></div>
     <h3 v-if="title" class="card-title">{{ title }}</h3>
 
     <template v-if="kind === 'collection'">

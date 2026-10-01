@@ -34,22 +34,17 @@ export function modeButton(mode: CanvasMode): { label: string; pressed: boolean 
   return { label: 'Preview', pressed: mode === 'preview' };
 }
 
-/** What the canvas offers on a selected node: `remove` asks the agent to remove it. */
+/** An action the canvas may offer on a node: `remove` is removing it from the document. */
 export type CanvasAction = 'remove';
 
 /**
- * What the canvas offers on a node in `mode`. Structure offers `remove` on a node the author wrote;
- * a node a page kind or a widget contributes (`inherited`) is not in the document to remove, and
- * the root and the menu are not removable. Preview offers nothing.
+ * The actions that apply to a node in `mode`. `remove` applies to a node the author wrote; a node
+ * a page kind or a widget contributes (`inherited`) is not in the document to remove, and the root
+ * and the menu are not removable. Preview applies none.
  */
 export function nodeActions(node: OutlineNode, mode: CanvasMode): CanvasAction[] {
   if (mode !== 'structure' || node.inherited === true) return [];
   return node.layer === 'root' || node.layer === 'nav' ? [] : ['remove'];
-}
-
-/** The instruction a canvas remove says at the node. */
-export function removeInstruction(node: OutlineNode): string {
-  return `remove the ${node.layer.replace('_', ' ')} ${node.name}`;
 }
 
 /**
