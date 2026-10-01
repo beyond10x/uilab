@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T10:25:06Z",
+  "actor": "human:timo",
+  "artifact": "story:eval-round-5",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:essui-acceptance-round-2",
+    "reference": ".engineering/planning/story/eval-round-5.md:40",
+    "review": "review-result:essui-acceptance-round-2",
+    "outcome": "fixed"
+  }
+}
