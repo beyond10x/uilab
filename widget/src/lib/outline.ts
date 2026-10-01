@@ -171,8 +171,11 @@ export interface Column {
   label?: string;
 }
 
+/** A collection's or references' columns: a fixed list, or the user-selectable `{binds, all}`
+ *  (every column it offers); an UNMAPPED string is none. */
 export function columnsOf(node: OutlineNode): Column[] {
-  const raw = propsOf(node).columns;
+  const written = propsOf(node).columns;
+  const raw = written && typeof written === 'object' && !Array.isArray(written) ? (written as Record<string, unknown>).all : written;
   if (!Array.isArray(raw)) return [];
   const out: Column[] = [];
   for (const c of raw) {
@@ -220,6 +223,8 @@ export interface FieldGroup {
   name: string;
   label: string;
   fields: Field[];
+  /** A form group's actions' texts (a group can carry its own, such as rotating a key). */
+  actions: string[];
 }
 
 /** The ESS `Tab`s (`key: 'tabs'`) or `FormGroup`s (`key: 'groups'`) the node writes. */
@@ -230,8 +235,19 @@ export function groupsOf(node: OutlineNode, key: 'tabs' | 'groups'): FieldGroup[
     if (!g || typeof g !== 'object' || Array.isArray(g)) return [];
     const r = g as Record<string, unknown>;
     const name = typeof r.name === 'string' ? r.name : '';
-    return [{ name, label: typeof r.label === 'string' ? r.label : name, fields: fieldList(r.fields) }];
+    const actions = Array.isArray(r.actions) ? r.actions.map(actionLabel) : [];
+    return [{ name, label: typeof r.label === 'string' ? r.label : name, fields: fieldList(r.fields), actions }];
   });
+}
+
+/** A form's `record` node (read-only fields shown above the inputs): the view it reads and its
+ *  fields; null when the form writes none. */
+export function formRecordOf(node: OutlineNode): { view: string | null; fields: Field[] } | null {
+  const r = propsOf(node).record;
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const rec = r as Record<string, unknown>;
+  const view = typeof rec.reads === 'string' ? rec.reads : textAt(rec, 'reads', 'view') ?? textAt(rec, 'reads', 'placeholder');
+  return { view, fields: fieldList(rec.fields) };
 }
 
 /** The labels of a choice's fixed `options`: `{value, label}` records or bare strings. A named enum
@@ -255,12 +271,14 @@ export interface HeaderMetric {
   label: string | null;
   view: string | null;
   from: string | null;
+  /** A widget instance's `args`, as written. */
+  args?: Record<string, unknown>;
 }
 
 /** A page's header as the server sends it (ESS's rendering, the kind's merged in): the title
- *  (the header's, else the page's, else its name), the help text, each action's text and the
+ *  (the header's, else the page's, else its name), the help text and link, each action's text and the
  *  headline metrics. */
-export function headerOf(page: OutlineNode): { title: string; help: string | null; actions: string[]; metrics: HeaderMetric[] } {
+export function headerOf(page: OutlineNode): { title: string; help: string | null; helpLink: string | null; actions: string[]; metrics: HeaderMetric[] } {
   const p = propsOf(page);
   const header = p.header && typeof p.header === 'object' && !Array.isArray(p.header) ? (p.header as Record<string, unknown>) : {};
   const actions = header.actions;
@@ -268,13 +286,15 @@ export function headerOf(page: OutlineNode): { title: string; help: string | nul
   return {
     title: textAt(p, 'header', 'title') || page.title || page.name,
     help: textAt(p, 'header', 'help', 'text'),
+    helpLink: textAt(p, 'header', 'help', 'link'),
     actions: Array.isArray(actions) ? actions.map(actionLabel) : [],
     metrics: metrics.flatMap((m) => {
       if (!m || typeof m !== 'object' || Array.isArray(m)) return [];
       const r = m as Record<string, unknown>;
       const reads = r.reads;
       const view = typeof reads === 'string' ? reads : textAt(r, 'reads', 'view') ?? textAt(r, 'reads', 'placeholder');
-      return [{ name: textAt(r, 'name') ?? '', component: textAt(r, 'component') ?? '', label: textAt(r, 'label'), view, from: textAt(r, 'from') }];
+      const args = r.args && typeof r.args === 'object' && !Array.isArray(r.args) ? (r.args as Record<string, unknown>) : undefined;
+      return [{ name: textAt(r, 'name') ?? '', component: textAt(r, 'component') ?? '', label: textAt(r, 'label'), view, from: textAt(r, 'from'), args }];
     }),
   };
 }

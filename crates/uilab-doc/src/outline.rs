@@ -312,6 +312,9 @@ impl<'a> Expanded<'a> {
     /// takes the header and menu entry ESS renders for it.
     fn add_to(&self, root: &mut OutlineNode) {
         self.add_nodes(root);
+        let shown: std::collections::HashSet<String> =
+            self.nodes.iter().map(|(p, _)| p.to_string()).collect();
+        drop_unrendered(root, &shown);
         self.merge_props(root);
         self.merge_fields(root);
         self.merge_pages(root);
@@ -464,6 +467,30 @@ impl<'a> Expanded<'a> {
             Value::Object(entries) => entries.get(name),
             _ => None,
         }
+    }
+}
+
+/// Removes from `node`'s subtree every section, overlay and nested node ESS does not render
+/// (`shown` holds the paths it does): an entry a page removes from its kind's named list with
+/// `{name, remove: true}` is written, but it is no node of the page ESS renders.
+fn drop_unrendered(node: &mut OutlineNode, shown: &std::collections::HashSet<String>) {
+    node.children.retain(|c| {
+        !matches!(
+            c.layer,
+            Layer::Section
+                | Layer::Overlay
+                | Layer::Item
+                | Layer::Child
+                | Layer::Part
+                | Layer::Choice
+                | Layer::Tool
+                | Layer::Widget
+                | Layer::Node
+        ) || !(c.path.starts_with("page:") || c.path.starts_with("shell:"))
+            || shown.contains(&c.path)
+    });
+    for child in &mut node.children {
+        drop_unrendered(child, shown);
     }
 }
 
@@ -1539,6 +1566,34 @@ pages:
             "a nav entry without a label is labelled with the page's title"
         );
         assert_eq!(props(&shown, "overview")["shell"], json!("app"));
+    }
+
+    /// story:canvas-shows-labels: a board widget the page removes with `null` (ESS's
+    /// `null_value: remove_inherited`) is read, is no node of the browser's tree, and is written
+    /// back where and as the author wrote it.
+    #[test]
+    fn a_board_widget_written_null_is_written_back_as_authored() {
+        let text = "format: ess-ui/1\napp: library\ntitle: Lending library\nmodel: library\nplacement_profile: fat\n\
+            shells:\n  app:\n    regions:\n      main: {kind: page_outlet}\n\
+            navigation:\n  home: wall\n  sections:\n    - {name: desk, label: Desk, pages: [wall]}\n\
+            page_kinds:\n  wall_page:\n    extends: dashboard_page\n    sections:\n      - name: board\n        component: board\n        reads: {view: walls.Mine}\n        widgets:\n          out: {component: metric, label: Copies out}\n          late: {component: metric, label: Late copies}\n\
+            pages:\n  wall:\n    kind: wall_page\n    title: Wall\n    sections:\n      - name: board\n        widgets:\n          late: null\n          out: {label: Copies on loan}\n";
+        let doc = Document::from_yaml(text).unwrap();
+        let back: serde_yaml::Value = serde_yaml::from_str(&doc.to_yaml().unwrap()).unwrap();
+        let widgets = &back["pages"]["wall"]["sections"][0]["widgets"];
+        let keys: Vec<&str> = widgets
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .filter_map(serde_yaml::Value::as_str)
+            .collect();
+        assert_eq!(keys, ["late", "out"]);
+        assert!(widgets["late"].is_null());
+        assert_eq!(widgets["out"]["label"].as_str(), Some("Copies on loan"));
+        let shown = rendered(&doc);
+        let board = child_at(child_at(&shown, "page:wall"), "page:wall/section:board");
+        let names: Vec<&str> = board.children.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["out"]);
     }
 
     /// A section the page removes (`{name: board, remove: true}` on the overview, a

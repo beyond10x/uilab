@@ -4,7 +4,7 @@ import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts'
 import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
 import { entityViews, fixtureRowOf, viewsRead } from '../lib/components.ts';
 import { bodyNodes, compositeKind, drawsAsPrimitive, instanceBody, itemScopes, missingReference, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
-import { actionLabel, actionsOf, columnsOf, fieldsOf, groupsOf, isDraftView, nodeClasses, optionsOf, propsOf, textAt } from '../lib/outline.ts';
+import { actionLabel, actionsOf, columnsOf, fieldsOf, formRecordOf, groupsOf, isDraftView, nodeClasses, optionsOf, propsOf, textAt } from '../lib/outline.ts';
 import { isSample } from '../lib/rows.ts';
 import { marks, requestRows, select, shownOutline, state, tint } from '../store.ts';
 import PrimitiveView from './PrimitiveView.vue';
@@ -96,6 +96,16 @@ const fields = computed(() => fieldsOf(props.node));
 const tabs = computed(() => groupsOf(props.node, 'tabs'));
 const tabFields = computed(() => tabs.value[0]?.fields ?? []);
 const groups = computed(() => groupsOf(props.node, 'groups'));
+/** A form's read-only `record` above its inputs: its fields, and the first row its view returned. */
+const formRecord = computed(() => (kind.value === 'form' ? formRecordOf(props.node) : null));
+const formRecordRow = computed<Record<string, unknown> | undefined>(() => {
+  const v = formRecord.value?.view;
+  const first: unknown = v ? state.rows[v]?.rows?.[0] : undefined;
+  return first && typeof first === 'object' && !Array.isArray(first) ? (first as Record<string, unknown>) : undefined;
+});
+watchEffect(() => {
+  if (formRecord.value?.view) requestRows(formRecord.value.view);
+});
 const submitLabel = computed(() => textAt(p.value, 'submit', 'label') ?? 'Submit');
 /** A filter bar's search box: its placeholder, `search` when it writes none. */
 const searchHint = computed(() => (p.value.search && typeof p.value.search === 'object' ? textAt(p.value, 'search', 'placeholder') ?? 'search' : null));
@@ -194,6 +204,12 @@ function display(v: unknown): string {
 
     <template v-else-if="kind === 'form'">
       <form class="form" @submit.prevent>
+        <dl v-if="formRecord" class="record">
+          <template v-for="f in formRecord.fields" :key="f.field">
+            <dt>{{ f.label }}</dt>
+            <dd>{{ display(formRecordRow?.[f.field]) || '—' }}</dd>
+          </template>
+        </dl>
         <label v-for="f in fields" :key="f.field">
           <span>{{ f.label }}</span>
           <input type="text" :name="f.field" tabindex="-1" />
@@ -204,6 +220,9 @@ function display(v: unknown): string {
             <span>{{ f.label }}</span>
             <input type="text" :name="f.field" tabindex="-1" />
           </label>
+          <div v-if="g.actions.length" class="card-actions">
+            <button v-for="(a, i) in g.actions" :key="i" type="button" tabindex="-1">{{ a }}</button>
+          </div>
         </fieldset>
         <template v-if="tabs.length">
           <div class="tabs"><span v-for="(t, i) in tabs" :key="t.name" class="tab" :class="{ current: i === 0 }">{{ t.label }}</span></div>

@@ -329,6 +329,27 @@ export function primitiveShape(node: OutlineNode): PrimitiveShape {
   }
 }
 
+/** The words a primitive shows, as PrimitiveView draws them: a text, badge or link its `text`; a
+ *  button, toggle or icon its `label`; an image its `alt`; an input its `placeholder`; a divider
+ *  none. */
+export function primitiveWords(node: OutlineNode): string {
+  const p = propsOf(node);
+  switch (node.kind) {
+    case 'divider':
+      return '';
+    case 'image':
+      return displayValue(p.alt ?? '');
+    case 'input':
+      return displayValue(p.placeholder ?? '');
+    case 'button':
+    case 'toggle':
+    case 'icon':
+      return displayValue(p.label ?? p.text ?? '');
+    default:
+      return displayValue(p.text ?? p.label ?? '');
+  }
+}
+
 /** The layers whose nodes are ESS `Node`s, each a composite, a widget instance or a primitive: a
  *  widget body, an item list, a section's `children`, a form's parts, a filter bar's choices, a
  *  graph editor's toolbar and a board's widgets. */
