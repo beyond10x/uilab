@@ -1,5 +1,4 @@
 import { ref, type Ref } from 'vue';
-import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { isDraftView } from './outline.ts';
 
 /**
@@ -32,19 +31,6 @@ export function togglesModeOn(ev: Parameters<typeof togglesMode>[0], view: strin
 /** The mode button: one fixed label, the mode carried by `aria-pressed`. */
 export function modeButton(mode: CanvasMode): { label: string; pressed: boolean } {
   return { label: 'Preview', pressed: mode === 'preview' };
-}
-
-/** An action the canvas may offer on a node: `remove` is removing it from the document. */
-export type CanvasAction = 'remove';
-
-/**
- * The actions that apply to a node in `mode`. `remove` applies to a node the author wrote; a node
- * a page kind or a widget contributes (`inherited`) is not in the document to remove, and the root
- * and the menu are not removable. Preview applies none.
- */
-export function nodeActions(node: OutlineNode, mode: CanvasMode): CanvasAction[] {
-  if (mode !== 'structure' || node.inherited === true) return [];
-  return node.layer === 'root' || node.layer === 'nav' ? [] : ['remove'];
 }
 
 /**

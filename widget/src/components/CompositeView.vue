@@ -228,7 +228,10 @@ function display(v: unknown): string {
       </div>
     </div>
     <div v-if="others.length" class="children" :class="{ grid: kind === 'board' }">
-      <CompositeView v-for="c in others" :key="c.path" :node="c" :scope="childScope" :within="within" />
+      <template v-for="c in others" :key="c.path">
+        <PrimitiveView v-if="drawsAsPrimitive(c)" :node="c" />
+        <CompositeView v-else :node="c" :scope="childScope" :within="within" />
+      </template>
     </div>
   </div>
 </template>

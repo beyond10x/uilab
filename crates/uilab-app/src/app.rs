@@ -1155,7 +1155,9 @@ impl App {
     /// well, which a delta at one path cannot carry, and a change that adds or drops a widget
     /// instance changes the use sites on component nodes elsewhere in the tree, and a change
     /// inside a widget's declaration changes the body every instance of it is shown holding:
-    /// those go out as a full snapshot.
+    /// those go out as a full snapshot. So does any delta that, applied by a browser to what ESS
+    /// rendered before, would not leave what ESS renders now ([`delta_holds`]): a removed
+    /// section the page kind still renders, a refinement that changes what the kind merges in.
     fn announce_change(&self, by: &str, id: &s::ProposalId, before: &Document) {
         let Some(patch) = self.handle.patch(id) else {
             self.send_document();
@@ -1183,6 +1185,19 @@ impl App {
             _ => rendered_at(&doc, &changed.to_string()),
         };
         let parent = changed.parent().unwrap_or_default().to_string();
+        let shown_before = rendered(before);
+        let shown_after = rendered(&doc);
+        if !delta_holds(
+            &shown_before,
+            &shown_after,
+            patch.op_name(),
+            &changed.to_string(),
+            &parent,
+            node.as_ref(),
+        ) {
+            self.send_document();
+            return;
+        }
         let findings = self.findings(&doc);
         self.send(wire::changed(ChangedParts {
             revision: self.revision,
@@ -1491,6 +1506,72 @@ fn placed(target: NodePath, workspace: uilab_agent::Workspace) -> NodePath {
         uilab_agent::Workspace::Components if !in_widgets => NodePath::root(),
         _ => target,
     }
+}
+
+/// Whether a browser showing `before` that applies the delta `op` at `changed` under `parent`
+/// with `node` (as `widget/src/lib/collab.ts` `applyChange` does) ends up showing every node of
+/// `after`, each as `after` has it, and nothing else. Order among siblings is not compared: an
+/// insert lands last on the browser and in its place on the next snapshot.
+fn delta_holds(
+    before: &uilab_doc::OutlineNode,
+    after: &uilab_doc::OutlineNode,
+    op: &str,
+    changed: &str,
+    parent: &str,
+    node: Option<&uilab_doc::OutlineNode>,
+) -> bool {
+    let mut shown = before.clone();
+    let target = changed.trim_matches('/');
+    let Some(holder) = outline_node_mut(&mut shown, parent.trim_matches('/')) else {
+        return false;
+    };
+    let at = holder
+        .children
+        .iter()
+        .position(|c| c.path.trim_matches('/') == target);
+    match (op, at, node) {
+        ("Insert", None, Some(node)) => holder.children.push(node.clone()),
+        ("Replace", Some(i), Some(node)) => holder.children[i] = node.clone(),
+        ("Remove", Some(i), _) => {
+            holder.children.remove(i);
+        }
+        _ => return false,
+    }
+    flat(&shown) == flat(after)
+}
+
+/// The node of `node`'s tree at `target` (slashes trimmed), to change.
+fn outline_node_mut<'o>(
+    node: &'o mut uilab_doc::OutlineNode,
+    target: &str,
+) -> Option<&'o mut uilab_doc::OutlineNode> {
+    let here = node.path.trim_matches('/');
+    if here == target {
+        return Some(node);
+    }
+    let next = node.children.iter_mut().find(|c| {
+        let at = c.path.trim_matches('/');
+        target == at || target.strip_prefix(at).is_some_and(|r| r.starts_with('/'))
+    })?;
+    outline_node_mut(next, target)
+}
+
+/// Every node of a tree by path, each without its children.
+fn flat(
+    tree: &uilab_doc::OutlineNode,
+) -> std::collections::BTreeMap<String, uilab_doc::OutlineNode> {
+    fn walk(
+        node: &uilab_doc::OutlineNode,
+        out: &mut std::collections::BTreeMap<String, uilab_doc::OutlineNode>,
+    ) {
+        let mut bare = node.clone();
+        bare.children = Vec::new();
+        out.insert(node.path.clone(), bare);
+        node.children.iter().for_each(|c| walk(c, out));
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(tree, &mut out);
+    out
 }
 
 /// The use sites each component node of the outline carries, in outline order.
