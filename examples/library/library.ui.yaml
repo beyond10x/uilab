@@ -54,7 +54,7 @@ pages:
       - name: list
         component: collection
         reads: {view: loans.All, paging: server}
-        columns: [{field: title}, {field: member}, {field: due}, {field: state, as: tag}]
+        columns: [{field: title}, {field: member}, {field: due}, {field: state, as: badge}]
         row_actions: [{opens: edit, label: Extend}]
     overlays:
       edit:
@@ -70,4 +70,4 @@ pages:
       - name: list
         component: collection
         reads: {view: members.All}
-        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: tag}]
+        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: badge}]

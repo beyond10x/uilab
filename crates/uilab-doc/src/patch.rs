@@ -298,6 +298,7 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
             ),
         ));
     }
+    same_name(&child.node, &child.name)?;
     let taken = children(doc, target)
         .map_err(|e| Refusal::new("path_resolves", e.to_string()))?
         .into_iter()
@@ -407,9 +408,27 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
     Ok(())
 }
 
+/// A patch names its node: an insert by `child.name`, a replace by its target. A `name` written
+/// inside the node is that name or absent; another would be kept by the document as written and
+/// rename the node on save, so the path the patch named would be gone.
+fn same_name(node: &Value, name: &str) -> Result<(), Refusal> {
+    match node.get("name") {
+        None => Ok(()),
+        Some(Value::String(own)) if own == name => Ok(()),
+        Some(own) => Err(Refusal::new(
+            "node_name",
+            format!(
+                "the node is named `{name}` by the patch; its own `name` is {own}: leave `name` \
+                 out of the node, or write `{name}`"
+            ),
+        )),
+    }
+}
+
 fn replace(doc: &mut Document, target: &NodePath, node: &Value) -> Result<(), Refusal> {
     let layer = target.layer();
     let name = target.name().to_owned();
+    same_name(node, &name)?;
     match layer {
         Layer::Root | Layer::Nav => {
             return Err(Refusal::new(

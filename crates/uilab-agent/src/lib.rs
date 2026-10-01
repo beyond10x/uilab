@@ -949,9 +949,9 @@ impl ToolPort for NoTools {
     }
 }
 
-/// What the model is told about `ui-spec/1` and its job.
+/// What the model is told about `ess-ui/1` and its job.
 pub const INSTRUCTIONS: &str = "\
-You edit one user-interface document in the `ui-spec/1` format by proposing exactly one patch. \
+You edit one user-interface document in ESS's `ess-ui/1` format by proposing exactly one patch. \
 The operator speaks an instruction while pointing at one node of the document; you answer by \
 calling the `answer` tool once with a patch whose `target` is that node. Do not explain; call \
 `answer`.
@@ -977,41 +977,48 @@ plausibly means in a UI editor, never literally when that makes no sense.
 A document has layers. A shell is an application frame made of regions (navigation, \
 page_outlet, overlay_outlet, notifications, assistant, account_menu) and may hold overlays \
 shared by every page. The navigation lists pages in menu sections. A page is one route: it has \
-a kind (list_page, report_page, settings_page, dashboard_page, editor_page, form_page, or one \
-the document declares), a title, sections in layout order and overlays. A section is a \
-composite with its own read; an overlay is a drawer, dialog, fullscreen pane or popover holding \
-one composite (`kind` plus `component` and its props inline). Inside a composite, a board holds \
-`widgets` and a collection holds `item` composites per row.
+a kind (list_page, report_page, detail_page, settings_page, dashboard_page, editor_page, \
+form_page, static_page, or one the document declares), a title, a `header`, sections in layout \
+order and overlays. A section is a composite with a `name` and its own `reads`, written inline: \
+`{name: …, component: <kind>, reads: …, <props>}`; a section has no `title` and no heading \
+(a metric has a `label`). An overlay is a drawer, dialog, fullscreen pane or popover holding one \
+composite (`kind` plus `component` and its props inline, and an optional overlay `title`). \
+Inside a composite, a board holds `widgets` and a collection holds `item` nodes per row.
 
-The 14 composite kinds, and when to use each:
-- collection: rows of a view, as a table or list. Props: `title`, `columns: [{field: …}]` \
-(optionally `as: tag`), `row_actions: [{opens: <overlay>, label: …}]`.
-- record: one row shown as fields (`title`, `fields: [...]`).
-- form: input bound to a command (`does: <domain>.<Command>`, `fields: [...]`, `title`).
-- choice: a pick from fixed options or from a view.
-- filter_bar: search, time-window and filter inputs above a collection.
-- header: a title, a total and actions at the top of a page.
-- overlay: a nested overlay opened from inside a composite.
-- confirm: a confirmation step before a command runs.
-- metric: one number (`title`, `from: <field>`).
+The 12 composite kinds a section, an overlay body or a nested node can be, and when to use each:
+- collection: rows of a view, as a table, cards or list. Props: `columns: [{field: …}]` \
+(optionally `as: badge`), `row_actions: [{opens: <overlay>, label: …}]`.
+- record: one row shown as labelled fields (`fields: [...]`).
+- form: input bound to a command (`does: <domain>.<Command>`, required; `fields: [...]`).
+- choice: a pick from fixed `options` or from a view.
+- filter_bar: search, time-window and filter inputs above a collection (`binds: \
+[state.<name>]`, required; `search: {binds: state.<name>}`); it has no `reads`.
+- confirm: a confirmation step before a command runs (`does`, `confirm_label`), the body of a \
+dialog overlay that asks the question.
+- metric: one number (`from: <field>`, `label`).
 - chart: a series over time or categories (`chart: bar`, `line` or `pie`; `x: <field>`; \
-`series: [{field: …}]`).
-- board: a grid of widgets.
-- graph_editor: nodes and edges edited as a whole.
+`series: [<field>, …]`); it needs `reads`.
+- board: a grid of widgets; it needs `reads`.
+- graph_editor: nodes and edges edited as a whole; it needs `reads`.
 - rich_text: formatted text.
-- references: what uses a record.
+- references: what uses a record; it needs `reads`.
+Two more are placed by position, never as a section:
+- header: a page's title, total and actions, the page's own `header:` (`title`, `total: \
+<section>`, `actions`).
+- overlay: an overlay of a page or the shell, opened by an action's `opens`.
 
 Widgets are app-defined, reusable components (not a board's `widgets`, which are ordinary \
 composites). A widget is declared under `widgets:` at the document root: insert it at `/` with \
 layer `component` and a short lower-case name that is not a composite kind (`member_card`). Its \
 node has `summary` (one line, required), `params` (each `{type: …, required: true}` or with a \
-`default`; a type is `string`, `number`, `boolean`, a named type such as `Member`, or a \
-constructor map), optional `arrange` (`row`, `column` or `grid`) and a `body`: a list of named \
+`default`, and every param with a one-line `note` saying what it is, which ESS requires: \
+`member: {type: Member, required: true, note: the member shown}`; a type is `string`, `number`, \
+`boolean`, a named type such as `Member`, or a constructor map), optional `arrange` (`row`, `column` or `grid`) and a `body`: a list of named \
 nodes, each with `name`. A body node is a built-in composite, an instance of another widget, or a \
 primitive `{name: …, primitive: <kind>, …}`. The primitive kinds are `text` (`text` or `field`, \
-optional `style: heading`), `badge` (`text`, `tone`), `icon` (`label`), `button` \
-(`label`, `action`), `link` (`to` or `href`), `input` (`binds`), `toggle`, `image` (`src`, \
-required `alt`) and `divider`. In a body, `args.<param>` refers to a param: `text: \
+optional `style: heading`), `badge` (`text`, `tone`), `icon` (`icon` and `label`), `button` \
+(`label`, `action`), `link` (`text`, and `to` or `href`), `input` (`binds`), `toggle` \
+(`label`, and `binds` or `action`), `image` (`src`, required `alt`) and `divider`. In a body, `args.<param>` refers to a param: `text: \
 args.member.name`. Add a body node with layer `node` under `component:<widget>`; change a widget \
 with `replace` on it. An instance is `{component: <widget>, args: {<param>: <value>}}` and goes \
 wherever a composite goes: a section, an overlay, a board's widget, a collection's item. It \
@@ -1027,15 +1034,18 @@ the pages the instruction names are listed with their columns and children: targ
 
 Data comes from ESS views: `reads: {view: <domain>.<View>}`, with `params` for fixed filters \
 (for example `params: {state: overdue}`). Prefer a view the document already reads when it holds \
-the data asked for. When no existing view fits, read a placeholder `draft.<Name>` view (for \
-example `draft.OverdueLoans`); it marks data the model does not provide yet. Never invent a \
-non-draft view name.
+the data asked for. When no existing view fits, read a placeholder instead of a view: \
+`reads: {placeholder: <Name>, fixture: <file>}` (for example `reads: {placeholder: \
+loans.Overdue, fixture: fixtures/loans_overdue.yaml}`); it marks data the model does not \
+provide yet, and ESS warns about it until it is bound to a view. A read has exactly one of \
+`view` and `placeholder`, and a placeholder always names its `fixture`. Never invent a view \
+name: a `view` is one the document already reads or has fixtures for.
 
 Names of new nodes (sections, overlays, pages, widgets, items) are short, lower-case, and use \
 underscores: `overdue`, `due_soon`. They must be unique among their siblings. Use `insert` to \
 add a child under the target, `replace` to change the target node itself (give the whole new \
 node, keeping what the operator did not ask to change), and `remove` to delete it. When the \
-instruction changes the pointed-at node itself (its columns, title, fields, actions or props: \
+instruction changes the pointed-at node itself (its columns, fields, actions or props: \
 \"also show X\", \"rename this\", \"add a column\"), use `replace` on that node; use `insert` only \
 for a new child, and never replace a parent to add one child: never replace a page or a \
 collection to add one child. A `replace` must repeat every existing prop, column and child it \
@@ -1045,7 +1055,7 @@ than one node changed, use `batch` with `patches` in order, each with its own `t
 example a row action that opens a drawer is an `insert` of the drawer overlay on the page \
 followed by a `replace` of the collection adding `row_actions: [{opens: <drawer>}]`. \
 Columns, a metric's `from` and form or record fields name fields of the rows the composite \
-reads; when a view's fields are listed, use only those, and read a `draft.` view when the data \
+reads; when a view's fields are listed, use only those, and read a placeholder when the data \
 asked for is not among them. An `opens` \
 value must name an overlay of the page or its shell. If a patch you proposed is refused, the \
 refusal names the check it failed; fix exactly that and answer again.";
@@ -1069,9 +1079,9 @@ the target. On the Components tab, move only to `/` or a `component:` path unles
 instruction names a page; a widget's name does not name one (\"the loan card\" is the widget \
 `loan_card`, not the loans page).";
 
-/// What the planner is told about `ui-spec/1` and its job.
+/// What the planner is told about `ess-ui/1` and its job.
 pub const PLAN_INSTRUCTIONS: &str = "\
-You plan changes to one user-interface document in the `ui-spec/1` format. The operator states a \
+You plan changes to one user-interface document in ESS's `ess-ui/1` format. The operator states a \
 goal while pointing at one node; you break it into an ordered list of steps and answer by calling \
 the `answer` tool once with `op: plan` and `steps`. Do not explain; call `answer`.
 
@@ -1079,8 +1089,8 @@ Each step is one instruction that another agent, the proposer, will carry out on
 exactly one patch at the step's `target`: one insert of a child under the target, one replace of \
 the target, one remove of it, or one batch of those. The proposer sees only the step's \
 instruction, its target and the document, so write each `instruction` complete on its own, as \
-the operator would say it: name the composite kind, the view it reads, its fields and its title, \
-and the name of any node it creates. `why` says in one line what the step adds to the goal.
+the operator would say it: name the composite kind, the view it reads, its fields, and the name \
+of any node it creates. `why` says in one line what the step adds to the goal.
 
 Steps run in order, each on the document the earlier steps left. A later step may target a node \
 an earlier step creates: name that node by the path it will have, for example \
@@ -1099,18 +1109,20 @@ goal, not a reason to decline.
 Paths are `layer:name` segments joined by `/`: `page:loans`, `page:loans/section:list`, \
 `page:loans/overlay:edit`, `shell:app/region:nav`, `nav`. A page holds sections (composites, in \
 layout order) and overlays (drawers, dialogs, fullscreen panes, popovers); a board holds \
-widgets; a collection holds items. Composite kinds: collection (rows as a table or list), record \
+widgets; a collection holds items. Section kinds: collection (rows as a table or list), record \
 (one row as fields: a details card), form (input bound to a command), choice, filter_bar \
-(search and filters above a collection), header, overlay, confirm, metric, chart, board, \
-graph_editor, rich_text, references. A step can also declare a widget, an app-defined reusable \
-component under `widgets:` at the root (target `/`, layer `component`, a `summary`, typed \
+(search and filters above a collection), confirm, metric, chart, board, graph_editor, \
+rich_text, references; a page's `header` and its overlays are placed by position, never as \
+sections. A section has no `title`; a metric has a `label`. A step can also declare a widget, \
+an app-defined reusable component under `widgets:` at the root (target `/`, layer `component`, a `summary`, typed \
 `params` and a `body` of named composites, widget instances and primitives), and use it as \
 `{component: <widget>, args: {…}}` wherever a composite goes; declare a widget and its first use \
 in one step. Plan a widget when the goal asks for something reusable, a component, a card for \
 each row, or repeats a structure; use a widget the document already declares when one fits. \
-Declared widgets are `component:<name>` in the outline. Data comes from ESS views: prefer a view the document \
-already reads; when none fits, read a placeholder `draft.<Name>` view. Names of new nodes are \
-short, lower-case, with underscores, and unique among their siblings. If your plan is refused, \
+Declared widgets are `component:<name>` in the outline. Data comes from ESS views: prefer a \
+view the document already reads; when none fits, read a placeholder, \
+`reads: {placeholder: <Name>, fixture: <file>}`. Names of new nodes are short, lower-case, with \
+underscores, and unique among their siblings. If your plan is refused, \
 the refusal names the check it failed; fix exactly that and answer again.";
 
 /// `none` for nothing, else the items joined by commas.
@@ -1291,7 +1303,7 @@ fn named_pages<'a>(doc: &'a Document, target: &NodePath, utterance: &str) -> Vec
         .collect()
 }
 
-/// A section's columns, as `name, standing (as tag)`.
+/// A section's columns, as `name, standing (as badge)`.
 fn columns(composite: &uilab_doc::model::Composite) -> Option<String> {
     let columns = composite.props.get("columns")?.as_array()?;
     Some(

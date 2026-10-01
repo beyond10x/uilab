@@ -34,8 +34,8 @@ widgets:
         to: {to: members}
 ```
 
-This is the shape of an answer to *"a member card widget with the member's name, their standing as
-a badge and a link to the members page"*, given on the Components tab.
+A member card with the member's name, their standing as a badge and a link to the members page.
+The screenshot on this page shows the agent proposing a smaller one on the Components tab.
 
 ## The parts
 

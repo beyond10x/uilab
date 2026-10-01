@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T16:20:35Z",
+  "actor": "human:timo",
+  "artifact": "story:canvas-shows-labels",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:canvas-shows-labels-adversary-1",
+    "reference": "widget/src/components/CanvasView.vue:163",
+    "review": "review-result:canvas-shows-labels-adversary-1",
+    "outcome": "fixed"
+  }
+}

@@ -61,9 +61,9 @@ cases:
     say: add a menu section called reports
     expect: {op: Insert, layer: nav_section}
 
-  - id: rename-title
+  - id: relabel-column
     target: page:members/section:list
-    say: give this table the title all members
+    say: label the joined column member since
     expect: {op: Replace, layer: section, component: collection}
 
   - id: add-column
@@ -133,5 +133,5 @@ cases:
 
   - id: retarget-none
     target: page:loans/section:list
-    say: give this table the title current loans
+    say: sort this table by the due date
     expect: {stays: true, op: Replace, layer: section, component: collection}

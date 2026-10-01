@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:essui-agent-schema
 kind: story
-status: active
+status: implemented
 title: The agent's field shapes and prompt come from ESS's schema
 relations:
 - decomposes: epic:ess-ui-adoption
@@ -19,10 +19,11 @@ scope:
   path: crates/uilab-doc/tests/eval_suite.rs
 - confidence: cited
   path: evals/library.yaml
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":5}}}
+- {from: "active", to: "implemented", at: "2026-10-01T16:29:46Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"review_outcome":14}}}
 ---
 ## Outcome
 

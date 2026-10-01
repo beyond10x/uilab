@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T16:29:46Z",
+  "actor": "human:timo",
+  "artifact": "story:essui-agent-schema",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check steps on wave/2026-10-01-w10 at 4ba26d9: validate, drift, ui, widget 345 (344 pass, 1 todo), cargo 48 suites 374 passed 0 failed, clippy, fmt; EXIT=0"
+  }
+}
