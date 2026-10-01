@@ -4,7 +4,7 @@ import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts'
 import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
 import { entityViews, fixtureRowOf, viewsRead } from '../lib/components.ts';
 import { bodyNodes, compositeKind, drawsAsPrimitive, instanceBody, itemScopes, missingReference, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
-import { columnsOf, fieldsOf, isDraftView, nodeClasses, propsOf } from '../lib/outline.ts';
+import { actionLabel, actionsOf, columnsOf, fieldsOf, groupsOf, isDraftView, nodeClasses, optionsOf, propsOf, textAt } from '../lib/outline.ts';
 import { isSample } from '../lib/rows.ts';
 import { marks, requestRows, select, shownOutline, state, tint } from '../store.ts';
 import PrimitiveView from './PrimitiveView.vue';
@@ -23,7 +23,7 @@ const root = computed(() => shownOutline.value);
 const within = computed(() => props.within ?? []);
 /** The widget this node instantiates, drawn as its body with the node's args bound. */
 const instance = computed(() => (root.value ? widgetOfInstance(root.value, props.node, within.value) : null));
-const needsRows = computed(() => ['collection', 'metric', 'record', 'chart'].includes(kind.value) || !!instance.value);
+const needsRows = computed(() => ['collection', 'references', 'metric', 'record', 'chart'].includes(kind.value) || !!instance.value);
 const rows = computed(() => (view.value ? state.rows[view.value] : undefined));
 const rowObjects = computed<Record<string, unknown>[]>(() => {
   const all: unknown[] = rows.value?.rows ?? [];
@@ -75,23 +75,40 @@ const columns = computed(() => columnsOf(props.node));
 const rowActions = computed(() => {
   const raw = p.value.row_actions;
   if (!Array.isArray(raw)) return [];
-  return raw.map((a) => {
-    const r = (a ?? {}) as Record<string, unknown>;
-    return String(r.label ?? r.opens ?? r.does ?? 'action');
-  });
+  return raw.map(actionLabel);
 });
+/** The text of every other action the composite writes, drawn as one row of buttons. */
+const actions = computed(() => actionsOf(props.node));
 const fields = computed(() => fieldsOf(props.node));
+/** A record's or form's tabs, drawn as a tab strip with the first tab's fields; a form's groups,
+ *  each under its heading. */
+const tabs = computed(() => groupsOf(props.node, 'tabs'));
+const tabFields = computed(() => tabs.value[0]?.fields ?? []);
+const groups = computed(() => groupsOf(props.node, 'groups'));
+const submitLabel = computed(() => textAt(p.value, 'submit', 'label') ?? 'Submit');
+/** A filter bar's search box: its placeholder, `search` when it writes none. */
+const searchHint = computed(() => (p.value.search && typeof p.value.search === 'object' ? textAt(p.value, 'search', 'placeholder') ?? 'search' : null));
 const filterFields = computed(() => {
-  const f = fieldsOf(props.node, 'fields');
-  if (f.length) return f;
-  const g = fieldsOf(props.node, 'filters');
-  return g.length ? g : [{ field: 'search', label: 'search' }];
+  for (const key of ['inputs', 'fields', 'filters']) {
+    const f = fieldsOf(props.node, key);
+    if (f.length) return f;
+  }
+  return searchHint.value ? [] : [{ field: 'search', label: 'search' }];
 });
 const recordFields = computed(() => {
-  if (fields.value.length) return fields.value;
+  if (fields.value.length || tabFields.value.length) return [...fields.value, ...tabFields.value];
   const first = rowObjects.value[0];
   return first ? Object.keys(first).map((k) => ({ field: k, label: k })) : [];
 });
+const options = computed(() => optionsOf(props.node));
+/** A metric's caption; none when the author wrote none. */
+const metricLabel = computed(() => textAt(p.value, 'label'));
+/** A confirm's explanation, consequences, type-to-confirm label and button text (ESS default
+ *  `Delete`). */
+const confirmBody = computed(() => textAt(p.value, 'body'));
+const consequences = computed(() => (Array.isArray(p.value.consequences) ? p.value.consequences.filter((c): c is string => typeof c === 'string') : []));
+const confirmInput = computed(() => textAt(p.value, 'input', 'label'));
+const confirmLabel = computed(() => textAt(p.value, 'confirm_label') ?? 'Delete');
 const metricValue = computed(() => {
   const from = typeof p.value.from === 'string' ? p.value.from : null;
   const first = rowObjects.value[0];
@@ -134,11 +151,11 @@ function display(v: unknown): string {
     <div v-if="!preview || sampled" class="card-label"><template v-if="!preview">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span></template><span v-if="sampled" class="sample-tag" title="made-up rows: no fixture answers this read yet">sample data</span></div>
     <h3 v-if="title" class="card-title">{{ title }}</h3>
 
-    <template v-if="kind === 'collection'">
+    <template v-if="kind === 'collection' || kind === 'references'">
       <table v-if="columns.length" class="table">
         <thead>
           <tr>
-            <th v-for="c in columns" :key="c.field">{{ c.field }}</th>
+            <th v-for="c in columns" :key="c.field">{{ c.label ?? c.field }}</th>
             <th v-if="rowActions.length"></th>
           </tr>
         </thead>
@@ -159,6 +176,7 @@ function display(v: unknown): string {
     </template>
 
     <template v-else-if="kind === 'metric'">
+      <div v-if="metricLabel" class="metric-label">{{ metricLabel }}</div>
       <div class="metric">{{ emptyLine && draft ? '—' : metricValue }}</div>
       <p v-if="emptyLine" class="empty">{{ emptyLine }}</p>
     </template>
@@ -169,15 +187,52 @@ function display(v: unknown): string {
           <span>{{ f.label }}</span>
           <input type="text" :name="f.field" tabindex="-1" />
         </label>
-        <p v-if="!fields.length" class="empty">no fields</p>
+        <fieldset v-for="g in groups" :key="g.name" class="form-group">
+          <legend>{{ g.label }}</legend>
+          <label v-for="f in g.fields" :key="f.field">
+            <span>{{ f.label }}</span>
+            <input type="text" :name="f.field" tabindex="-1" />
+          </label>
+        </fieldset>
+        <template v-if="tabs.length">
+          <div class="tabs"><span v-for="(t, i) in tabs" :key="t.name" class="tab" :class="{ current: i === 0 }">{{ t.label }}</span></div>
+          <label v-for="f in tabFields" :key="f.field">
+            <span>{{ f.label }}</span>
+            <input type="text" :name="f.field" tabindex="-1" />
+          </label>
+        </template>
+        <p v-if="!fields.length && !groups.length && !tabs.length" class="empty">no fields</p>
         <div class="form-actions">
-          <button type="button" disabled>Submit</button>
+          <button type="button" disabled>{{ submitLabel }}</button>
           <span v-if="does && !preview" class="muted small">→ {{ does }}</span>
         </div>
       </form>
     </template>
 
+    <template v-else-if="kind === 'choice'">
+      <div v-if="options.length" class="choice-options">
+        <span v-for="(o, i) in options" :key="i" class="tag">{{ o }}</span>
+      </div>
+      <div v-else class="placeholder">{{ kind }}</div>
+    </template>
+
+    <template v-else-if="kind === 'confirm'">
+      <p v-if="confirmBody">{{ confirmBody }}</p>
+      <ul v-if="consequences.length" class="consequences">
+        <li v-for="(c, i) in consequences" :key="i">{{ c }}</li>
+      </ul>
+      <label v-if="confirmInput" class="confirm-input">
+        <span>{{ confirmInput }}</span>
+        <input type="text" tabindex="-1" />
+      </label>
+      <div class="form-actions">
+        <button type="button" disabled>{{ confirmLabel }}</button>
+        <span v-if="does && !preview" class="muted small">→ {{ does }}</span>
+      </div>
+    </template>
+
     <template v-else-if="kind === 'record'">
+      <div v-if="tabs.length" class="tabs"><span v-for="(t, i) in tabs" :key="t.name" class="tab" :class="{ current: i === 0 }">{{ t.label }}</span></div>
       <dl class="record">
         <template v-for="f in recordFields" :key="f.field">
           <dt>{{ f.label }}</dt>
@@ -189,6 +244,7 @@ function display(v: unknown): string {
 
     <template v-else-if="kind === 'filter_bar'">
       <div class="filter-bar">
+        <input v-if="searchHint" type="search" :placeholder="searchHint" tabindex="-1" />
         <input v-for="f in filterFields" :key="f.field" type="text" :placeholder="f.label" tabindex="-1" />
       </div>
     </template>
@@ -219,6 +275,10 @@ function display(v: unknown): string {
       <div class="placeholder">{{ kind }}<span v-if="view && !preview"> · {{ view }}</span></div>
     </template>
 
+    <div v-if="actions.length" class="card-actions">
+      <button v-for="(a, i) in actions" :key="i" type="button" tabindex="-1">{{ a }}</button>
+    </div>
+
     <div v-if="items.length" class="item-rows">
       <div v-for="(s, i) in scopes" :key="i" class="item-row">
         <template v-for="c in items" :key="c.path">
@@ -237,6 +297,63 @@ function display(v: unknown): string {
 </template>
 
 <style scoped>
+.metric-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.tab {
+  padding: 4px 0;
+  color: var(--muted);
+}
+
+.tab.current {
+  color: inherit;
+  border-bottom: 2px solid var(--accent);
+}
+
+.form-group {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.choice-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.consequences {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.confirm-input {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .instance-body {
   display: flex;
   flex-direction: column;
