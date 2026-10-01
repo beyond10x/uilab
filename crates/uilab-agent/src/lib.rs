@@ -979,9 +979,11 @@ page_outlet, overlay_outlet, notifications, assistant, account_menu) and may hol
 shared by every page. The navigation lists pages in menu sections. A page is one route: it has \
 a kind (list_page, report_page, detail_page, settings_page, dashboard_page, editor_page, \
 form_page, static_page, or one the document declares), a title, a `header`, sections in layout \
-order and overlays. A section is a composite with a `name` and its own `reads`, written inline: \
-`{name: …, component: <kind>, reads: …, <props>}`; a section has no `title` and no heading \
-(a metric has a `label`). An overlay is a drawer, dialog, fullscreen pane or popover holding one \
+order and overlays. A section is a composite with its own `reads`, written inline: \
+`{component: <kind>, reads: …, <props>}`; a section has no `title` and no heading (a metric \
+has a `label`). The document lists each section under its `name`, but a node in a patch never \
+carries its own `name`: an insert names it in `child.name`, a replace keeps the target's, so a \
+replaced node is written as the target node's YAML shows it, without `name`. An overlay is a drawer, dialog, fullscreen pane or popover holding one \
 composite (`kind` plus `component` and its props inline, and an optional overlay `title`). \
 Inside a composite, a board holds `widgets` and a collection holds `item` nodes per row.
 

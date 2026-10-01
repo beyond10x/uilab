@@ -102,16 +102,21 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
         "required": ["op", "target"],
         "additionalProperties": false,
         "properties": properties,
-        "allOf": carried(&ops),
         "$defs": Builder::new(doc).defs(),
     });
+    // The Messages API refuses a tool schema with `oneOf`, `allOf` or `anyOf` at its top level,
+    // so the operations are one `if`/`then`/`else` chain there rather than an `allOf` of them.
+    if let (Value::Object(schema), Value::Object(chain)) = (&mut schema, carried(&ops)) {
+        schema.extend(chain);
+    }
     prune(&mut schema);
     Ok(schema)
 }
 
 /// What each operation carries, required when that operation is chosen: an insert its `child`, a
-/// replace its `node`, a batch its `patches`, a decline its `reason`.
-fn carried(ops: &[&str]) -> Vec<Value> {
+/// replace its `node`, a batch its `patches`, a decline its `reason`. One `if`/`then`/`else`
+/// chain, an `else` per further operation; `{}` when none of `ops` carries anything.
+fn carried(ops: &[&str]) -> Value {
     [
         ("insert", "child"),
         ("replace", "node"),
@@ -119,14 +124,18 @@ fn carried(ops: &[&str]) -> Vec<Value> {
         ("decline", "reason"),
     ]
     .into_iter()
+    .rev()
     .filter(|(op, _)| ops.contains(op))
-    .map(|(op, field)| {
-        json!({
+    .fold(json!({}), |rest, (op, field)| {
+        let mut step = json!({
             "if": {"properties": {"op": {"const": op}}, "required": ["op"]},
             "then": {"required": [field]},
-        })
+        });
+        if rest.as_object().is_some_and(|rest| !rest.is_empty()) {
+            step["else"] = rest;
+        }
+        step
     })
-    .collect()
 }
 
 /// The definition a node of `layer` has.
@@ -1123,6 +1132,6 @@ fn patch_def() -> Value {
             },
             "node": {"type": "object", "minProperties": 1, "description": "for replace: the new node, in the shape of the target's layer"}
         },
-        "allOf": carried(&["insert", "replace"]),
+        "allOf": [carried(&["insert", "replace"])],
     })
 }
