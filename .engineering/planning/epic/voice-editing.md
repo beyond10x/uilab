@@ -2,9 +2,13 @@
 format: aep.planning-md/3
 id: epic:voice-editing
 kind: epic
-status: draft
+status: implemented
 title: Voice-edit a ui-spec/1 document in the browser
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-01T07:35:47Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-01T07:35:47Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-01T07:35:47Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 

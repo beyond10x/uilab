@@ -2,11 +2,15 @@
 format: aep.planning-md/3
 id: epic:ux-fidelity
 kind: epic
-status: draft
+status: implemented
 title: 'Operator experience: see what a proposal does, decide without scrolling, preview the app'
 relations:
 - serves: vision:website-harness
-revision: 1
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-10-01T07:35:48Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-10-01T07:35:48Z", actor: "human:timo", revision: 3}
+- {from: "active", to: "implemented", at: "2026-10-01T07:35:48Z", actor: "human:timo", revision: 4}
 ---
 ## Outcome
 
