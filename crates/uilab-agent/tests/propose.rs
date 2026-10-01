@@ -993,14 +993,10 @@ fn outline_paths(node: &uilab_doc::OutlineNode, out: &mut Vec<String>) {
     }
 }
 
-/// story:eval-round-5: the Messages API refuses a tool whose `input_schema` has `oneOf`, `allOf`
-/// or `anyOf` at its top level (round 5, run 1: every case answered 400 "input_schema does not
-/// support oneOf, allOf, or anyOf at the top level"). So no schema the agent sends has one: the
-/// patch schema at every node of the library, as a plain proposal and as one that may move, on
-/// both workspaces, and the plan schema. Each run is answered with a decline; only what was sent
-/// matters.
-#[test]
-fn no_answer_schema_sent_has_a_combinator_at_its_top_level() {
+/// The answer schema of every run the agent makes at every node of the library: the patch schema
+/// as a plain proposal and as one that may move, on both workspaces, and the plan schema. Each
+/// run is answered with a decline; only what was sent matters.
+fn sent_schemas() -> Vec<(String, Value)> {
     let doc = library();
     let mut all = Vec::new();
     outline_paths(&uilab_doc::outline(&doc), &mut all);
@@ -1032,6 +1028,15 @@ fn no_answer_schema_sent_has_a_combinator_at_its_top_level() {
         sent.len(),
         all.len()
     );
+    sent
+}
+
+/// story:eval-round-5: the Messages API refuses a tool whose `input_schema` has `oneOf`, `allOf`
+/// or `anyOf` at its top level (round 5, run 1: every case answered 400 "input_schema does not
+/// support oneOf, allOf, or anyOf at the top level"). So no schema the agent sends has one.
+#[test]
+fn no_answer_schema_sent_has_a_combinator_at_its_top_level() {
+    let sent = sent_schemas();
     let offending: Vec<String> = sent
         .iter()
         .filter_map(|(run, schema)| {
@@ -1055,10 +1060,9 @@ fn no_answer_schema_sent_has_a_combinator_at_its_top_level() {
 
 /// story:eval-round-5, run 2: the prompt taught a section as `{name: …, component: …}`, while a
 /// patch's section node may not carry `name` (the patch names it: `child.name`, or the target),
-/// and the schema refuses one that does with `{"required":["name"]} is not allowed`. At a
-/// collection, the model's replaces were refused in the loop three times and it fell back to a
-/// batch of the same replace twice (add-column, relabel-column, retarget-none). The prompt now
-/// teaches the shape the schema takes, and says where the name goes.
+/// and the schema refuses one that does. The prompt now teaches the shape the schema takes, and
+/// says where the name goes. (Run 3 showed the replaces refused at a collection in runs 2 and 3
+/// were a `node` sent as a string, not a `name`: `every_top_level_property_sent_names_its_type`.)
 #[test]
 fn the_prompt_teaches_a_section_node_without_its_name() {
     let doc = library();
@@ -1093,4 +1097,50 @@ fn the_prompt_teaches_a_section_node_without_its_name() {
             sent.run
         );
     }
+}
+
+/// story:eval-round-5, run 3 (the request log of a recording forwarder): at a collection the model
+/// sent `replace` with `node` as a JSON *string* holding the node, four turns in a row, and each
+/// was refused as `{"required":["name"]} is not allowed for "<the string>"`. A top-level
+/// parameter whose schema names no `type` (`node` was only a `$ref`) is given as a string; one
+/// that says `object` is given as an object, as `child` always was. So every top-level property
+/// of every schema sent names its type, unless it only admits strings (an `enum` or `const` of
+/// strings), and a stringified node is refused as the wrong type, which the model can act on.
+#[test]
+fn every_top_level_property_sent_names_its_type() {
+    let sent = sent_schemas();
+    let strings_only = |property: &Value| {
+        let values: Vec<&Value> = match (property.get("enum"), property.get("const")) {
+            (Some(Value::Array(values)), _) => values.iter().collect(),
+            (None, Some(value)) => vec![value],
+            _ => return false,
+        };
+        values.iter().all(|v| v.is_string())
+    };
+    let mut offending = Vec::new();
+    for (run, schema) in &sent {
+        for (name, property) in schema["properties"].as_object().unwrap() {
+            if property.get("type").is_none() && !strings_only(property) {
+                offending.push(format!("{run}: `{name}` = {property}"));
+            }
+        }
+    }
+    assert!(
+        offending.is_empty(),
+        "{} top-level properties name no type:\n{}",
+        offending.len(),
+        offending.join("\n")
+    );
+
+    let doc = library();
+    let node = json!({"component": "collection", "reads": {"view": "loans.All"}});
+    let stringified =
+        json!({"op": "replace", "target": "page:loans/section:list", "node": node.to_string()});
+    let schema =
+        uilab_doc::patch_schema(&doc, &"page:loans/section:list".parse().unwrap()).unwrap();
+    let why = harness_loop::OutputSchema::new(schema)
+        .unwrap()
+        .validate(&stringified)
+        .expect_err("a node given as a string is refused");
+    assert!(why.contains("object"), "the refusal names the type: {why}");
 }

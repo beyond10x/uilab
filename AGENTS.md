@@ -120,10 +120,10 @@ a pull request first.
    `sha256sum --check SHA256SUMS`, unpack, and in the unpacked directory run `./uilab serve
    --assets widget/dist --doc examples/library/library.ui.yaml --no-stt`: `GET /api/state`
    answers 200 and `GET /api/document.yaml` starts with `format: ess-ui/1`. Then send one
-   instruction through the agent, with a scratch `HOME` for `uilab op`: `./uilab op join --name
-   release`, `./uilab op say --review --target page:loans "add a table of overdue loans"`; it
-   prints a proposal (not a refusal or an error), and `./uilab op reject` leaves the document
-   unchanged. The tests drive a scripted model, so only this step shows the model accepts what
+   instruction through the agent, with a scratch `HOME` for `uilab op` and
+   `OP="./uilab op --as release --server http://127.0.0.1:8740"`: `$OP join`, then
+   `$OP say --review --target page:loans "add a table of overdue loans"`; it prints a proposal
+   (not a refusal or an error), and `$OP reject` leaves the document unchanged. The tests drive a scripted model, so only this step shows the model accepts what
    the server sends (v0.1.1 and v0.1.2 shipped a patch schema the Messages API refused).
 
 A pushed tag whose release run has not finished is queued, not released.
