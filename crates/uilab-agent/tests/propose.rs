@@ -10,7 +10,8 @@ use harness_wire::{
 };
 use serde_json::{Value, json};
 use uilab_agent::{
-    Answer, ProposeError, Proposer, ProposerConfig, Step, Workspace, check_retarget,
+    Answer, INSTRUCTIONS, MOVE_INSTRUCTIONS, PLAN_INSTRUCTIONS, ProposeError, Proposer,
+    ProposerConfig, Step, Workspace, check_retarget,
 };
 use uilab_doc::{Document, NodePath, Patch};
 
@@ -159,7 +160,7 @@ fn a_valid_answer_comes_back_admitted() {
         request.tools[0].input_schema,
         uilab_doc::patch_schema(&doc, &loans()).unwrap()
     );
-    assert!(request.instructions.contains("ui-spec/1"));
+    assert!(request.instructions.contains("ess-ui/1"));
     let user = texts(request);
     assert!(
         user.contains("um add a table of uh overdue loans"),
@@ -739,4 +740,185 @@ fn a_planner_target_that_names_no_node_or_a_zero_cap_is_refused_before_any_turn(
         .unwrap_err();
     assert!(matches!(error, ProposeError::Config(_)), "{error}");
     assert!(seen.lock().unwrap().is_empty());
+}
+
+/// One sent prompt: which run it opened, its instructions and its user text.
+struct Sent {
+    run: &'static str,
+    instructions: String,
+    user: String,
+}
+
+/// The first request of every kind of run the agent makes at `page:loans`: a plain proposal, a
+/// proposal that may move (app canvas and Components tab) and a plan. Each is answered with a
+/// decline, so only what was sent matters.
+fn sent_prompts() -> Vec<Sent> {
+    let doc = library();
+    let decline = || json!({"op": "decline", "target": "page:loans", "reason": "a test"});
+    let first = |run, seen: Arc<Mutex<Vec<TurnRequest>>>| {
+        let seen = seen.lock().unwrap();
+        let request = seen
+            .first()
+            .unwrap_or_else(|| panic!("{run}: nothing was sent"));
+        Sent {
+            run,
+            instructions: request.instructions.clone(),
+            user: texts(request),
+        }
+    };
+    let mut sent = Vec::new();
+    let (mut agent, seen) = proposer(vec![decline()]);
+    let _ = agent.propose(&doc, &loans(), "add a table of overdue loans");
+    sent.push(first("propose", seen));
+    for (run, workspace) in [
+        ("answer_in app", Workspace::App),
+        ("answer_in components", Workspace::Components),
+    ] {
+        let (mut agent, seen) = proposer(vec![decline()]);
+        let _ = agent.answer_in(
+            &doc,
+            &loans(),
+            "add a table of overdue loans",
+            &[],
+            workspace,
+        );
+        sent.push(first(run, seen));
+    }
+    let (mut agent, seen) = proposer(vec![json!({"op": "decline", "reason": "a test"})]);
+    let _ = agent.plan_goal(&doc, &loans(), MEMBER_AREA, 4);
+    sent.push(first("plan_goal", seen));
+    sent
+}
+
+/// The instruction texts the agent is built from, by name.
+fn instruction_constants() -> [(&'static str, &'static str); 3] {
+    [
+        ("INSTRUCTIONS", INSTRUCTIONS),
+        ("MOVE_INSTRUCTIONS", MOVE_INSTRUCTIONS),
+        ("PLAN_INSTRUCTIONS", PLAN_INSTRUCTIONS),
+    ]
+}
+
+/// story:essui-agent-schema: the prompt says `ess-ui/1` and never `ui-spec/1`.
+#[test]
+fn prompt_names_ess_ui() {
+    for (name, text) in [
+        ("INSTRUCTIONS", INSTRUCTIONS),
+        ("PLAN_INSTRUCTIONS", PLAN_INSTRUCTIONS),
+    ] {
+        assert!(text.contains("`ess-ui/1`"), "{name} does not name ess-ui/1");
+    }
+    for (name, text) in instruction_constants() {
+        assert!(!text.contains("ui-spec"), "{name} names ui-spec");
+    }
+    for sent in sent_prompts() {
+        assert!(
+            sent.instructions.contains("`ess-ui/1`"),
+            "{}: {}",
+            sent.run,
+            sent.instructions
+        );
+        assert!(
+            !sent.instructions.contains("ui-spec") && !sent.user.contains("ui-spec"),
+            "{} names ui-spec:\n{}\n{}",
+            sent.run,
+            sent.instructions,
+            sent.user
+        );
+    }
+}
+
+/// story:essui-agent-schema: data the model does not provide yet is a placeholder read with a
+/// fixture, `reads: {placeholder, fixture}` (ESS `Reads`: exactly one of `view` and
+/// `placeholder`, and a placeholder requires a `fixture`).
+#[test]
+fn prompt_teaches_placeholder_reads() {
+    const SHAPE: &str = "`reads: {placeholder: <Name>, fixture: <file>}`";
+    for (name, text) in [
+        ("INSTRUCTIONS", INSTRUCTIONS),
+        ("PLAN_INSTRUCTIONS", PLAN_INSTRUCTIONS),
+    ] {
+        assert!(text.contains(SHAPE), "{name} does not show {SHAPE}");
+    }
+    for sent in sent_prompts() {
+        assert!(
+            sent.instructions.contains(SHAPE),
+            "{}: {}",
+            sent.run,
+            sent.instructions
+        );
+    }
+}
+
+/// story:essui-agent-schema: no `draft.` view prefix anywhere in the prompt, instructions or
+/// user text.
+#[test]
+fn prompt_has_no_draft_views() {
+    for (name, text) in instruction_constants() {
+        assert!(!text.contains("draft."), "{name} teaches a `draft.` view");
+    }
+    for sent in sent_prompts() {
+        assert!(
+            !sent.instructions.contains("draft.") && !sent.user.contains("draft."),
+            "{} sends a `draft.` view:\n{}\n{}",
+            sent.run,
+            sent.instructions,
+            sent.user
+        );
+    }
+}
+
+/// The members of ESS's composite union (`ess-ui/1`, `Composite.union.members`), the kinds a
+/// section holds. The second half of story:essui-agent-schema reads them from `ess_ui::SCHEMA`.
+const SECTION_KINDS: [&str; 12] = [
+    "collection",
+    "record",
+    "form",
+    "choice",
+    "filter_bar",
+    "confirm",
+    "metric",
+    "chart",
+    "board",
+    "graph_editor",
+    "rich_text",
+    "references",
+];
+
+/// story:essui-agent-schema, prompt half: an `ess-ui/1` section has no `title`. No section kind's
+/// entry in the instructions offers one, and every sentence of the instructions that says
+/// "title" is about a page, an overlay or a page header, or says there is none.
+#[test]
+fn prompt_offers_no_section_title() {
+    for kind in SECTION_KINDS {
+        let entry = format!("- {kind}:");
+        let line = INSTRUCTIONS
+            .lines()
+            .find(|line| line.starts_with(&entry))
+            .unwrap_or_else(|| panic!("INSTRUCTIONS do not list `{kind}`"));
+        assert!(
+            !line.contains("title"),
+            "INSTRUCTIONS offer `{kind}` a title: {line}"
+        );
+    }
+    let mut offending = Vec::new();
+    for (name, text) in instruction_constants() {
+        for sentence in text
+            .split(['\n', ';'])
+            .flat_map(|line| line.split(". "))
+            .filter(|sentence| sentence.to_lowercase().contains("title"))
+        {
+            let about = ["page", "overlay", "header", "no `title`"]
+                .iter()
+                .any(|allowed| sentence.contains(allowed));
+            if !about {
+                offending.push(format!("{name}: {sentence}"));
+            }
+        }
+    }
+    assert!(
+        offending.is_empty(),
+        "sentences that give a section or composite a title:\n{}",
+        offending.join("\n")
+    );
 }
