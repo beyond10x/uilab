@@ -30,6 +30,9 @@ actors:
       - todo.tasks.DeleteTask
 
 errors:
+  - name: todo.tasks.UnknownTask
+    summary: No task has this identity.
+    fields: []
   - name: todo.tasks.AlreadyDone
     summary: The task is already done.
     fields:
@@ -61,6 +64,7 @@ commands:
       - {name: task_id, type: todo.tasks.TaskId}
       - {name: title, type: todo.tasks.Title}
     outcomes:
+      - {name: unknown-task, unknown_instance: true, error: todo.tasks.UnknownTask}
       - name: renamed
         updates: todo.tasks.Task
         instance: task_id
@@ -91,6 +95,7 @@ commands:
     input:
       - {name: task_id, type: todo.tasks.TaskId}
     outcomes:
+      - {name: unknown-task, unknown_instance: true, error: todo.tasks.UnknownTask}
       - name: unblocked
         updates: todo.tasks.Task
         instance: task_id
@@ -103,6 +108,7 @@ commands:
     input:
       - {name: task_id, type: todo.tasks.TaskId}
     outcomes:
+      - {name: unknown-task, unknown_instance: true, error: todo.tasks.UnknownTask}
       - name: completed
         moves: todo.tasks.Task.complete
         instance: task_id
@@ -117,6 +123,7 @@ commands:
     input:
       - {name: task_id, type: todo.tasks.TaskId}
     outcomes:
+      - {name: unknown-task, unknown_instance: true, error: todo.tasks.UnknownTask}
       - name: reopened
         moves: todo.tasks.Task.reopen
         instance: task_id
@@ -131,6 +138,7 @@ commands:
     input:
       - {name: task_id, type: todo.tasks.TaskId}
     outcomes:
+      - {name: unknown-task, unknown_instance: true, error: todo.tasks.UnknownTask}
       - name: deleted
         deletes: todo.tasks.Task
         instance: task_id
