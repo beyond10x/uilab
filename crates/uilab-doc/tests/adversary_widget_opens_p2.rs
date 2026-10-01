@@ -10,7 +10,7 @@ use serde_json::json;
 use uilab_doc::{Child, Document, Layer, NodePath, Patch, admit, check};
 
 const DOC: &str = r#"
-format: ui-spec/1
+format: ess-ui/1
 app: library
 title: Lending library
 model: library
@@ -32,26 +32,26 @@ widgets:
   loan_card:
     summary: A loan as a card with an extend button.
     params:
-      loan: {type: Loan, required: true}
+      loan: {type: Loan, required: true, note: the loan row}
     body:
       - {name: title, primitive: text, text: args.loan.title}
       - {name: extend, primitive: button, label: Extend, action: {name: extend, opens: extend}}
   opener:
     summary: A button that opens the overlay it is given.
     params:
-      target: {type: {ref: overlay}, required: true}
+      target: {type: {ref: overlay}, required: true, note: target param}
     body:
       - {name: go, primitive: button, label: Open, action: {name: go, opens: args.target}}
   relay:
     summary: Hands its own target to an opener.
     params:
-      target: {type: {ref: overlay}, required: true}
+      target: {type: {ref: overlay}, required: true, note: target param}
     body:
       - {name: inner, component: opener, args: {target: args.target}}
   relay_default:
     summary: Hands its own target, by default nowhere, to an opener.
     params:
-      target: {type: {ref: overlay}, default: nowhere}
+      target: {type: {ref: overlay}, default: nowhere, note: target param}
     body:
       - {name: inner, component: opener, args: {target: args.target}}
 pages:
@@ -59,14 +59,15 @@ pages:
     kind: dashboard_page
     title: Overview
     sections:
-      latest: {component: loan_card, args: {loan: rows.first}}
+      - {name: board, remove: true}
+      - {name: latest, component: loan_card, args: {loan: rows.first}}
     overlays:
       extend: {kind: dialog, component: record, reads: {view: loans.All}}
   members:
     kind: list_page
     title: Members
     sections:
-      list:
+      - name: list
         component: collection
         reads: {view: loans.All}
         item:
@@ -114,8 +115,8 @@ fn item(name: &str, node: serde_json::Value) -> Patch {
 #[test]
 fn a_pass_through_bound_to_a_literal_at_the_outer_use_is_checked_against_that_literal() {
     let text = DOC.replace(
-        "      latest: {component: loan_card, args: {loan: rows.first}}\n",
-        "      latest: {component: loan_card, args: {loan: rows.first}}\n      relayed: {component: relay, args: {target: extend}}\n",
+        "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n",
+        "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n      - {name: relayed, component: relay, args: {target: extend}}\n",
     );
     let doc = parse(&with_member_items(
         &text,
@@ -125,7 +126,7 @@ fn a_pass_through_bound_to_a_literal_at_the_outer_use_is_checked_against_that_li
     assert!(
         found.len() == 1
             && found[0].0 == "page:members/section:list/item:p"
-            && found[0].1.contains("opens `nowhere`"),
+            && found[0].1.contains("`nowhere` names no overlay"),
         "relay bound to `nowhere` on members: {found:#?}"
     );
 
@@ -153,17 +154,17 @@ fn a_pass_through_of_an_outer_default_is_checked_against_that_default() {
     assert!(
         found.len() == 1
             && found[0].0 == "page:members/section:list/item:d"
-            && found[0].1.contains("opens `nowhere`"),
+            && found[0].1.contains("`nowhere` names no overlay"),
         "relay_default on members: {found:#?}"
     );
 }
 
-/// A param whose default is a runtime reference cannot be judged statically and reports nothing;
-/// the same widget bound to a literal the page lacks is reported. Positive control included so
-/// the silence is not the absence of any check.
+/// In ess-ui/1 `opens` is `{ref: overlay}`, a name: a param whose default is `row.overlay` is held
+/// to the overlays like any other name, and so is one bound to a literal the page lacks. Each is
+/// reported at its own use.
 #[test]
 fn a_runtime_reference_default_is_skipped_and_a_bound_literal_the_page_lacks_is_reported() {
-    let widgets = "  by_row:\n    summary: Opens the overlay its row names.\n    params:\n      target: {type: {ref: overlay}, default: row.overlay}\n    body:\n      - {name: go, primitive: button, label: Go, action: {name: go, opens: args.target}}\n";
+    let widgets = "  by_row:\n    summary: Opens the overlay its row names.\n    params:\n      target: {type: {ref: overlay}, default: row.overlay, note: target param}\n    body:\n      - {name: go, primitive: button, label: Go, action: {name: go, opens: args.target}}\n";
     let text = DOC.replace("widgets:\n", &format!("widgets:\n{widgets}"));
     let doc = parse(&with_member_items(
         &text,
@@ -171,9 +172,11 @@ fn a_runtime_reference_default_is_skipped_and_a_bound_literal_the_page_lacks_is_
     ));
     let found = opens_found(&doc);
     assert!(
-        found.len() == 1
-            && found[0].0 == "page:members/section:list/item:s"
-            && found[0].1.contains("opens `extend`"),
+        found.len() == 2
+            && found[0].0 == "page:members/section:list/item:r"
+            && found[0].1.contains("`row.overlay` names no overlay")
+            && found[1].0 == "page:members/section:list/item:s"
+            && found[1].1.contains("`extend` names no overlay"),
         "{found:#?}"
     );
 }
@@ -187,15 +190,15 @@ fn a_runtime_reference_default_is_skipped_and_a_bound_literal_the_page_lacks_is_
 fn a_second_broken_unnamed_instance_beside_an_equal_one_is_refused() {
     let text = DOC.replace(
         "    kind: list_page\n    title: Members\n",
-        "    kind: list_page\n    title: Members\n    header: {metrics: [{component: loan_card, args: {loan: rows.first}}]}\n",
+        "    kind: list_page\n    title: Members\n    header: {metrics: [{name: due, component: loan_card, args: {loan: rows.first}}]}\n",
     );
     let doc = parse(&text);
     assert_eq!(opens_found(&doc).len(), 1, "{:#?}", opens_found(&doc));
 
     let mut page = serde_json::to_value(&doc.pages["members"]).unwrap();
     page["header"]["metrics"] = json!([
-        {"component": "loan_card", "args": {"loan": "rows.first"}},
-        {"component": "loan_card", "args": {"loan": "rows.last"}},
+        {"name": "due", "component": "loan_card", "args": {"loan": "rows.first"}},
+        {"name": "due_last", "component": "loan_card", "args": {"loan": "rows.last"}},
     ]);
     let replace = Patch::Replace {
         target: path("page:members"),
@@ -211,9 +214,10 @@ fn a_second_broken_unnamed_instance_beside_an_equal_one_is_refused() {
 }
 
 /// A chain of widgets each using the next twice, whose last widget holds a widget that holds
-/// itself (a `widget_recursion` error, which admit must still judge). No body holds an `opens`,
-/// so there is nothing to report and nothing to expand into; before 8cf170a each widget was
-/// expanded once. Checking must stay within the bounds of `checking_a_large_document_stays_fast`.
+/// itself. ess-ui/1 refuses a widget that contains itself (`widget_expands`), and a use expanding
+/// past `EXPANSION_LIMIT` nodes is refused before ESS sees it (`expansion_bound`,
+/// beyond10x/ess#300): at every depth the document is refused, and the refusal at depth 22 stays
+/// within the bounds of `checking_a_large_document_stays_fast`.
 #[test]
 fn a_recursive_leaf_under_a_doubling_chain_is_checked_in_bounded_time() {
     let mut last = Duration::ZERO;
@@ -235,30 +239,31 @@ fn a_recursive_leaf_under_a_doubling_chain_is_checked_in_bounded_time() {
         widgets.push_str(
             "  selfish:\n    summary: Holds itself.\n    body:\n      - {name: again, component: selfish}\n",
         );
-        let doc = parse(&with_member_items(
+        let text = with_member_items(
             &DOC.replace("widgets:\n", &format!("widgets:\n{widgets}")),
             "          - {name: deep, component: d0}\n",
-        ));
+        );
         let started = Instant::now();
-        let found = check(&doc);
+        let refused = Document::from_yaml(&text).expect_err("a widget that holds itself");
         last = started.elapsed();
-        let recursion = found
-            .iter()
-            .filter(|f| f.check == "widget_recursion")
-            .count();
-        eprintln!("depth {depth}: check {last:?}, widget_recursion {recursion}");
-        assert_eq!(
-            found.iter().filter(|f| f.check == "opens_resolves").count(),
-            0
+        eprintln!("depth {depth}: refused in {last:?}: {refused}");
+        assert!(
+            refused.message.contains("contains itself")
+                || refused
+                    .message
+                    .contains(&uilab_doc::EXPANSION_LIMIT.to_string()),
+            "depth {depth}: {refused}"
         );
     }
     assert!(
         last < Duration::from_secs(5),
-        "check at depth 22 took {last:?}"
+        "refusing depth 22 took {last:?}"
     );
 }
 
-/// Control for the case above: the same chain at depth 22 with a plain leaf, no recursion.
+/// Control for the case above: the same chain at depth 22 with a plain leaf, no recursion. Its use
+/// expands to about 2^23 nodes, past `EXPANSION_LIMIT`: refused as `expansion_bound` at the use,
+/// fast.
 #[test]
 fn a_doubling_chain_without_recursion_is_checked_in_bounded_time() {
     let depth = 22;
@@ -276,13 +281,23 @@ fn a_doubling_chain_without_recursion_is_checked_in_bounded_time() {
             "  d{i}:\n    summary: Level {i}.\n    body:\n{body}"
         ));
     }
-    let doc = parse(&with_member_items(
+    let text = with_member_items(
         &DOC.replace("widgets:\n", &format!("widgets:\n{widgets}")),
         "          - {name: deep, component: d0}\n",
-    ));
+    );
     let started = Instant::now();
-    check(&doc);
+    let refused = Document::from_yaml(&text).expect_err("past the expansion limit");
     let took = started.elapsed();
-    eprintln!("control depth {depth}: check {took:?}");
+    eprintln!("control depth {depth}: refused in {took:?}");
+    assert_eq!(
+        refused.path, "pages/members/sections/list/item/deep",
+        "{refused}"
+    );
+    assert!(
+        refused
+            .message
+            .contains(&uilab_doc::EXPANSION_LIMIT.to_string()),
+        "{refused}"
+    );
     assert!(took < Duration::from_secs(5), "control took {took:?}");
 }

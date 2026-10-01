@@ -1,10 +1,10 @@
 //! Adversary pass 2 on story:draft-sample-rows: the name rules of `sample_rows` against names
-//! the base commit shaped, and the quantity rule where composites share a draft view.
+//! the base commit shaped, and the quantity rule where composites share a placeholder.
 
 use serde_json::Value;
 use uilab_doc::{Document, sample_rows};
 
-const DOC: &str = r#"format: ui-spec/1
+const DOC: &str = r#"format: ess-ui/1
 app: app
 title: Sample rows
 model: app
@@ -26,37 +26,40 @@ widgets:
   overdue_card:
     summary: Overdue members at a glance.
     body:
-      - {name: count, component: metric, reads: {view: draft.Shared}, from: in_widget}
+      - {name: count, component: metric, reads: {placeholder: app.Shared, fixture: fixtures/shared.yaml}, from: in_widget}
 pages:
   home:
     kind: dashboard_page
     title: Home
     sections:
-      on_loan:
+      - {name: board, remove: true}
+      - name: on_loan
         component: metric
-        reads: {view: draft.Shared}
+        reads: {placeholder: app.Shared, fixture: fixtures/shared.yaml}
         from: on_loan
-      members:
+      - name: members
         component: metric
-        reads: {view: draft.Shared}
+        reads: {placeholder: app.Shared, fixture: fixtures/shared.yaml}
         from: members
-      per_state:
+      - name: per_state
         component: chart
-        reads: {view: draft.Shared}
+        chart: bar
+        reads: {placeholder: app.Shared, fixture: fixtures/shared.yaml}
         x: shelf
-        series: [{field: returned}]
-      table:
+        series: [returned]
+      - name: table
         component: collection
-        reads: {view: draft.Shared}
+        reads: {placeholder: app.Shared, fixture: fixtures/shared.yaml}
         columns: [{field: returned}, {field: members}, {field: shelf}]
-      by_state:
+      - name: by_state
         component: chart
-        reads: {view: draft.LoansByState}
+        chart: bar
+        reads: {placeholder: app.LoansByState, fixture: fixtures/loans_by_state.yaml}
         x: state
-        series: [{field: loans}]
-      people:
+        series: [loans]
+      - name: people
         component: collection
-        reads: {view: draft.People}
+        reads: {placeholder: app.People, fixture: fixtures/people.yaml}
         columns:
           - {field: date_of_birth}
           - {field: date_created}
@@ -66,7 +69,7 @@ pages:
       detail:
         kind: drawer
         component: metric
-        reads: {view: draft.Shared}
+        reads: {placeholder: app.Shared, fixture: fixtures/shared.yaml}
         from: in_overlay
 "#;
 
@@ -86,7 +89,7 @@ fn is_date(v: &Value) -> bool {
 /// (`date_joined`, `date_created`) put the kind first.
 #[test]
 fn a_name_that_starts_with_date_is_still_a_date() {
-    let rows = sample_rows(&doc(), "draft.People");
+    let rows = sample_rows(&doc(), "app.People");
     let row = &rows[0];
     let wrong: Vec<String> = [
         "date_of_birth",
@@ -105,11 +108,11 @@ fn a_name_that_starts_with_date_is_still_a_date() {
 }
 
 /// A chart's `x` is the category each bar stands for: the operator's Overview reads
-/// `draft.LoansByState` with `x: state`, and five sample rows over three state values draw
+/// `app.LoansByState` with `x: state`, and five sample rows over three state values draw
 /// `overdue, closed, open, overdue, closed`, two bars for one category.
 #[test]
 fn a_chart_draws_one_bar_per_x_label() {
-    let rows = sample_rows(&doc(), "draft.LoansByState");
+    let rows = sample_rows(&doc(), "app.LoansByState");
     let labels: Vec<&str> = rows.iter().map(|r| r["state"].as_str().unwrap()).collect();
     let mut distinct = labels.clone();
     distinct.sort();
@@ -118,10 +121,10 @@ fn a_chart_draws_one_bar_per_x_label() {
 }
 
 /// Two metrics, a chart series that is also a column, a metric in a widget body and one in an
-/// overlay, all over one draft view: every quantity is an integer, the x label is text.
+/// overlay, all over one placeholder: every quantity is an integer, the x label is text.
 #[test]
-fn every_quantity_over_a_shared_draft_view_is_an_integer_wherever_it_is_read() {
-    let rows = sample_rows(&doc(), "draft.Shared");
+fn every_quantity_over_a_shared_placeholder_is_an_integer_wherever_it_is_read() {
+    let rows = sample_rows(&doc(), "app.Shared");
     assert_eq!(rows.len(), 5);
     for row in &rows {
         for field in ["on_loan", "members", "returned", "in_widget", "in_overlay"] {

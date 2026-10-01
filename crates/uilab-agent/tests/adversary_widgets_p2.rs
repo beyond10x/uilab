@@ -19,7 +19,7 @@ fn library_with_pages(pages: &[(&str, &str)]) -> Document {
     let mut text = std::fs::read_to_string(path).unwrap();
     for (name, title) in pages {
         text.push_str(&format!(
-            "  {name}:\n    kind: list_page\n    title: \"{title}\"\n    sections:\n      queue:\n        component: collection\n        reads: {{view: loans.All}}\n        columns: [{{field: title}}]\n"
+            "  {name}:\n    kind: list_page\n    title: \"{title}\"\n    sections:\n      - name: queue\n        component: collection\n        reads: {{view: loans.All}}\n        columns: [{{field: title}}]\n"
         ));
     }
     Document::from_yaml(&text).unwrap()

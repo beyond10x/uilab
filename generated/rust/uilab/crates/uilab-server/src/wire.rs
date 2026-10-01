@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 823a0dbdc48dcff7ae64379e3fd12563f56326f07f9fafab80645c14a42e2c24
-// contract digest 1f7ac65ed8e829d046658cff8ae43891c3483669061f0d449be07d91d77ac6f9
+// model digest 8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455
+// contract digest c789fcd30e3ffcc51487d00315741eca272a88a53a2be1e3be26a919b30c4bfb
 // do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
@@ -2493,4 +2493,23 @@ pub fn encode_outcome_uilab_session_undo_proposal(value: &uilab_types::session::
         }
     }
     out.push('}');
+}
+
+/// Writes any event on the system's log as JSON: its qualified name and its payload,
+/// `{"event": …, "payload": {…}}`, the envelope a command's answer lists it in.
+pub fn encode_system_event(value: &uilab_system::SystemEvent) -> String {
+    let mut out = String::from("{");
+    json::member(&mut out, "event");
+    json::push_text(&mut out, value.name());
+    json::member(&mut out, "payload");
+    match value {
+        uilab_system::SystemEvent::DocumentOpened(event) => encode_event_uilab_session_document_opened(event, &mut out),
+        uilab_system::SystemEvent::NodeSelected(event) => encode_event_uilab_session_node_selected(event, &mut out),
+        uilab_system::SystemEvent::PatchProposed(event) => encode_event_uilab_session_patch_proposed(event, &mut out),
+        uilab_system::SystemEvent::ProposalAccepted(event) => encode_event_uilab_session_proposal_accepted(event, &mut out),
+        uilab_system::SystemEvent::ProposalRejected(event) => encode_event_uilab_session_proposal_rejected(event, &mut out),
+        uilab_system::SystemEvent::ProposalUndone(event) => encode_event_uilab_session_proposal_undone(event, &mut out),
+    }
+    out.push('}');
+    out
 }

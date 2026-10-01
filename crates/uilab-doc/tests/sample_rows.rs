@@ -30,9 +30,9 @@ fn a_field_a_metric_reads_as_from_is_an_integer_whatever_its_name() {
     for field in ["on_loan", "members", "title", "joined_at", "status"] {
         let doc = with_section(
             "m",
-            json!({"component": "metric", "reads": {"view": "draft.Counts"}, "from": field}),
+            json!({"component": "metric", "reads": {"placeholder": "loans.Counts", "fixture": "fixtures/sample.yaml"}, "from": field}),
         );
-        let rows = sample_rows(&doc, "draft.Counts");
+        let rows = sample_rows(&doc, "loans.Counts");
         assert!(
             rows.iter().all(|r| r[field].is_i64()),
             "`from: {field}` gave {:?}",
@@ -45,10 +45,10 @@ fn a_field_a_metric_reads_as_from_is_an_integer_whatever_its_name() {
 fn a_field_a_chart_reads_as_a_series_is_an_integer_and_its_x_a_label() {
     let doc = with_section(
         "c",
-        json!({"component": "chart", "reads": {"view": "draft.Returns"},
+        json!({"component": "chart", "reads": {"placeholder": "loans.Returns", "fixture": "fixtures/sample.yaml"},
                "x": "shelf", "series": [{"field": "returned"}, "on_time"]}),
     );
-    let rows = sample_rows(&doc, "draft.Returns");
+    let rows = sample_rows(&doc, "loans.Returns");
     assert!(rows.iter().all(|r| r["returned"].is_i64()), "{:?}", rows[0]);
     assert!(rows.iter().all(|r| r["on_time"].is_i64()), "{:?}", rows[0]);
     assert!(rows[0]["shelf"].is_string());
@@ -75,9 +75,9 @@ fn a_word_that_marks_a_kind_at_one_end_of_a_name_does_not_mark_it_at_the_other()
     ];
     let doc = with_section(
         "t",
-        json!({"component": "collection", "reads": {"view": "draft.Names"}, "columns": columns}),
+        json!({"component": "collection", "reads": {"placeholder": "loans.Names", "fixture": "fixtures/sample.yaml"}, "columns": columns}),
     );
-    let row = &sample_rows(&doc, "draft.Names")[0];
+    let row = &sample_rows(&doc, "loans.Names")[0];
     for field in ["on_loan", "at_risk", "time_limit"] {
         assert!(
             row[field].is_string() && !is_date(&row[field]),
