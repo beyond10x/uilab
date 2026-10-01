@@ -90,9 +90,11 @@ pub fn patch_schema(doc: &Document, path: &NodePath) -> Result<Value, PathError>
             (Layer::Overlay, true) => "#/$defs/overlay_inherited".to_owned(),
             _ => def_ref(layer),
         };
+        // Typed here and not only in the `$ref`: a top-level parameter that names no type reaches
+        // the model as a string, and it sends the node as JSON text (round 5, run 3).
         properties.insert(
             "node".into(),
-            json!({"description": "the replacement node, for replace", "$ref": node}),
+            json!({"description": "the replacement node, for replace", "type": "object", "$ref": node}),
         );
     }
 
