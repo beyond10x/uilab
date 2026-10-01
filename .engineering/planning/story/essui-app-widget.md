@@ -19,7 +19,7 @@ scope:
   path: generated
 - confidence: cited
   path: widget/src
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":9}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":9}}}
@@ -62,6 +62,10 @@ in a library target this story adds); widget tests are in `widget/src/lib/`.
     `filters` section, and for a widget instance its body nodes, each with the inherited class;
   - `canvasmode.inherited.test.ts`: the canvas offers no remove on an inherited node.
 - `task check` exits 0.
+
+- `divider_renders_as_rule` (demo gap, 2026-10-01; moved here from story:ui-polish-leftovers): an
+  ESS `primitive: divider` renders as a horizontal rule on the canvas, not the placeholder box
+  (`widget/src/components/PrimitiveView.vue:35` today); widget test `primitive.divider.test.ts`.
 
 ## Scope
 

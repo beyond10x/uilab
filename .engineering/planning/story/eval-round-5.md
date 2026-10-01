@@ -14,7 +14,7 @@ scope:
   path: crates/uilab-agent/src/lib.rs
 - confidence: cited
   path: evals/reports
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:13Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:13Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":5}}}
@@ -49,6 +49,11 @@ and its prompt.
   and kept; the server on 8740 runs the merged `main` binary on a copy of the converted library
   example, and `curl -s http://127.0.0.1:8740/api/state` returns a document whose format is
   `ess-ui/1`.
+
+- Demo gaps (2026-10-01), each a named case that must pass in this round: `add-column` ("also
+  show the loan id in this table": round 4 declined with "already shows the member column"),
+  `creative` (round 4: an empty batch), and the three `retarget-*` cases (no live round since
+  wave 6). A failure among these five is fixed in the prompt or schema, not recorded as a reason.
 
 ## Scope
 
