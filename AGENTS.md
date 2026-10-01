@@ -72,3 +72,18 @@ on, an absolute home path is refused in any file, planning records and evidence 
 Direct commits, tags and pushes use `b10x-gates bot` as `b10x-bot[bot]`; `check`, `verify` and
 `publish` carry signed common evidence. A receipt reuses only the common checks and does not replace
 `task check`. Commit and publish paths need no Atlas checkout.
+
+## Delivery to main
+
+`main` takes changes only through pull requests: the ruleset "Required shared and repository gates"
+requires `common / Security and privacy` on an up-to-date branch, with no bypass (operator,
+2026-10-01). Every step is the bot's; `gh` stays read-only.
+
+1. Commit on a branch with `b10x-gates bot --repo . -- commit -F -`, run `task check`.
+2. `b10x-gates --repository beyond10x/uilab check --head <sha> --receipt <file>`, then
+   `publish --head <sha> --receipt <file> --remote-ref refs/heads/<branch>`.
+3. Open the pull request: `b10x-gates api --method POST --path /repos/beyond10x/uilab/pulls`
+   with `{title, head, base: "main", body}`; `--output` in a `mktemp -d` under `$HOME`.
+4. When the shared check is green, merge with `PUT /repos/beyond10x/uilab/pulls/<n>/merge`
+   (`merge_method: merge`) through the same `b10x-gates api` route, then pull `main` and delete the
+   branch.
