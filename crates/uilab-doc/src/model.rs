@@ -218,9 +218,10 @@ pub struct Page {
     /// page kind contributes.
     #[serde(default, skip_serializing_if = "Sections::unwritten")]
     pub sections: Sections,
-    /// Drawers and dialogs of the page. `null` removes one inherited from the kind.
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub overlays: IndexMap<String, Option<Overlay>>,
+    /// Drawers and dialogs of the page. `null` removes one inherited from the kind; `overlays:
+    /// null` removes them all ([`Overlays`]).
+    #[serde(default, skip_serializing_if = "Overlays::unwritten")]
+    pub overlays: Overlays,
     /// Keys this subset does not type (nav, params, state, header, switch_to, …).
     #[serde(flatten)]
     pub extra: IndexMap<String, Value>,
@@ -342,6 +343,99 @@ impl<'de> Deserialize<'de> for Sections {
     }
 }
 
+/// A page's overlays by name. An overlay set to `null` removes the one the page kind contributes
+/// of that name; `overlays: null` removes every overlay the kind contributes
+/// (`inheritance.maps.null_value: remove_inherited`), and is written back as `null` while the page
+/// adds none.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Overlays {
+    map: IndexMap<String, Option<Overlay>>,
+    written: Written,
+}
+
+/// How a page writes `overlays`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Written {
+    /// Not at all.
+    #[default]
+    Absent,
+    /// As `null`.
+    Null,
+    /// As a map.
+    Map,
+}
+
+impl Overlays {
+    /// Whether the page writes no `overlays` and has none: then the key is left out.
+    pub fn unwritten(&self) -> bool {
+        self.written == Written::Absent && self.map.is_empty()
+    }
+
+    /// Whether the page writes `overlays: null`, removing every overlay its kind contributes.
+    pub fn removes_inherited(&self) -> bool {
+        self.written == Written::Null
+    }
+}
+
+impl std::ops::Deref for Overlays {
+    type Target = IndexMap<String, Option<Overlay>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl std::ops::DerefMut for Overlays {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.map
+    }
+}
+
+impl<'a> IntoIterator for &'a Overlays {
+    type Item = (&'a String, &'a Option<Overlay>);
+    type IntoIter = indexmap::map::Iter<'a, String, Option<Overlay>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Overlays {
+    type Item = (&'a String, &'a mut Option<Overlay>);
+    type IntoIter = indexmap::map::IterMut<'a, String, Option<Overlay>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.iter_mut()
+    }
+}
+
+impl Serialize for Overlays {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.written == Written::Null && self.map.is_empty() {
+            serializer.serialize_none()
+        } else {
+            self.map.serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Overlays {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(
+            match Option::<IndexMap<String, Option<Overlay>>>::deserialize(deserializer)? {
+                None => Overlays {
+                    map: IndexMap::new(),
+                    written: Written::Null,
+                },
+                Some(map) => Overlays {
+                    map,
+                    written: Written::Map,
+                },
+            },
+        )
+    }
+}
+
 /// A board's `widgets`: a map of name to node, each node written without its name.
 mod board_widgets {
     use indexmap::IndexMap;
@@ -370,7 +464,17 @@ mod board_widgets {
         let map = Option::<IndexMap<String, Value>>::deserialize(deserializer)?.unwrap_or_default();
         map.into_iter()
             .map(|(name, fields)| {
-                let node = Node::named(&name, &fields).map_err(D::Error::custom)?;
+                // `k: rich_text` is the Composite shorthand for `k: {component: rich_text}`; a map
+                // with neither `component` nor `primitive` refines the widget a page kind gives.
+                let mut fields = match fields {
+                    Value::String(kind) => {
+                        Map::from_iter([("component".to_owned(), Value::String(kind))])
+                    }
+                    Value::Object(fields) => fields,
+                    _ => return Err(D::Error::custom(format!("board widget `{name}` is a node"))),
+                };
+                fields.insert("name".into(), Value::String(name.clone()));
+                let node = Node::in_list(fields).map_err(D::Error::custom)?;
                 Ok((name, node))
             })
             .collect()
@@ -836,7 +940,7 @@ impl Node {
     /// refines the entry of its name that a page kind contributes (`inheritance.named_lists`,
     /// matched by name) and takes `component` from it; where nothing is inherited, ESS's loader
     /// refuses it.
-    fn in_list(map: serde_json::Map<String, Value>) -> Result<Node, String> {
+    pub(crate) fn in_list(map: serde_json::Map<String, Value>) -> Result<Node, String> {
         if map.contains_key("component") || map.contains_key("primitive") {
             return Node::try_from(map);
         }
@@ -1106,21 +1210,18 @@ impl Document {
     /// Reads a document from YAML. ESS's loader decides whether the text is an `ess-ui/1`
     /// document; what it refuses is refused with its path and message.
     ///
-    /// A document whose widget uses expand past [`crate::check::EXPANSION_LIMIT`] nodes is refused
-    /// before ESS sees it (`expansion_bound`), at the use site that expands to the most.
+    /// A document whose widget expansion would hold more than [`crate::check::EXPANSION_LIMIT`]
+    /// maps is refused before ESS sees it (`expansion_bound`), at the ESS path of the use that
+    /// weighs most; one ESS does not read within [`crate::ess::deadline`] is refused at `/`.
     pub fn from_yaml(text: &str) -> Result<Self, crate::LoadError> {
-        let parsed: Result<Document, _> = serde_yaml::from_str(text);
-        if let Ok(doc) = &parsed
-            && let Some(over) = crate::check::expansion(doc)
-        {
-            let at: crate::NodePath = over.path.parse().unwrap_or_default();
-            return Err(crate::LoadError::new(crate::ess::to_ess(&at), over.message));
+        let authored = serde_yaml::from_str::<Value>(text).ok();
+        if let Some((at, message)) = authored.as_ref().and_then(crate::check::expansion_of) {
+            return Err(crate::LoadError::new(at, message));
         }
         crate::ess::load(text)?;
-        let mut doc = parsed.map_err(|e| crate::LoadError::new("/", e.to_string()))?;
-        doc.origin.authored = serde_yaml::from_str::<Value>(text)
-            .ok()
-            .map(std::sync::Arc::new);
+        let mut doc: Document =
+            serde_yaml::from_str(text).map_err(|e| crate::LoadError::new("/", e.to_string()))?;
+        doc.origin.authored = authored.map(std::sync::Arc::new);
         Ok(doc)
     }
 
@@ -1182,6 +1283,12 @@ fn in_authored_order(value: Value, authored: &Value) -> Value {
                 })
                 .collect(),
         ),
+        // The Composite shorthand (`shorthands.index`): a bare kind where a node goes, as written.
+        (Value::Object(map), Value::String(kind))
+            if map.len() == 1 && map.get("component") == Some(&Value::String(kind.clone())) =>
+        {
+            Value::String(kind.clone())
+        }
         (value, _) => value,
     }
 }

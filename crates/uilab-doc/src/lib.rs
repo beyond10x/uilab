@@ -20,6 +20,7 @@ pub use ess_ui;
 pub use ess_ui_check;
 
 pub mod check;
+mod cost;
 pub mod docs;
 pub mod ess;
 pub mod fixtures;

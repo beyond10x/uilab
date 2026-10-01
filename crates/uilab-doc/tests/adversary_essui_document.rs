@@ -355,7 +355,7 @@ fn every_layer_maps_to_ess_and_back_and_is_written_as_authored() {
     for at in &ours {
         let path: NodePath = at.parse().unwrap();
         let ess = to_ess(&path);
-        if from_ess(&ess).as_ref() != Some(&path) || node_at(&doc, &ess) != path {
+        if from_ess(&ess).as_ref() != Some(&path) || node_at(&doc, &ess) != Some(path.clone()) {
             wrong.push(format!("{at} → {ess} does not come back"));
         }
         if !matches!(path.layer(), Layer::Root | Layer::Nav) && !ess_paths.contains(&ess) {
@@ -381,9 +381,9 @@ fn every_layer_maps_to_ess_and_back_and_is_written_as_authored() {
     }
     // Every ESS node lands on an existing uilab node.
     for ess in &ess_paths {
-        let at = node_at(&doc, ess);
-        if resolve(&doc, &at).is_err() {
-            wrong.push(format!("ESS {ess} → {at}: no such uilab node"));
+        match node_at(&doc, ess) {
+            Some(at) if resolve(&doc, &at).is_ok() => {}
+            at => wrong.push(format!("ESS {ess} → {at:?}: no such uilab node")),
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");

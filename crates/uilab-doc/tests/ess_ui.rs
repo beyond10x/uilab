@@ -986,7 +986,12 @@ fn paths_round_trip() {
                 "{}: {at}",
                 file.display()
             );
-            assert_eq!(node_at(&doc, &ess), ours, "{}: {at}", file.display());
+            assert_eq!(
+                node_at(&doc, &ess),
+                Some(ours.clone()),
+                "{}: {at}",
+                file.display()
+            );
             if !matches!(ours.layer(), Layer::Root | Layer::Nav) {
                 assert!(
                     ess_paths.contains(&ess),
@@ -997,7 +1002,7 @@ fn paths_round_trip() {
         }
         // Every ESS node, inherited ones included, maps to an existing uilab node.
         for ess in &ess_paths {
-            let ours = node_at(&doc, ess);
+            let ours = node_at(&doc, ess).unwrap_or_else(|| panic!("{ess}: no uilab node"));
             assert!(resolve(&doc, &ours).is_ok(), "{ess} → {ours}");
         }
         // Every ESS finding maps to an existing uilab node, on the example and on broken copies.
@@ -1021,7 +1026,8 @@ fn paths_round_trip() {
                 );
             }
             for finding in &report.findings {
-                let ours = node_at(&doc, &finding.path);
+                let ours = node_at(&doc, &finding.path)
+                    .unwrap_or_else(|| panic!("{}: no uilab node", finding.path));
                 assert!(resolve(&doc, &ours).is_ok(), "{} → {ours}", finding.path);
             }
         }
@@ -1237,7 +1243,9 @@ fn ess_reference_example_loads() {
         .nodes()
         .iter()
         .map(|l| l.path.to_string())
-        .filter(|at| resolve(&doc, &uilab_doc::ess::node_at(&doc, at)).is_err())
+        .filter(|at| {
+            uilab_doc::ess::node_at(&doc, at).is_none_or(|ours| resolve(&doc, &ours).is_err())
+        })
         .collect();
     assert!(
         missing.is_empty(),

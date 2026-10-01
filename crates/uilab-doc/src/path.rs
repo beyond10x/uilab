@@ -479,7 +479,20 @@ pub fn allowed_children(doc: &Document, path: &NodePath) -> Result<Vec<Layer>, P
         | NodeRef::Component(_) => crate::ess::layers_under(path.layer()),
         NodeRef::Primitive(_) => vec![],
         NodeRef::Overlay(_) | NodeRef::Composite(_) => {
-            let kind = node.composite().and_then(|c| c.component.kind());
+            let component = node.composite().map(|c| &c.component);
+            // A section that refines its kind's section holds what the inherited component holds.
+            let inherited = match (component, path.0.as_slice()) {
+                (Some(c), [page, section])
+                    if c.is_inherited() && section.layer == Layer::Section =>
+                {
+                    crate::ess::inherited_component(doc, &page.name, &section.name)
+                }
+                _ => None,
+            };
+            let kind = match &inherited {
+                Some(name) => CompositeKind::parse(name),
+                None => component.and_then(|c| c.kind()),
+            };
             crate::ess::layers_in_composite(
                 kind.map(CompositeKind::as_str),
                 path.layer() == Layer::Section,
