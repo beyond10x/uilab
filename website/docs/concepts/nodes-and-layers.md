@@ -72,8 +72,8 @@ An overlay is a `drawer`, `dialog`, `fullscreen` or `popover` holding one compos
 or a button opens it by name with `opens`. A page's `kind` is one of `list_page`, `report_page`,
 `detail_page`, `settings_page`, `dashboard_page`, `editor_page`, `form_page` and `static_page`, or
 a kind the document declares under `page_kinds`. A kind contributes sections to every page of that
-kind — a `list_page` its `filters` and `list` — and the canvas shows the ones a page does not write
-itself marked as inherited (see [The document](./the-document.md#page-kinds-and-inherited-sections)).
+kind — a `list_page` its `filters` and `list` — and the canvas draws the ones a page does not write
+itself with a dashed outline, marked **inherited** in the tree (see [The document](./the-document.md#page-kinds-and-inherited-sections)).
 
 ## Selecting
 

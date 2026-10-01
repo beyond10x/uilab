@@ -82,8 +82,8 @@ It goes wherever a composite goes: a section, an overlay, a board's widget, or a
 where the current row is `row`. ESS expands each instance at its use site — the widget's body with
 the args substituted — and checks the result like built-in nodes. The `widget_expands` check holds
 that the widget exists, that an instance supplies every required param with an arg of the param's
-type, and that no widget contains itself. On the canvas the expanded body nodes of an instance are
-marked as inherited; the file keeps only the instance.
+type, and that no widget contains itself. The canvas draws the expanded body nodes of an instance
+with a dashed outline and the tree marks them **inherited**; the file keeps only the instance.
 
 ## The Components tab
 

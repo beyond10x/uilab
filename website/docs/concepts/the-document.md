@@ -68,7 +68,8 @@ section (a `collection`); the Loans page above writes its own `list`, which is m
 kind's by name, and inherits `filters`. A page leaves out a section its kind contributes with
 `{name: <section>, remove: true}` in its `sections` list. ESS expands the document before anything
 is shown, so the canvas and the tree show what ESS renders: the sections a page kind contributes and
-the bodies of widget instances are included and marked as inherited.
+the bodies of widget instances are included, drawn with a dashed outline on the canvas and marked
+**inherited** in the tree.
 
 An inherited node is not in your file, so an instruction given with one selected is asked at the
 nearest node you wrote: the page for a section its kind contributes, the widget instance for a node
