@@ -123,11 +123,19 @@ export function instanceArgs(widget: InstanceWidget, node: OutlineNode, scope: S
   return out;
 }
 
+/** The body nodes the server sends on an instance: its widget's body as ESS expands it there, each
+ *  at the instance's own path and marked inherited. */
+export function bodyNodes(node: OutlineNode): OutlineNode[] {
+  return node.children.filter((c) => c.layer === 'node' && c.inherited === true);
+}
+
 /** The instance's widget body as the Components tab previews it (`previewNode`), read from the
- *  instance's args (`instanceArgs`). */
+ *  instance's args (`instanceArgs`): the body the instance holds (`bodyNodes`), at its paths, or
+ *  the widget's declaration when the outline carries none. */
 export function instanceBody(widget: InstanceWidget, node: OutlineNode, scope: Scope, rowOf?: RowOf): OutlineNode[] {
   const args = instanceArgs(widget, node, scope, rowOf);
-  return widget.body.map((b) => previewNode(b, args));
+  const held = bodyNodes(node);
+  return (held.length ? held : widget.body).map((b) => previewNode(b, args));
 }
 
 /** The scopes a composite's item list is drawn in: a collection's once per row, a record's for

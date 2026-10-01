@@ -363,11 +363,13 @@ pub fn goal_state(goal: &UilabWireGoal) -> String {
     name_of(&goal.state)
 }
 
-pub fn rows(view: &str, total: Option<u64>, rows: Vec<Value>) -> Server {
+/// The rows of a view; `sample` when they are made up because no fixture answers it.
+pub fn rows(view: &str, total: Option<u64>, rows: Vec<Value>, sample: bool) -> Server {
     Server::Rows(UilabWireRows {
         view: view.to_owned(),
         total: present(total.map(Number::from)),
         rows,
+        sample: EssPresence::Present(sample),
     })
 }
 
@@ -382,7 +384,7 @@ mod tests {
             "/../../examples/library/library.ui.yaml"
         ))
         .unwrap();
-        uilab_doc::outline(&uilab_doc::Document::from_yaml(&text).unwrap())
+        uilab_doc::outline::rendered(&uilab_doc::Document::from_yaml(&text).unwrap())
     }
 
     /// Every server message this crate builds decodes as the generated union, and back.
@@ -457,8 +459,9 @@ mod tests {
                 "loans.All",
                 Some(4),
                 vec![serde_json::json!({"title": "x"})],
+                false,
             ),
-            rows("loans.X", None, vec![]),
+            rows("loans.X", None, vec![], true),
             presence(
                 vec![
                     OperatorParts {
@@ -651,5 +654,70 @@ mod tests {
             })
             .collect();
         assert_eq!(ended, [false, false, true, true, true]);
+    }
+
+    /// story:essui-app-widget `finding_carries_ess_check_id`: a section naming a widget the
+    /// document does not declare is ESS's `widget_expands`, and the wire finding carries that id on
+    /// the uilab path of the section. The document is read past ESS's loader, which refuses it,
+    /// the way a patch's result is checked before it is admitted.
+    #[test]
+    fn finding_carries_ess_check_id() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/library/library.ui.yaml"
+        ))
+        .unwrap();
+        let anchor = "    sections:\n      - name: list\n        component: collection\n        reads: {view: loans.All, paging: server}\n";
+        assert!(text.contains(anchor), "fixture anchor is missing");
+        let text = text.replacen(
+            anchor,
+            &format!(
+                "    sections:\n      - {{name: ghost, component: no_such_widget}}\n{}",
+                &anchor["    sections:\n".len()..]
+            ),
+            1,
+        );
+        assert!(
+            uilab_doc::Document::from_yaml(&text).is_err(),
+            "ESS's loader refuses the document"
+        );
+        let doc: uilab_doc::Document = serde_yaml::from_str(&text).unwrap();
+        let sent = findings(&uilab_doc::check(&doc));
+        let found: Vec<(&str, &str)> = sent
+            .iter()
+            .filter(|f| f.check == "widget_expands")
+            .map(|f| (f.check.as_str(), f.path.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            [("widget_expands", "page:loans/section:ghost")],
+            "{sent:?}"
+        );
+        let value = serde_json::to_value(&sent[0]).unwrap();
+        assert!(
+            serde_json::from_value::<UilabWireFinding>(value).is_ok(),
+            "the finding is the generated wire type"
+        );
+    }
+
+    /// The outline a browser is shown carries the inherited mark through the generated type: the
+    /// library's Loans page holds its kind's `filters` section, marked.
+    #[test]
+    fn the_wire_outline_carries_the_inherited_mark() {
+        let wire = serde_json::to_value(outline(&outline_fixture())).unwrap();
+        let loans = wire["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["path"] == "page:loans")
+            .unwrap();
+        let filters = loans["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["path"] == "page:loans/section:filters")
+            .expect("the kind's filters section is shown");
+        assert_eq!(filters["inherited"], true);
+        assert!(loans.get("inherited").is_none());
     }
 }

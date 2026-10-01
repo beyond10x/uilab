@@ -1,10 +1,22 @@
 //! What the operator sees and what the agent is told about one node.
+//!
+//! [`outline`] is the document as the author wrote it: what the agent is given and what node
+//! paths address. [`rendered`] is what ESS renders (epic:ess-ui-adoption D6): the same tree with
+//! the sections and overlays each page's kind contributes and the body of every widget instance,
+//! each of those nodes marked `inherited`. The browser is shown [`rendered`]; an instruction at an
+//! inherited node lands on the nearest node the author wrote ([`authored_at`]).
 
+use std::sync::OnceLock;
+
+use indexmap::IndexMap;
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::check::{Instance, reaches, widget_uses};
-use crate::model::{CompositeKind, Document};
-use crate::path::{Layer, NodePath, NodeRef, PathError, allowed_children, children, resolve};
+use crate::model::{Composite, CompositeKind, Document, Node, NodeBody, Overlay};
+use crate::path::{
+    Layer, NodePath, NodeRef, PathError, allowed_children, children, node_list, resolve,
+};
 
 /// One node of the document tree, with its children in document order.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -30,13 +42,67 @@ pub struct OutlineNode {
     /// and the docs find them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub props: Option<serde_json::Value>,
+    /// ESS renders the node but the author did not write it: a section or an overlay the page's
+    /// kind contributes, or a node of a widget instance's body (at `<instance>/node:<name>`, with
+    /// the props the widget declares; the instance's args bind them). Only [`rendered`] holds
+    /// such nodes.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub inherited: bool,
     /// Its children.
     pub children: Vec<OutlineNode>,
 }
 
-/// The whole document as a tree, from the root.
+/// The whole document as the author wrote it, from the root.
 pub fn outline(doc: &Document) -> OutlineNode {
-    node(doc, &widget_uses(doc), &NodePath::root()).expect("the root resolves")
+    Walk::new(doc, false)
+        .authored(&NodePath::root())
+        .expect("the root resolves")
+}
+
+/// The whole document as ESS renders it, from the root: [`outline`] with what each page's kind
+/// contributes and the body of each widget instance, those nodes marked `inherited`. Sections are
+/// in the order ESS renders them. A document ESS's loader refuses gets no page-kind contributions.
+pub fn rendered(doc: &Document) -> OutlineNode {
+    Walk::new(doc, true)
+        .authored(&NodePath::root())
+        .expect("the root resolves")
+}
+
+/// The subtree of [`rendered`] at `path`, an inherited node's included; `None` when ESS renders
+/// no node there.
+pub fn rendered_at(doc: &Document, path: &str) -> Option<OutlineNode> {
+    let root = rendered(doc);
+    lineage(&root, path).and_then(|chain| chain.last().map(|n| (*n).clone()))
+}
+
+/// The node the author wrote that a node of [`rendered`] is, or is contributed to: the node
+/// itself when the author wrote it; for an inherited node, the nearest one above it the author
+/// wrote (the page for a section of its kind, the instance for a node of a widget's body). `None`
+/// when ESS renders no node at `path`.
+pub fn authored_at(doc: &Document, path: &str) -> Option<NodePath> {
+    let root = rendered(doc);
+    let chain = lineage(&root, path)?;
+    chain
+        .iter()
+        .rev()
+        .find(|n| !n.inherited)
+        .and_then(|n| n.path.parse().ok())
+}
+
+/// The nodes from `root` down to the one at `path`, compared as written with surrounding slashes
+/// trimmed; `None` when the tree has no node there.
+fn lineage<'o>(root: &'o OutlineNode, path: &str) -> Option<Vec<&'o OutlineNode>> {
+    let target = path.trim().trim_matches('/');
+    let mut chain = vec![root];
+    let mut node = root;
+    while node.path.trim_matches('/') != target {
+        node = node.children.iter().find(|c| {
+            let at = c.path.trim_matches('/');
+            target == at || target.strip_prefix(at).is_some_and(|r| r.starts_with('/'))
+        })?;
+        chain.push(node);
+    }
+    Some(chain)
 }
 
 /// The use sites of the widget `name`, one per instance, in the order [`widget_uses`] finds them.
@@ -52,12 +118,257 @@ fn uses_of(uses: &[(NodePath, Instance<'_>)], name: &str) -> serde_json::Value {
     serde_json::Value::Array(out)
 }
 
-fn node(
+/// The schema ESS embeds, parsed once: the built-in page kinds are read from it.
+fn schema() -> &'static serde_yaml::Value {
+    static PARSED: OnceLock<serde_yaml::Value> = OnceLock::new();
+    PARSED.get_or_init(|| serde_yaml::from_str(ess_ui::SCHEMA).expect("the ESS schema is YAML"))
+}
+
+/// What a page kind contributes, read as uilab's model: its sections and overlays by name.
+#[derive(Default)]
+struct KindParts {
+    sections: IndexMap<String, Composite>,
+    overlays: IndexMap<String, Overlay>,
+}
+
+impl KindParts {
+    /// The kind's `sections` (a list of named sections) and `overlays` (a map), as ESS resolved
+    /// them. An entry uilab's model cannot read is left out.
+    fn read(sections: Option<&serde_yaml::Value>, overlays: Option<&serde_yaml::Value>) -> Self {
+        let json = |v: Option<&serde_yaml::Value>| v.and_then(|v| serde_json::to_value(v).ok());
+        let mut parts = KindParts::default();
+        for entry in json(sections)
+            .as_ref()
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            let Some(mut fields) = entry.as_object().cloned() else {
+                continue;
+            };
+            let Some(Value::String(name)) = fields.remove("name") else {
+                continue;
+            };
+            if fields.get("remove") == Some(&Value::Bool(true)) {
+                continue;
+            }
+            if let Ok(composite) = serde_json::from_value::<Composite>(Value::Object(fields)) {
+                parts.sections.insert(name, composite);
+            }
+        }
+        for (name, value) in json(overlays)
+            .as_ref()
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            if let Ok(overlay) = serde_json::from_value::<Overlay>(value.clone()) {
+                parts.overlays.insert(name.clone(), overlay);
+            }
+        }
+        parts
+    }
+}
+
+/// What ESS's loader renders of a document, as far as the outline needs it.
+struct Rendered {
+    /// Per page, the names of its sections in the order ESS renders them, and of its overlays.
+    pages: IndexMap<String, (Vec<String>, Vec<String>)>,
+    /// Per page kind a page uses, what it contributes, resolved over the kinds it extends.
+    kinds: IndexMap<String, KindParts>,
+}
+
+impl Rendered {
+    /// ESS's loader on the document as written; `None` when it refuses the document.
+    fn of(doc: &Document) -> Option<Self> {
+        let text = doc.to_yaml().ok()?;
+        let ess = ess_ui::load_str(&text).ok()?;
+        let pages = ess
+            .pages
+            .iter()
+            .map(|(name, page)| {
+                let sections = page.sections.iter().map(|s| s.name.clone()).collect();
+                let overlays = page.overlays.keys().cloned().collect();
+                (name.clone(), (sections, overlays))
+            })
+            .collect();
+        let mut kinds = IndexMap::new();
+        for page in doc.pages.values() {
+            if kinds.contains_key(&page.kind) {
+                continue;
+            }
+            // A declared kind is resolved over the kinds it extends by the loader; a built-in one
+            // is the schema's.
+            let parts = match ess.page_kinds.get(&page.kind) {
+                Some(kind) => KindParts::read(kind.sections.as_ref(), kind.overlays.as_ref()),
+                None => {
+                    let builtin =
+                        &schema()["constructs"]["PageKind"]["builtins"][page.kind.as_str()];
+                    KindParts::read(builtin.get("sections"), builtin.get("overlays"))
+                }
+            };
+            kinds.insert(page.kind.clone(), parts);
+        }
+        Some(Rendered { pages, kinds })
+    }
+}
+
+/// One walk of the document: as written, or as ESS renders it.
+struct Walk<'a> {
+    doc: &'a Document,
+    uses: Vec<(NodePath, Instance<'a>)>,
+    /// Add every widget instance's body.
+    expand: bool,
+    /// What ESS renders; `None` for the document as written, or one ESS's loader refuses.
+    ess: Option<Rendered>,
+}
+
+impl<'a> Walk<'a> {
+    fn new(doc: &'a Document, expand: bool) -> Self {
+        Walk {
+            doc,
+            uses: widget_uses(doc),
+            expand,
+            ess: if expand { Rendered::of(doc) } else { None },
+        }
+    }
+
+    /// The node the author wrote at `path`, with its children.
+    fn authored(&self, path: &NodePath) -> Result<OutlineNode, PathError> {
+        let found = resolve(self.doc, path)?;
+        let mut kids = Vec::new();
+        for (layer, name) in children(self.doc, path)? {
+            kids.push(self.authored(&path.child(layer, &name))?);
+        }
+        if path.layer() == Layer::Page {
+            self.inherit(path, &mut kids);
+        }
+        self.instance_body(path, found, &mut kids, &mut Vec::new());
+        Ok(describe(self.doc, &self.uses, path, found, kids, false))
+    }
+
+    /// A node the author did not write, with what it holds.
+    fn inherited(
+        &self,
+        path: &NodePath,
+        found: NodeRef<'_>,
+        within: &mut Vec<String>,
+    ) -> OutlineNode {
+        let mut kids = Vec::new();
+        for (layer, name, child) in held(found) {
+            kids.push(self.inherited(&path.child(layer, name), child, within));
+        }
+        self.instance_body(path, found, &mut kids, within);
+        describe(self.doc, &self.uses, path, found, kids, true)
+    }
+
+    /// The page's children as ESS renders them: its sections in ESS's order, each the author's
+    /// where the author wrote it and the kind's otherwise, then the author's overlays and those
+    /// of the kind's the author did not write.
+    fn inherit(&self, path: &NodePath, kids: &mut Vec<OutlineNode>) {
+        let Some(ess) = &self.ess else { return };
+        let (Some((sections, overlays)), Some(page)) =
+            (ess.pages.get(path.name()), self.doc.pages.get(path.name()))
+        else {
+            return;
+        };
+        let kind = ess.kinds.get(&page.kind);
+        let (mut own, mut rest): (Vec<OutlineNode>, Vec<OutlineNode>) = std::mem::take(kids)
+            .into_iter()
+            .partition(|k| k.layer == Layer::Section);
+        let mut out = Vec::new();
+        for name in sections {
+            if let Some(i) = own.iter().position(|k| &k.name == name) {
+                out.push(own.remove(i));
+            } else if let Some(section) = kind.and_then(|k| k.sections.get(name)) {
+                let at = path.child(Layer::Section, name);
+                out.push(self.inherited(&at, NodeRef::Composite(section), &mut Vec::new()));
+            }
+        }
+        out.extend(own);
+        for name in overlays {
+            if rest
+                .iter()
+                .any(|k| k.layer == Layer::Overlay && &k.name == name)
+            {
+                continue;
+            }
+            if let Some(overlay) = kind.and_then(|k| k.overlays.get(name)) {
+                let at = path.child(Layer::Overlay, name);
+                rest.push(self.inherited(&at, NodeRef::Overlay(overlay), &mut Vec::new()));
+            }
+        }
+        out.extend(rest);
+        *kids = out;
+    }
+
+    /// The body of the widget the node at `path` instantiates, as inherited children at
+    /// `<path>/node:<name>`. Not in a widget's own declaration, which ESS does not expand, and not
+    /// for a widget already being expanded above it.
+    fn instance_body(
+        &self,
+        path: &NodePath,
+        found: NodeRef<'_>,
+        kids: &mut Vec<OutlineNode>,
+        within: &mut Vec<String>,
+    ) {
+        if !self.expand {
+            return;
+        }
+        let Some(name) = found.composite().and_then(|c| c.component.widget()) else {
+            return;
+        };
+        let declared = path.0.first().is_some_and(|s| s.layer == Layer::Component);
+        if declared || within.iter().any(|w| w == name) {
+            return;
+        }
+        let Some(widget) = self.doc.widgets.get(name) else {
+            return;
+        };
+        within.push(name.to_owned());
+        for node in &widget.body {
+            let at = path.child(Layer::Node, &node.name);
+            kids.push(self.inherited(&at, node_ref(node), within));
+        }
+        within.pop();
+    }
+}
+
+fn node_ref(node: &Node) -> NodeRef<'_> {
+    match &node.body {
+        NodeBody::Composite(c) => NodeRef::Composite(c),
+        NodeBody::Primitive(p) => NodeRef::Primitive(p),
+    }
+}
+
+/// The named nodes a composite holds, in the order [`children`] lists them: board widgets, then
+/// each list of named nodes.
+fn held(found: NodeRef<'_>) -> Vec<(Layer, &str, NodeRef<'_>)> {
+    let Some(composite) = found.composite() else {
+        return Vec::new();
+    };
+    let mut out: Vec<(Layer, &str, NodeRef<'_>)> = composite
+        .widgets
+        .iter()
+        .map(|(name, w)| (Layer::Widget, name.as_str(), NodeRef::Composite(w)))
+        .collect();
+    for layer in Layer::ALL.into_iter().filter(|l| l.is_node_list()) {
+        for node in node_list(composite, layer).into_iter().flatten() {
+            out.push((layer, node.name.as_str(), node_ref(node)));
+        }
+    }
+    out
+}
+
+/// The outline node of `found` at `path`, holding `children`.
+fn describe(
     doc: &Document,
     uses: &[(NodePath, Instance<'_>)],
     path: &NodePath,
-) -> Result<OutlineNode, PathError> {
-    let found = resolve(doc, path)?;
+    found: NodeRef<'_>,
+    children: Vec<OutlineNode>,
+    inherited: bool,
+) -> OutlineNode {
     // Composites carry their own props. The menu, its sections and pages carry what a renderer
     // needs to place them: the home page, a section's pages, a page's shell.
     let props = match found {
@@ -114,11 +425,7 @@ fn node(
         ),
         _ => (None, None),
     };
-    let mut kids = Vec::new();
-    for (layer, name) in children(doc, path)? {
-        kids.push(node(doc, uses, &path.child(layer, &name))?);
-    }
-    Ok(OutlineNode {
+    OutlineNode {
         path: path.to_string(),
         layer: path.layer(),
         name: path.name().to_owned(),
@@ -126,8 +433,9 @@ fn node(
         title,
         view,
         props,
-        children: kids,
-    })
+        inherited,
+        children,
+    }
 }
 
 /// What an agent needs to know to propose a patch at one node.
@@ -266,7 +574,7 @@ pub fn vocabulary(doc: &Document, path: &NodePath) -> Vec<String> {
 
 /// The outline of the subtree at `path`, or `None` when no node has that path.
 pub fn outline_at(doc: &Document, path: &NodePath) -> Option<OutlineNode> {
-    node(doc, &widget_uses(doc), path).ok()
+    Walk::new(doc, false).authored(path).ok()
 }
 
 #[cfg(test)]
@@ -428,5 +736,158 @@ pages:
                 "`{name}`: the outline lists {line:?}, the docs do not"
             );
         }
+    }
+
+    /// The library with the widgets of [`WIDGETS`] and one instance of `loan_card`, the overview's
+    /// section `latest`, written before `on_loan`.
+    fn library_with_instance() -> Document {
+        let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/library/library.ui.yaml");
+        let text = std::fs::read_to_string(file).unwrap();
+        assert!(text.contains("\npages:\n") && text.contains("      - name: on_loan\n"));
+        let text = text.replacen("\npages:\n", &format!("\n{WIDGETS}"), 1).replacen(
+            "      - name: on_loan\n",
+            "      - {name: latest, component: loan_card, args: {loan: rows.first}}\n      - name: on_loan\n",
+            1,
+        );
+        Document::from_yaml(&text).unwrap()
+    }
+
+    /// The child of `node` at `path`.
+    fn child_at<'o>(node: &'o OutlineNode, path: &str) -> &'o OutlineNode {
+        node.children
+            .iter()
+            .find(|c| c.path == path)
+            .unwrap_or_else(|| panic!("no child `{path}` in `{}`", node.path))
+    }
+
+    /// story:essui-app-widget `outline_shows_inherited`: the outline the browser is shown holds the
+    /// `filters` section the Loans page's kind (`list_page`) contributes, inherited, in the order
+    /// ESS renders it, and a widget instance holds its widget's body nodes, inherited, with the
+    /// props the widget declares.
+    #[test]
+    fn outline_shows_inherited() {
+        let doc = library_with_instance();
+        let root = rendered(&doc);
+
+        let loans = child_at(&root, "page:loans");
+        let sections: Vec<(&str, bool)> = loans
+            .children
+            .iter()
+            .filter(|c| c.layer == Layer::Section)
+            .map(|c| (c.path.as_str(), c.inherited))
+            .collect();
+        assert_eq!(
+            sections,
+            [
+                ("page:loans/section:filters", true),
+                ("page:loans/section:list", false)
+            ]
+        );
+        let filters = child_at(loans, "page:loans/section:filters");
+        assert_eq!(filters.kind, "filter_bar");
+        assert_eq!(
+            serde_json::to_value(filters).unwrap()["inherited"],
+            json!(true),
+            "the wire carries the mark"
+        );
+        assert!(!loans.inherited);
+        assert!(
+            !child_at(loans, "page:loans/overlay:edit").inherited,
+            "the author's overlay is the author's"
+        );
+
+        let latest = child_at(
+            child_at(&root, "page:overview"),
+            "page:overview/section:latest",
+        );
+        assert!(!latest.inherited);
+        let body: Vec<(&str, &str, bool)> = latest
+            .children
+            .iter()
+            .map(|c| (c.path.as_str(), c.kind.as_str(), c.inherited))
+            .collect();
+        assert_eq!(
+            body,
+            [
+                ("page:overview/section:latest/node:title", "text", true),
+                ("page:overview/section:latest/node:due", "badge", true),
+            ]
+        );
+        assert_eq!(
+            child_at(latest, "page:overview/section:latest/node:title").props,
+            Some(json!({"text": "args.loan.title", "style": "heading"}))
+        );
+        // A widget's own declaration is not expanded.
+        let card = child_at(&root, "component:loan_card");
+        assert!(card.children.iter().all(|c| !c.inherited));
+    }
+
+    /// The outline the agent is given and node paths address stays the document as written: no
+    /// node in it is inherited, and every one resolves.
+    #[test]
+    fn the_outline_as_written_holds_nothing_inherited() {
+        let doc = library_with_instance();
+        fn walk(doc: &Document, node: &OutlineNode) {
+            assert!(!node.inherited, "{} is inherited", node.path);
+            let at: NodePath = node.path.parse().unwrap();
+            assert!(resolve(doc, &at).is_ok(), "{} does not resolve", node.path);
+            node.children.iter().for_each(|c| walk(doc, c));
+        }
+        walk(&doc, &outline(&doc));
+        assert!(
+            outline_at(&doc, &"page:overview/section:latest".parse().unwrap())
+                .unwrap()
+                .children
+                .is_empty()
+        );
+    }
+
+    /// An inherited node is answered for by the nearest node the author wrote above it: the page
+    /// for a section of its kind, the instance for a node of a widget's body; a node the author
+    /// wrote answers for itself, and a path ESS renders nothing at for nothing.
+    #[test]
+    fn an_inherited_node_is_written_at_the_nearest_node_the_author_wrote() {
+        let doc = library_with_instance();
+        let at = |p: &str| authored_at(&doc, p).map(|n| n.to_string());
+        assert_eq!(
+            at("page:loans/section:filters").as_deref(),
+            Some("page:loans")
+        );
+        assert_eq!(
+            at("page:overview/section:latest/node:due").as_deref(),
+            Some("page:overview/section:latest")
+        );
+        assert_eq!(
+            at("page:loans/section:list").as_deref(),
+            Some("page:loans/section:list")
+        );
+        assert_eq!(at("/").as_deref(), Some("/"));
+        assert_eq!(at("page:loans/section:ghost"), None);
+        assert_eq!(at("page:overview/section:latest/node:ghost"), None);
+        assert_eq!(
+            rendered_at(&doc, "page:overview/section:latest/node:title").map(|n| n.inherited),
+            Some(true)
+        );
+    }
+
+    /// A section the page removes (`{name: board, remove: true}` on the overview, a
+    /// `dashboard_page`) is not rendered, so it is not shown as inherited either.
+    #[test]
+    fn a_section_the_page_removes_is_not_shown() {
+        let root = rendered(&library_with_instance());
+        let overview = child_at(&root, "page:overview");
+        assert!(
+            overview
+                .children
+                .iter()
+                .all(|c| c.path != "page:overview/section:board"),
+            "{:?}",
+            overview
+                .children
+                .iter()
+                .map(|c| &c.path)
+                .collect::<Vec<_>>()
+        );
     }
 }

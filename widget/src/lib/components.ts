@@ -299,6 +299,27 @@ export function previewNode(node: OutlineNode, args: Record<string, unknown>): O
   return out;
 }
 
+/** How the canvas draws a primitive. */
+export type PrimitiveShape = 'heading' | 'text' | 'badge' | 'image' | 'link' | 'button' | 'rule' | 'placeholder';
+
+/** How the canvas draws a primitive of this kind: a `divider` as a horizontal rule, a `text` styled
+ *  `heading` as a heading; a kind the canvas has no drawing for as the placeholder box. */
+export function primitiveShape(node: OutlineNode): PrimitiveShape {
+  switch (node.kind) {
+    case 'text':
+      return propsOf(node).style === 'heading' ? 'heading' : 'text';
+    case 'divider':
+      return 'rule';
+    case 'badge':
+    case 'image':
+    case 'link':
+    case 'button':
+      return node.kind;
+    default:
+      return 'placeholder';
+  }
+}
+
 /** Whether a node of a widget body or an item list is a primitive rather than a composite. */
 export function isPrimitive(node: OutlineNode): boolean {
   return (node.layer === 'node' || node.layer === 'item') && PRIMITIVE_KINDS.includes(node.kind);

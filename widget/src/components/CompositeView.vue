@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
-import { canvasMode, emptyLine as emptyLineText } from '../lib/canvasmode.ts';
+import { canvasMode, emptyLine as emptyLineText, nodeActions } from '../lib/canvasmode.ts';
 import { entityViews, fixtureRowOf, viewsRead } from '../lib/components.ts';
-import { compositeKind, drawsAsPrimitive, instanceBody, itemScopes, missingReference, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
-import { columnsOf, fieldsOf, isDraftView, propsOf } from '../lib/outline.ts';
-import { marks, requestRows, select, shownOutline, state, tint } from '../store.ts';
+import { bodyNodes, compositeKind, drawsAsPrimitive, instanceBody, itemScopes, missingReference, rowNode, widgetOfInstance, type Scope } from '../lib/instance.ts';
+import { columnsOf, fieldsOf, isDraftView, nodeClasses, propsOf } from '../lib/outline.ts';
+import { isSample } from '../lib/rows.ts';
+import { marks, removeNode, requestRows, select, shownOutline, state, tint } from '../store.ts';
 import PrimitiveView from './PrimitiveView.vue';
 
 /** `scope`: what a widget instance's `row` and `rows.…` args read here, given by the composite
@@ -32,7 +33,12 @@ const rowObjects = computed<Record<string, unknown>[]>(() => {
 const scopeRows = computed(() => (view.value ? rowObjects.value : props.scope?.rows));
 const childScope = computed<Scope>(() => ({ rows: scopeRows.value }));
 const items = computed(() => props.node.children.filter((c) => c.layer === 'item'));
-const others = computed(() => props.node.children.filter((c) => c.layer !== 'item'));
+/** Children drawn after the composite: not its items, and not an instance's body, which is drawn as
+ *  the instance. */
+const others = computed(() => {
+  const body = new Set(bodyNodes(props.node));
+  return props.node.children.filter((c) => c.layer !== 'item' && !body.has(c));
+});
 const scopes = computed(() => itemScopes(kind.value, scopeRows.value ?? []));
 
 const views = computed(() => (root.value ? viewsRead(root.value) : []));
@@ -47,7 +53,10 @@ const bodyWithin = computed(() => (instance.value ? [...within.value, instance.v
 const unbound = computed(() => !!instance.value && missingReference(props.node, { row: props.scope?.row, rows: scopeRows.value }));
 const unboundLine = computed(() => (view.value && !rows.value ? (preview.value ? 'loading…' : `loading ${view.value}…`) : 'no data yet'));
 
-const sampled = computed(() => draft.value && rowObjects.value.length > 0);
+/** Rows the server made up for a read no fixture answers (`Rows.sample`), or rows of a `draft.` view. */
+const sampled = computed(() => isSample(rows.value) || (draft.value && rowObjects.value.length > 0));
+/** What the canvas offers here, on the selected node only. */
+const offers = computed(() => (state.doc?.selected === props.node.path ? nodeActions(props.node, canvasMode.mode.value) : []));
 
 watchEffect(() => {
   if (needsRows.value) requestRows(view.value);
@@ -120,11 +129,11 @@ function display(v: unknown): string {
 <template>
   <div
     class="card node"
-    :class="[marks(node.path), { board: kind === 'board' }]" :style="tint(node.path)"
+    :class="[marks(node.path), nodeClasses(node), { board: kind === 'board' }]" :style="tint(node.path)"
     :data-path="node.path"
     @click.stop="select(node.path)"
   >
-    <div v-if="!preview || sampled" class="card-label"><template v-if="!preview">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span></template><span v-if="sampled" class="sample-tag" title="made-up rows: this view has no model binding yet">sample data</span></div>
+    <div v-if="!preview || sampled" class="card-label"><template v-if="!preview">{{ node.name }} · {{ node.kind }}<span v-if="view" class="muted"> · {{ view }}</span></template><span v-if="sampled" class="sample-tag" title="made-up rows: no fixture answers this read yet">sample data</span><button v-if="offers.includes('remove')" type="button" class="link card-remove" :title="`ask the agent to remove ${node.path}`" @click.stop="removeNode(node)">remove</button></div>
     <h3 v-if="title" class="card-title">{{ title }}</h3>
 
     <template v-if="kind === 'collection'">

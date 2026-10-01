@@ -27,6 +27,7 @@ import {
   type InFlight,
 } from './lib/collab.ts';
 import { settleCard } from './lib/card.ts';
+import { removeInstruction } from './lib/canvasmode.ts';
 import { bannerLabel, goalEnded, goalMessage, settleGoal, stopMessage } from './lib/goal.ts';
 import { targetIn, workspaceOf } from './lib/workspace.ts';
 import { markClasses, outlineMarks, previewBase, withRemoved, type Mark } from './lib/marks.ts';
@@ -439,17 +440,25 @@ export function select(path: string): void {
   reveal(path);
 }
 
+/** A canvas remove: selects the node and asks the agent to remove it there (`removeInstruction`). */
+export function removeNode(node: OutlineNode): void {
+  select(node.path);
+  say(removeInstruction(node));
+}
+
 export function showPage(path: string): void {
   state.currentPage = path;
   state.openOverlay = null;
 }
 
-/** Asks for `view`'s rows when they are due (`rowsDue`); a `draft.` view gets sample rows. */
+/** Asks for `view`'s rows when they are due (`rowsDue`); made-up rows are asked for again as the
+ *  document moves on. */
 export function requestRows(view: string | undefined): void {
   if (!view) return;
   pendingViews.add(view);
   const stamp = rowsStamp();
-  if (!rowsDue(view, !!state.rows[view], rowsAsked.get(view), stamp)) return;
+  const have = state.rows[view];
+  if (!rowsDue(view, !!have, rowsAsked.get(view), stamp, have?.sample === true)) return;
   if (state.conn === 'open' && transport?.send({ type: 'rows', value: { view } })) rowsAsked.set(view, stamp);
 }
 
