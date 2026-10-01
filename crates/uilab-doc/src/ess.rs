@@ -7,8 +7,11 @@
 //! instance's expanded body) is shown on the nearest uilab node that holds it ([`node_at`]).
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use serde_yaml::Value as Yaml;
 
@@ -97,6 +100,35 @@ fn node_layers(construct: &str) -> Vec<Layer> {
 /// What a node of `layer` holds, when that does not depend on a composite kind.
 pub(crate) fn layers_under(layer: Layer) -> Vec<Layer> {
     construct_of(layer).map(node_layers).unwrap_or_default()
+}
+
+/// The `component` the kind of page `page` gives its section `section`, for a section that
+/// refines it without naming one: through the document's `page_kinds` and the built-in kinds
+/// (`constructs.PageKind.builtins`), following `extends`.
+pub(crate) fn inherited_component(doc: &Document, page: &str, section: &str) -> Option<String> {
+    let mut kind = doc.pages.get(page)?.kind.clone();
+    for _ in 0..32 {
+        let declared = doc.page_kinds.get(&kind).cloned();
+        let builtin = schema()["constructs"]["PageKind"]["builtins"]
+            .get(kind.as_str())
+            .and_then(|k| serde_json::to_value(k).ok());
+        let definition = declared.or(builtin)?;
+        let found = definition
+            .get("sections")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|sections| {
+                sections
+                    .iter()
+                    .find(|s| s.get("name").and_then(serde_json::Value::as_str) == Some(section))
+            })
+            .and_then(|s| s.get("component"))
+            .and_then(serde_json::Value::as_str);
+        if let Some(component) = found {
+            return Some(component.to_owned());
+        }
+        kind = definition.get("extends")?.as_str()?.to_owned();
+    }
+    None
 }
 
 /// What a composite holds: its kind's named-node lists, or nothing for a widget instance; a
@@ -219,14 +251,18 @@ pub fn from_ess(text: &str) -> Option<NodePath> {
 
 /// The uilab node an ESS path is about: the deepest node of `doc` the path passes through. An
 /// inherited section, a column or an action is shown on the page, section or composite that holds
-/// it.
-pub fn node_at(doc: &Document, text: &str) -> NodePath {
+/// it; a path about the document as a whole (`/`, `format`, `page_kinds/…`) is the root. `None`
+/// when the path names uilab nodes and `doc` has none of them: no uilab counterpart.
+pub fn node_at(doc: &Document, text: &str) -> Option<NodePath> {
     let (path, _) = read_ess(text);
+    if path == NodePath::root() {
+        return Some(path);
+    }
     path.lineage()
         .into_iter()
         .rev()
+        .filter(|p| *p != NodePath::root())
         .find(|p| resolve(doc, p).is_ok())
-        .unwrap_or_default()
 }
 
 /// A document ESS's loader refuses, with ESS's path and message.
@@ -248,11 +284,61 @@ impl LoadError {
     }
 }
 
-/// ESS's loader on the text: the document loads, or ESS's refusal.
+/// How long uilab waits for ESS's loader or checker on one document before it refuses the
+/// document as `expansion_bound`: ESS 0.48.0 expands every widget use in full (beyond10x/ess#300),
+/// and the weighing in front of it ([`crate::check::EXPANSION_LIMIT`]) is a first filter only.
+pub const ESS_DEADLINE: Duration = Duration::from_secs(10);
+
+static DEADLINE_MS: AtomicU64 = AtomicU64::new(10_000);
+
+/// Sets how long this process waits for ESS ([`ESS_DEADLINE`] until set); for tests.
+pub fn set_deadline(deadline: Duration) {
+    DEADLINE_MS.store(
+        u64::try_from(deadline.as_millis()).unwrap_or(u64::MAX),
+        Ordering::Relaxed,
+    );
+}
+
+/// How long this process waits for ESS.
+pub fn deadline() -> Duration {
+    Duration::from_millis(DEADLINE_MS.load(Ordering::Relaxed))
+}
+
+/// Runs `work` on a worker thread and waits [`deadline`] for it. `None` on expiry; the worker is
+/// left to finish on its own and its result is dropped.
+fn within<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = mpsc::channel();
+    let spawned = std::thread::Builder::new()
+        .name("ess".into())
+        .stack_size(16 << 20)
+        .spawn(move || {
+            let _ = tx.send(work());
+        });
+    match spawned {
+        Ok(_) => rx.recv_timeout(deadline()).ok(),
+        Err(_) => None,
+    }
+}
+
+/// The `expansion_bound` message for a document ESS did not read within the deadline.
+pub(crate) fn too_slow() -> String {
+    format!(
+        "ESS did not read the document within {:?}: its widget expansion is too large for uilab \
+         to hand to ESS (beyond10x/ess#300)",
+        deadline()
+    )
+}
+
+/// ESS's loader on the text, within [`deadline`]: the document loads, or ESS's refusal, or an
+/// `expansion_bound` refusal at `/` when ESS takes longer.
 pub(crate) fn load(text: &str) -> Result<(), LoadError> {
-    ess_ui::load_str(text)
-        .map(|_| ())
-        .map_err(|e| LoadError::new(e.path().to_string(), e.message()))
+    let text = text.to_owned();
+    let loaded = within(move || {
+        ess_ui::load_str(&text)
+            .map(|_| ())
+            .map_err(|e| LoadError::new(e.path().to_string(), e.message()))
+    });
+    loaded.unwrap_or_else(|| Err(LoadError::new("/", too_slow())))
 }
 
 /// ESS's checker on a document, with fixture paths read relative to the document's directory.
@@ -262,14 +348,31 @@ pub fn report(doc: &Document) -> ess_ui_check::Report {
     ess_ui_check::check_source(&text, "document", base, None, &Default::default())
 }
 
+/// [`report`] within [`deadline`]; `None` when ESS takes longer.
+fn report_within(doc: &Document) -> Option<ess_ui_check::Report> {
+    let text = doc.to_yaml().unwrap_or_default();
+    let base: PathBuf = doc
+        .base()
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    within(move || ess_ui_check::check_source(&text, "document", &base, None, &Default::default()))
+}
+
 /// ESS's findings on a document, each on the uilab node it is about. A finding below that node
 /// names its ESS path first.
 pub(crate) fn findings(doc: &Document) -> Vec<Finding> {
-    report(doc)
+    let Some(report) = report_within(doc) else {
+        return vec![Finding {
+            check: crate::check::GUARDS[0].0,
+            severity: Severity::Error,
+            path: NodePath::root().to_string(),
+            message: too_slow(),
+        }];
+    };
+    report
         .findings
         .into_iter()
         .map(|f| {
-            let at = node_at(doc, &f.path);
+            let at = node_at(doc, &f.path).unwrap_or_default();
             // Below a widget instance, the finding is in its expansion: name the widget too.
             let widget = match crate::path::resolve(doc, &at) {
                 Ok(crate::path::NodeRef::Composite(c)) => c.component.widget(),

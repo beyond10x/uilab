@@ -263,7 +263,14 @@ pub fn own(doc: &Document) -> Vec<Finding> {
                     );
                 }
             }
-            (None, None) => out.push("shell_refs", &at, "the document declares no shell"),
+            (None, None) if doc.shells.is_empty() => {
+                out.push("shell_refs", &at, "the document declares no shell")
+            }
+            (None, None) => out.push(
+                "shell_refs",
+                &at,
+                "the page names no `shell`, and the document has several shells and none named `app`",
+            ),
         }
     }
     out.0
@@ -385,16 +392,9 @@ fn walk_value<'a>(value: &'a Value, trail: String, out: &mut Vec<Instance<'a>>) 
 /// The widgets a widget's body instantiates, however deep, typed or held in the props of a
 /// composite or a primitive.
 fn uses(widget: &Widget) -> Vec<&str> {
-    weigh(widget).1
-}
-
-/// The nodes a widget's body writes itself, and the widgets it instantiates (see [`uses`]).
-fn weigh(widget: &Widget) -> (u64, Vec<&str>) {
     let mut stack: Vec<&Node> = widget.body.iter().collect();
     let mut out = Vec::new();
-    let mut nodes = 0u64;
     while let Some(node) = stack.pop() {
-        nodes += 1;
         let composite = match &node.body {
             NodeBody::Primitive(p) => {
                 out.extend(instances_in_props(&p.props).into_iter().map(|i| i.widget));
@@ -405,79 +405,62 @@ fn weigh(widget: &Widget) -> (u64, Vec<&str>) {
         let mut composites = vec![composite];
         while let Some(composite) = composites.pop() {
             out.extend(instances_in(composite).into_iter().map(|i| i.widget));
-            nodes += composite.widgets.len() as u64;
-            composites.extend(composite.widgets.values());
+            stack.extend(composite.widgets.values());
             for layer in Layer::ALL.into_iter().filter(|l| l.is_node_list()) {
                 stack.extend(node_list(composite, layer).into_iter().flatten());
             }
         }
     }
-    (nodes, out)
+    out
 }
 
-/// The guards uilab runs before it hands a document to ESS: limits on work, not rules of the
+/// The guards uilab runs before and around a call into ESS: limits on work, not rules of the
 /// format, so neither a check of ESS's nor one of [`CHECKS`]. `expansion_bound` stands until ESS
 /// expands a widget once rather than at every use (beyond10x/ess#300).
 pub const GUARDS: [(&str, Severity, &str); 1] = [(
     "expansion_bound",
     Severity::Error,
-    "the widget uses of a document expand to at most EXPANSION_LIMIT nodes: ESS expands every use \
-     in full, so a widget that uses another twice at each of n levels costs 2^n nodes",
+    "the widget uses of a document expand to at most EXPANSION_LIMIT maps, as ESS expands them \
+     (page kinds merged, `same_as` copied, `args` substituted, every use in full), and ESS reads \
+     it within ESS_DEADLINE (beyond10x/ess#300)",
 )];
 
-/// The most nodes the widget uses of a document may expand to ([`GUARDS`]).
+/// The most maps the widget expansion of a document may hold ([`GUARDS`]).
 pub const EXPANSION_LIMIT: u64 = 100_000;
 
-/// The `expansion_bound` finding of a document whose widget uses expand to more than
-/// [`EXPANSION_LIMIT`] nodes, at the use site that expands to the most; `None` within the limit.
-/// Each widget is weighed once, so this costs one pass over the declarations and the uses.
+/// The `expansion_bound` finding of `raw`, an authored document as JSON, whose widget expansion
+/// would hold more than [`EXPANSION_LIMIT`] maps, at the ESS path of the use that weighs most;
+/// `None` within the limit. Linear in the document ([`crate::cost`]).
+pub(crate) fn expansion_of(raw: &Value) -> Option<(String, String)> {
+    let cost = crate::cost::expansion_cost(raw);
+    if cost.total <= EXPANSION_LIMIT {
+        return None;
+    }
+    let (at, weight) = cost.largest?;
+    let total = if cost.total == u64::MAX {
+        "over 2^64".to_owned()
+    } else {
+        cost.total.to_string()
+    };
+    Some((
+        at,
+        format!(
+            "the document's widget uses expand to {total} maps, more than the {EXPANSION_LIMIT} \
+             uilab hands to ESS (beyond10x/ess#300); this use alone expands to {weight}"
+        ),
+    ))
+}
+
+/// [`expansion_of`] on a document, on the uilab node of the use that weighs most.
 pub(crate) fn expansion(doc: &Document) -> Option<Finding> {
-    fn size<'a>(
-        doc: &'a Document,
-        name: &'a str,
-        memo: &mut std::collections::HashMap<&'a str, u64>,
-    ) -> u64 {
-        if let Some(n) = memo.get(name) {
-            return *n;
-        }
-        // A widget that contains itself is ESS's to refuse (`widget_expands`); weigh it as empty.
-        memo.insert(name, 0);
-        let n = doc.widgets.get(name).map_or(0, |widget| {
-            let (own, used) = weigh(widget);
-            used.into_iter()
-                .fold(own, |n, u| n.saturating_add(size(doc, u, memo)))
-        });
-        memo.insert(name, n);
-        n
-    }
-    let mut memo = std::collections::HashMap::new();
-    let mut total = 0u64;
-    let mut largest: Option<(NodePath, u64)> = None;
-    // A use inside a widget body is weighed with that widget; only uses outside every body expand.
-    let outside = widget_uses(doc)
-        .into_iter()
-        .filter(|(at, _)| at.0.first().is_none_or(|s| s.layer != Layer::Component));
-    for (at, instance) in outside {
-        let n = size(doc, instance.widget, &mut memo);
-        total = total.saturating_add(n);
-        if largest.as_ref().is_none_or(|(_, m)| n > *m) {
-            largest = Some((at, n));
-        }
-    }
-    let (at, n) = largest?;
-    (total > EXPANSION_LIMIT).then(|| Finding {
+    let raw = serde_json::to_value(doc).ok()?;
+    let (at, message) = expansion_of(&raw)?;
+    let path = crate::ess::node_at(doc, &at).unwrap_or_else(NodePath::root);
+    Some(Finding {
         check: GUARDS[0].0,
         severity: GUARDS[0].1,
-        path: at.to_string(),
-        message: format!(
-            "the document's widget uses expand to {} nodes, more than the {EXPANSION_LIMIT} uilab \
-             hands to ESS; this use alone expands to {n}",
-            if total == u64::MAX {
-                "over 2^64".to_owned()
-            } else {
-                total.to_string()
-            },
-        ),
+        path: path.to_string(),
+        message,
     })
 }
 
@@ -520,7 +503,7 @@ pub(crate) fn nodes(doc: &Document) -> Vec<(NodePath, NodeRef<'_>)> {
     fn walk<'a>(path: NodePath, composite: &'a Composite, out: &mut Vec<(NodePath, NodeRef<'a>)>) {
         out.push((path.clone(), NodeRef::Composite(composite)));
         for (name, widget) in &composite.widgets {
-            walk(path.child(Layer::Widget, name), widget, out);
+            walk_node(path.child(Layer::Widget, name), widget, out);
         }
         for layer in Layer::ALL.into_iter().filter(|l| l.is_node_list()) {
             for node in node_list(composite, layer).into_iter().flatten() {
