@@ -1,6 +1,6 @@
 // generated from uilab v1
-// model digest 8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455
-// contract digest c789fcd30e3ffcc51487d00315741eca272a88a53a2be1e3be26a919b30c4bfb
+// model digest d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13
+// contract digest 9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0
 // do not edit: regenerate with `ess synthesize`
 //! Every generated declaration, as JSON, in the renderings the published wire contracts fix.
 //!
@@ -1006,6 +1006,10 @@ pub fn encode_uilab_wire_outline_node(value: &uilab_types::wire::OutlineNode, ou
         json::member(out, "props");
         json::push_value(out, &*held0);
     }
+    if let Some(held0) = &value.inherited {
+        json::member(out, "inherited");
+        json::push_bool(out, *held0);
+    }
     json::member(out, "children");
     out.push('[');
     for (index0, item0) in value.children.iter().enumerate() {
@@ -1066,16 +1070,23 @@ pub fn decode_uilab_wire_outline_node(value: &json::Value, at: &str) -> Result<u
                 Some(json::value_at(member6, &at6))
             }
         },
+        inherited: match value.member("inherited") {
+            None | Some(json::Value::Null) => None,
+            Some(member7) => {
+                let at7 = json::nested(at, "inherited");
+                Some(json::bool_at(member7, &at7, "a boolean")?)
+            }
+        },
         children: {
-            let at7 = json::nested(at, "children");
-            let member7 = json::member_at(value, at, "children")?;
+            let at8 = json::nested(at, "children");
+            let member8 = json::member_at(value, at, "children")?;
             {
-                let mut items7 = Vec::new();
-                for (index7, element7) in json::items_at(member7, &at7, "an array")?.iter().enumerate() {
-                    let nested7 = json::nested(&at7, &index7.to_string());
-                    items7.push(decode_uilab_wire_outline_node(element7, &nested7)?);
+                let mut items8 = Vec::new();
+                for (index8, element8) in json::items_at(member8, &at8, "an array")?.iter().enumerate() {
+                    let nested8 = json::nested(&at8, &index8.to_string());
+                    items8.push(decode_uilab_wire_outline_node(element8, &nested8)?);
                 }
-                items7
+                items8
             }
         },
     })
@@ -1338,6 +1349,10 @@ pub fn encode_uilab_wire_rows(value: &uilab_types::wire::Rows, out: &mut String)
         json::push_value(out, &*item0);
     }
     out.push(']');
+    if let Some(held0) = &value.sample {
+        json::member(out, "sample");
+        json::push_bool(out, *held0);
+    }
     out.push('}');
 }
 
@@ -1370,6 +1385,13 @@ pub fn decode_uilab_wire_rows(value: &json::Value, at: &str) -> Result<uilab_typ
                     items2.push(json::value_at(element2, &nested2));
                 }
                 items2
+            }
+        },
+        sample: match value.member("sample") {
+            None | Some(json::Value::Null) => None,
+            Some(member3) => {
+                let at3 = json::nested(at, "sample");
+                Some(json::bool_at(member3, &at3, "a boolean")?)
             }
         },
     })

@@ -1,12 +1,12 @@
 {
   "format": "ess-types-report/3",
-  "source_digest": "8bbec934f18fca6258713253bcfca181cac2a1249bf16684012986ad1b427455",
+  "source_digest": "d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13",
   "input": {
     "kind": "model",
     "system": "uilab",
     "specification_version": "v1",
-    "contract_digest": "slice-sha256/2:c5a8ef96d326453baee30aa7573313201936a8325cbf956ae876c37420def685",
-    "projection_digest": "64a9df19c2f740200a4a8d5c6a0e5d2ec520989bcf01fad745d3b3bc8a45ced0"
+    "contract_digest": "slice-sha256/2:d1e424a9fbbb2455da85e1618a99afe7866e45e1b8850c5d34a8e9f75846934b",
+    "projection_digest": "bda235c50db4993b86533844da57299009583386c423eb5ef51b33c98ffca809"
   },
   "generator_version": "0.48.0",
   "target": "rust",

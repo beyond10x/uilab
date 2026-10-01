@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:essui-document
 kind: story
-status: active
+status: implemented
 title: uilab-doc on ess-ui/1, admission decided by ESS
 relations:
 - decomposes: epic:ess-ui-adoption
@@ -56,10 +56,11 @@ scope:
   path: generated
 - confidence: cited
   path: widget/src/generated
-revision: 10
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:19Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":9}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:19Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":9}}}
+- {from: "active", to: "implemented", at: "2026-10-01T15:26:21Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":24}}}
 ---
 ## Outcome
 
@@ -149,4 +150,15 @@ Each test named here lives in `crates/uilab-doc/tests/ess_ui.rs` unless it says 
 
 ## Survivors
 
-Filled by the implementor, checked by the coordinator before the story moves.
+Recorded by the coordinator from the implementor report, 2026-10-01 (unit commit 55e2c8d).
+
+- Survivors, each tested on its document in `SURVIVOR_CASES` (`crates/uilab-doc/tests/ess_ui.rs`),
+  ESS 0.48.0 reporting nothing on it: `nav_unique`, `shell_refs`, `page_outlet`; and
+  `replace_drops`, tested on its patch (a rule about a patch, not a document).
+- Guard, not a check: `expansion_bound` refuses a document whose widget uses would expand past
+  100,000 nodes, because ESS expands nested widgets exponentially (beyond10x/ess#300).
+- Overview page: `dashboard_page` with `{name: board, remove: true}`, which the ESS schema's
+  named-list merge supports (`named_lists.remove`; correction posted on beyond10x/ess#281).
+- Gap against the acceptance: ESS 0.48.0 accepts `fixtures.views`; the `fixtures_index` test
+  relays whatever ESS answers, and uilab writes `{dir, index}`.
+- Filed in ESS: beyond10x/ess#303 (the three document survivors), 2026-10-01.

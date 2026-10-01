@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T14:55:43Z",
+  "actor": "human:timo",
+  "artifact": "story:essui-document",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:essui-document-adversary-2",
+    "reference": "crates/uilab-doc/src/check.rs:476",
+    "review": "review-result:essui-document-adversary-2",
+    "outcome": "fixed"
+  }
+}

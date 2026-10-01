@@ -1,0 +1,15 @@
+{
+  "at": "2026-10-01T15:07:58Z",
+  "actor": "human:timo",
+  "artifact": "story:essui-app-widget",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "review_outcome",
+    "source": "review-result:essui-app-widget-adversary-1",
+    "reference": "crates/uilab-doc/src/outline.rs:155",
+    "review": "review-result:essui-app-widget-adversary-1",
+    "outcome": "fixed"
+  }
+}

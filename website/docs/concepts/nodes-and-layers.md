@@ -45,8 +45,11 @@ Regions and menu sections hold nothing further.
 
 ## Composite kinds
 
-A section, an overlay, a board widget or an item is one of 14 built-in composite kinds — or an
-app-defined [widget](./widgets.md):
+A section, an overlay, a board widget or an item holds one member of `ess-ui/1`'s composite union,
+named by `component` — or an app-defined [widget](./widgets.md). The union has 12 members; `header`
+and `overlay` are composites too, placed by position (a page's `header`, a page's or shell's
+`overlays`) rather than by `component`. The
+[reference](https://beyond10x.github.io/ess/docs/reference/ess-ui) lists the fields of each.
 
 | Kind | What it is for |
 |---|---|
@@ -56,7 +59,7 @@ app-defined [widget](./widgets.md):
 | `choice` | a pick from fixed options or from a view |
 | `filter_bar` | search, time window and filter inputs above a collection |
 | `header` | a page's title, total and actions |
-| `overlay` | an overlay opened from inside a composite |
+| `overlay` | a drawer, dialog, fullscreen pane or popover holding one composite |
 | `confirm` | a confirmation step before a command runs |
 | `metric` | one number (`from` a field of the first row) |
 | `chart` | a series over time or categories (`x`, `series`) |
@@ -67,8 +70,10 @@ app-defined [widget](./widgets.md):
 
 An overlay is a `drawer`, `dialog`, `fullscreen` or `popover` holding one composite; a row action
 or a button opens it by name with `opens`. A page's `kind` is one of `list_page`, `report_page`,
-`settings_page`, `dashboard_page`, `editor_page` and `form_page`, or a kind the document declares
-under `page_kinds`.
+`detail_page`, `settings_page`, `dashboard_page`, `editor_page`, `form_page` and `static_page`, or
+a kind the document declares under `page_kinds`. A kind contributes sections to every page of that
+kind — a `list_page` its `filters` and `list` — and the canvas shows the ones a page does not write
+itself marked as inherited (see [The document](./the-document.md#page-kinds-and-inherited-sections)).
 
 ## Selecting
 

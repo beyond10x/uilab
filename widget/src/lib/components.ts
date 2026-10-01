@@ -291,17 +291,48 @@ export function substitute(value: unknown, args: Record<string, unknown>): unkno
   return value;
 }
 
-/** A body node, and its children, as a preview draws it: props and title read from `args`. */
+/**
+ * A body node, and its children, as a preview draws it: props and title read from `args`. The
+ * body a nested instance holds (its inherited `node` children, as the server sends them) is that
+ * instance's: its own args bind it when it is drawn, so it is left as written here.
+ */
 export function previewNode(node: OutlineNode, args: Record<string, unknown>): OutlineNode {
-  const out: OutlineNode = { ...node, children: node.children.map((c) => previewNode(c, args)) };
+  const nested = (c: OutlineNode) => c.layer === 'node' && c.inherited === true;
+  const out: OutlineNode = { ...node, children: node.children.map((c) => (nested(c) ? c : previewNode(c, args))) };
   if (node.props !== undefined) out.props = substitute(node.props, args) as OutlineNode['props'];
   if (node.title !== undefined) out.title = displayValue(substitute(node.title, args));
   return out;
 }
 
-/** Whether a node of a widget body or an item list is a primitive rather than a composite. */
+/** How the canvas draws a primitive. */
+export type PrimitiveShape = 'heading' | 'text' | 'badge' | 'image' | 'link' | 'button' | 'rule' | 'placeholder';
+
+/** How the canvas draws a primitive of this kind: a `divider` as a horizontal rule, a `text` styled
+ *  `heading` as a heading; a kind the canvas has no drawing for as the placeholder box. */
+export function primitiveShape(node: OutlineNode): PrimitiveShape {
+  switch (node.kind) {
+    case 'text':
+      return propsOf(node).style === 'heading' ? 'heading' : 'text';
+    case 'divider':
+      return 'rule';
+    case 'badge':
+    case 'image':
+    case 'link':
+    case 'button':
+      return node.kind;
+    default:
+      return 'placeholder';
+  }
+}
+
+/** The layers whose nodes are ESS `Node`s, each a composite, a widget instance or a primitive: a
+ *  widget body, an item list, a section's `children`, a form's parts, a filter bar's choices, a
+ *  graph editor's toolbar and a board's widgets. */
+export const NODE_LAYERS = ['node', 'item', 'child', 'part', 'choice', 'tool', 'widget'];
+
+/** Whether a node of any layer of ESS `Node`s (`NODE_LAYERS`) is a primitive rather than a composite. */
 export function isPrimitive(node: OutlineNode): boolean {
-  return (node.layer === 'node' || node.layer === 'item') && PRIMITIVE_KINDS.includes(node.kind);
+  return NODE_LAYERS.includes(node.layer) && PRIMITIVE_KINDS.includes(node.kind);
 }
 
 /**

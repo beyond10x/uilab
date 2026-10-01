@@ -1,0 +1,94 @@
+domain: library.loans
+
+summary: The loans the library document lists, summarises and extends.
+
+entities:
+  - name: library.loans.Loan
+    identity:
+      name: id
+      type: String
+    fields:
+      - name: title
+        type: String
+      # UNMAPPED: a fixture row's `member` holds a member's name (`Robin Example`), the value
+      # members.All rows carry as `name`. Neither source says whether that is a relation to
+      # library.members.Member, nor its kind (owns or references). Kept as text.
+      - name: member
+        type: String
+      # UNMAPPED: the fixtures hold a calendar date (`2026-10-14`); ESS has no date type and a
+      # Timestamp is an instant. Kept as text until the owner says which.
+      - name: due
+        type: String
+    # The fixture rows' `state` is the lifecycle: `state` is the lifecycle's own wire name, so it
+    # cannot be a declared field. `on_loan` maps onto OnLoan.
+    # UNMAPPED: loans.All rows also hold `state: overdue`. An Overdue state needs a transition into
+    # it, and a transition needs a command outcome that takes it; neither source names what makes a
+    # loan overdue (a command, or time passing), so Overdue is not declared. Nor is any state a loan
+    # leaves the list by (returned).
+    lifecycle:
+      initial: OnLoan
+      states: [OnLoan]
+      terminal: [OnLoan]
+
+commands:
+  # The loans page opens the `edit` drawer from a row of loans.All, and its form does ExtendLoan
+  # with `fields: [due]`: the loan is addressed by its row's `id`, and `due` is replaced.
+  # UNMAPPED: what ExtendLoan refuses (an unknown loan, a due date not later than the current
+  # one, a loan that is overdue) — neither source says, so no error outcome is declared.
+  - name: library.loans.ExtendLoan
+    input:
+      - name: id
+        type: String
+      - name: due
+        type: String
+    outcomes:
+      - name: extended
+        updates: library.loans.Loan
+        instance: id
+        sets:
+          due: input.due
+        emits:
+          - library.loans.LoanExtended
+        payload:
+          library.loans.LoanExtended:
+            id: input.id
+            due: input.due
+
+events:
+  # UNMAPPED: neither source names an event. ESS refuses an outcome that neither emits an event
+  # nor names an error (`empty_change`), so ExtendLoan emits this one, carrying its own input.
+  - name: library.loans.LoanExtended
+    fields:
+      - name: id
+        type: String
+      - name: due
+        type: String
+
+views:
+  # UNMAPPED: neither source says how soon a view reflects ExtendLoan; the views keep ESS's
+  # default, `eventual`.
+  - name: library.loans.All
+    source: library.loans.Loan
+    fields:
+      - name: id
+        type: String
+      - name: title
+        type: String
+      - name: member
+        type: String
+      - name: due
+        type: String
+      - name: state
+        type: library.loans.Loan.State
+
+  # loans.Summary's fixture row is `{on_loan: 4, overdue: 1}` beside four loans.All rows, so
+  # `on_loan` is read as the count of every loan.
+  # UNMAPPED: `overdue` (1 in the fixture) counts the loans in the overdue state. An ESS aggregate
+  # view filters every field alike, so one view cannot count all loans and overdue loans at once,
+  # and Overdue is not a declared state (above). Not declared.
+  - name: library.loans.Summary
+    source: library.loans.Loan
+    fields:
+      - name: on_loan
+        type: Integer
+        aggregate: {count: {}}

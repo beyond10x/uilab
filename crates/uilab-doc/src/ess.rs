@@ -287,9 +287,9 @@ impl LoadError {
 /// How long uilab waits for ESS's loader or checker on one document before it refuses the
 /// document as `expansion_bound`: ESS 0.48.0 expands every widget use in full (beyond10x/ess#300),
 /// and the weighing in front of it ([`crate::check::EXPANSION_LIMIT`]) is a first filter only.
-pub const ESS_DEADLINE: Duration = Duration::from_secs(10);
+pub const ESS_DEADLINE: Duration = Duration::from_secs(30);
 
-static DEADLINE_MS: AtomicU64 = AtomicU64::new(10_000);
+static DEADLINE_MS: AtomicU64 = AtomicU64::new(30_000);
 
 /// Sets how long this process waits for ESS ([`ESS_DEADLINE`] until set); for tests.
 pub fn set_deadline(deadline: Duration) {
@@ -358,7 +358,9 @@ fn report_within(doc: &Document) -> Option<ess_ui_check::Report> {
 }
 
 /// ESS's findings on a document, each on the uilab node it is about. A finding below that node
-/// names its ESS path first.
+/// names its ESS path first. When ESS does not check the document within [`deadline`], the one
+/// finding is an `expansion_bound` error at `/` naming beyond10x/ess#300: an expiry is never an
+/// empty list.
 pub(crate) fn findings(doc: &Document) -> Vec<Finding> {
     let Some(report) = report_within(doc) else {
         return vec![Finding {

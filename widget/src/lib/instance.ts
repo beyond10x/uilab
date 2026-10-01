@@ -1,5 +1,5 @@
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
-import { PRIMITIVE_KINDS, displayValue, isPrimitive, paramsOf, previewNode, sampleValue, type Param, type RowOf } from './components.ts';
+import { NODE_LAYERS, PRIMITIVE_KINDS, displayValue, isPrimitive, paramsOf, previewNode, sampleValue, type Param, type RowOf } from './components.ts';
 import { childrenOf, propsOf } from './outline.ts';
 
 /** What an instance's `row` and `rows.…` args read: the item row it is drawn for, and the rows of
@@ -47,13 +47,13 @@ function record(value: unknown): Record<string, unknown> | null {
 /**
  * The widget `node` instantiates, or `null` when it is none: a built-in composite, a primitive, or
  * an instance of a widget in `within` (the widgets it is drawn inside), which is not expanded again.
- * A node of a widget body or an item list whose kind is a primitive kind is that primitive unless
+ * A node of a layer of ESS `Node`s (`NODE_LAYERS`) whose kind is a primitive kind is that primitive unless
  * it writes `args`: a primitive `badge` and an instance of a widget `badge` share the outline kind.
  */
 export function widgetOfInstance(root: OutlineNode, node: OutlineNode, within: string[] = []): InstanceWidget | null {
   const kind = compositeKind(node);
   if (COMPOSITE_KINDS.includes(kind) || within.includes(kind)) return null;
-  const leaf = node.layer === 'node' || node.layer === 'item';
+  const leaf = NODE_LAYERS.includes(node.layer);
   if (leaf && PRIMITIVE_KINDS.includes(kind) && !('args' in propsOf(node))) return null;
   const widget = childrenOf(root, 'component').find((c) => c.name === kind);
   if (!widget) return null;
@@ -66,7 +66,7 @@ export function widgetOfInstance(root: OutlineNode, node: OutlineNode, within: s
   };
 }
 
-/** Whether a node of a widget body or an item list draws as a primitive: a primitive kind that
+/** Whether a node of a layer of ESS `Node`s draws as a primitive: a primitive kind that
  *  writes no `args` (an instance of a widget named like a primitive writes them). */
 export function drawsAsPrimitive(node: OutlineNode): boolean {
   return isPrimitive(node) && !('args' in propsOf(node));
@@ -123,11 +123,19 @@ export function instanceArgs(widget: InstanceWidget, node: OutlineNode, scope: S
   return out;
 }
 
+/** The body nodes the server sends on an instance: its widget's body as ESS expands it there, each
+ *  at the instance's own path and marked inherited. */
+export function bodyNodes(node: OutlineNode): OutlineNode[] {
+  return node.children.filter((c) => c.layer === 'node' && c.inherited === true);
+}
+
 /** The instance's widget body as the Components tab previews it (`previewNode`), read from the
- *  instance's args (`instanceArgs`). */
+ *  instance's args (`instanceArgs`): the body the instance holds (`bodyNodes`), at its paths, or
+ *  the widget's declaration when the outline carries none. */
 export function instanceBody(widget: InstanceWidget, node: OutlineNode, scope: Scope, rowOf?: RowOf): OutlineNode[] {
   const args = instanceArgs(widget, node, scope, rowOf);
-  return widget.body.map((b) => previewNode(b, args));
+  const held = bodyNodes(node);
+  return (held.length ? held : widget.body).map((b) => previewNode(b, args));
 }
 
 /** The scopes a composite's item list is drawn in: a collection's once per row, a record's for
