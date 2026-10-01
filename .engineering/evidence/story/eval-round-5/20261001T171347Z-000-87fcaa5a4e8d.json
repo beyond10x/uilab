@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T17:13:47Z",
+  "actor": "human:timo",
+  "artifact": "story:eval-round-5",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "round 5 run 4 on cbaaee6: 26/27 pass, all five must-pass cases pass, 23 admitted proposals with 0 ess-ui-check errors (3 unbound_placeholder warnings), median 2827 ms, 28 agent runs; evals/reports/library-round-5.md"
+  }
+}
