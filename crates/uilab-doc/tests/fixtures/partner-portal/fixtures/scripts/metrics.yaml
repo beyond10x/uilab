@@ -1,0 +1,10 @@
+channel: metrics
+loop: true
+events:
+  - {at: 0s,  event: metrics.Live, payload: {revenue_mtd: 184200, open_deals: 37, overdue_invoices: 4}}
+  - {at: 5s,  event: metrics.Live, payload: {revenue_mtd: 304200, open_deals: 36, overdue_invoices: 4}}
+  - {at: 10s, event: metrics.Live, payload: {revenue_mtd: 311200, open_deals: 36, overdue_invoices: 3}}
+  - {at: 15s, lifecycle: reconnecting}
+  - {at: 50s, lifecycle: stale}
+  - {at: 55s, lifecycle: live}
+  - {at: 55s, event: metrics.Live, payload: {revenue_mtd: 311200, open_deals: 38, overdue_invoices: 3}}

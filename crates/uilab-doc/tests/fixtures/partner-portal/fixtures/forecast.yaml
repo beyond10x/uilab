@@ -1,0 +1,9 @@
+# Fixture for the unbound placeholder forecast.Quarterly (no model view exists yet).
+view: forecast.Quarterly
+rows:
+  - {month: "2026-10", committed: 310000, best_case: 420000}
+  - {month: "2026-11", committed: 280000, best_case: 395000}
+  - {month: "2026-12", committed: 350000, best_case: 510000}
+  - {month: "2027-01", committed: 190000, best_case: 300000}
+  - {month: "2027-02", committed: 220000, best_case: 330000}
+  - {month: "2027-03", committed: 260000, best_case: 380000}

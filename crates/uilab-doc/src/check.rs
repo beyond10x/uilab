@@ -263,7 +263,14 @@ pub fn own(doc: &Document) -> Vec<Finding> {
                     );
                 }
             }
-            (None, None) => out.push("shell_refs", &at, "the document declares no shell"),
+            (None, None) if doc.shells.is_empty() => {
+                out.push("shell_refs", &at, "the document declares no shell")
+            }
+            (None, None) => out.push(
+                "shell_refs",
+                &at,
+                "the page names no `shell`, and the document has several shells and none named `app`",
+            ),
         }
     }
     out.0
@@ -405,8 +412,7 @@ fn weigh(widget: &Widget) -> (u64, Vec<&str>) {
         let mut composites = vec![composite];
         while let Some(composite) = composites.pop() {
             out.extend(instances_in(composite).into_iter().map(|i| i.widget));
-            nodes += composite.widgets.len() as u64;
-            composites.extend(composite.widgets.values());
+            stack.extend(composite.widgets.values());
             for layer in Layer::ALL.into_iter().filter(|l| l.is_node_list()) {
                 stack.extend(node_list(composite, layer).into_iter().flatten());
             }
@@ -458,7 +464,24 @@ pub(crate) fn expansion(doc: &Document) -> Option<Finding> {
         .into_iter()
         .filter(|(at, _)| at.0.first().is_none_or(|s| s.layer != Layer::Component));
     for (at, instance) in outside {
-        let n = size(doc, instance.widget, &mut memo);
+        let one = size(doc, instance.widget, &mut memo);
+        // ESS merges a page kind into every page of that kind and expands its uses there.
+        let kind = instance
+            .trail
+            .as_deref()
+            .and_then(|t| t.strip_prefix("page_kinds/"))
+            .map(|t| t.split('/').next().unwrap_or(t));
+        let (at, n) = match kind {
+            Some(kind) => {
+                let pages = pages_of_kind(doc, kind);
+                let Some(first) = pages.first() else { continue };
+                (
+                    NodePath::root().child(Layer::Page, first),
+                    one.saturating_mul(pages.len() as u64),
+                )
+            }
+            None => (at, one),
+        };
         total = total.saturating_add(n);
         if largest.as_ref().is_none_or(|(_, m)| n > *m) {
             largest = Some((at, n));
@@ -520,7 +543,7 @@ pub(crate) fn nodes(doc: &Document) -> Vec<(NodePath, NodeRef<'_>)> {
     fn walk<'a>(path: NodePath, composite: &'a Composite, out: &mut Vec<(NodePath, NodeRef<'a>)>) {
         out.push((path.clone(), NodeRef::Composite(composite)));
         for (name, widget) in &composite.widgets {
-            walk(path.child(Layer::Widget, name), widget, out);
+            walk_node(path.child(Layer::Widget, name), widget, out);
         }
         for layer in Layer::ALL.into_iter().filter(|l| l.is_node_list()) {
             for node in node_list(composite, layer).into_iter().flatten() {
@@ -570,4 +593,34 @@ pub(crate) fn nodes(doc: &Document) -> Vec<(NodePath, NodeRef<'_>)> {
         }
     }
     out
+}
+
+/// The pages whose kind is `kind` or extends it, through `page_kinds.<k>.extends`, in document
+/// order.
+fn pages_of_kind<'a>(doc: &'a Document, kind: &str) -> Vec<&'a str> {
+    doc.pages
+        .iter()
+        .filter(|(_, page)| {
+            let mut seen = HashSet::new();
+            let mut current = page.kind.as_str();
+            loop {
+                if current == kind {
+                    return true;
+                }
+                if !seen.insert(current) {
+                    return false;
+                }
+                match doc
+                    .page_kinds
+                    .get(current)
+                    .and_then(|k| k.get("extends"))
+                    .and_then(Value::as_str)
+                {
+                    Some(parent) => current = parent,
+                    None => return false,
+                }
+            }
+        })
+        .map(|(name, _)| name.as_str())
+        .collect()
 }

@@ -395,7 +395,7 @@ fn insert(doc: &mut Document, target: &NodePath, child: &Child) -> Result<(), Re
             page_mut(doc, target)?.sections.insert(name, Some(section));
         }
         Layer::Widget => {
-            let widget: Composite = parse(child.layer, &child.node)?;
+            let widget = parse_node(child.layer, &name, &child.node)?;
             composite_mut(doc, target)?.widgets.insert(name, widget);
         }
         layer @ (Layer::Item | Layer::Child | Layer::Part | Layer::Choice | Layer::Tool) => {
@@ -490,11 +490,11 @@ fn replace(doc: &mut Document, target: &NodePath, node: &Value) -> Result<(), Re
         }
         Layer::Widget => {
             let parent = target.parent().expect("a nested composite has a parent");
-            let composite: Composite = parse(layer, node)?;
+            let widget = parse_node(layer, &name, node)?;
             *composite_mut(doc, &parent)?
                 .widgets
                 .get_mut(&name)
-                .expect("resolved") = composite;
+                .expect("resolved") = widget;
         }
         Layer::Item | Layer::Child | Layer::Part | Layer::Choice | Layer::Tool => {
             let parent = target.parent().expect("a listed node has a parent");
@@ -645,7 +645,10 @@ fn composite_mut<'a>(doc: &'a mut Document, path: &NodePath) -> Result<&'a mut C
     };
     for segment in segments {
         current = match segment.layer {
-            Layer::Widget => current.widgets.get_mut(&segment.name),
+            Layer::Widget => current
+                .widgets
+                .get_mut(&segment.name)
+                .and_then(node_composite),
             layer if layer.is_node_list() => node_list_mut(current, layer)
                 .and_then(|nodes| nodes.iter_mut().find(|n| n.name == segment.name))
                 .and_then(node_composite),

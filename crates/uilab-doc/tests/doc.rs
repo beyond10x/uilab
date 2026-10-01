@@ -562,6 +562,7 @@ fn draft_views_get_sample_rows_shaped_by_their_readers() {
             placeholder: Some("loans.LoansPerMonth".into()),
             fixture: Some("fixtures/loans_per_month.yaml".into()),
             extra: Default::default(),
+            shorthand: false,
         }),
         widgets: Default::default(),
         item: Default::default(),

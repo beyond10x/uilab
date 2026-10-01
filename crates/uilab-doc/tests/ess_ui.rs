@@ -1218,3 +1218,43 @@ fn uilab_checks_survivors() {
     );
     assert_eq!(BEFORE.len(), SURVIVOR_CASES.len() + 1);
 }
+
+/// ESS 0.48.0's own reference example, `examples/partner-portal/ui.yaml` with its `fixtures/`,
+/// copied unchanged into `tests/fixtures/partner-portal/` (invented data, `example.com` only).
+/// uilab reads it with no error, every node ESS's loader addresses lands on a uilab node, and a
+/// save without edits writes it back YAML-equivalent: the same YAML value as the file and the
+/// same document to ESS's loader (not the same bytes: flow and block style are not kept).
+#[test]
+fn ess_reference_example_loads() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/partner-portal");
+    let text = std::fs::read_to_string(dir.join("ui.yaml")).unwrap();
+    let ess = ess_ui::load_str(&text).expect("ESS loads its own example");
+    let report = ess_ui_check::check_source(&text, "ui.yaml", &dir, None, &Default::default());
+    assert_eq!(report.errors(), 0, "{:#?}", report.findings);
+
+    let doc = Document::from_yaml_in(&text, &dir).unwrap_or_else(|e| panic!("{e}"));
+    let missing: Vec<String> = ess
+        .nodes()
+        .iter()
+        .map(|l| l.path.to_string())
+        .filter(|at| resolve(&doc, &uilab_doc::ess::node_at(&doc, at)).is_err())
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "ESS nodes with no uilab node: {missing:#?}"
+    );
+    assert!(
+        check(&doc).iter().all(|f| f.severity != Severity::Error),
+        "{:#?}",
+        check(&doc)
+    );
+
+    let written = doc.to_yaml().unwrap();
+    assert_eq!(yaml(&written), yaml(&text), "written back as authored");
+    assert_eq!(
+        ess_ui::load_str(&written).unwrap(),
+        ess,
+        "the same document to ESS"
+    );
+    Fixtures::load(&doc, &dir).expect("its fixtures are read");
+}

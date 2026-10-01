@@ -433,7 +433,7 @@ pub fn resolve<'a>(doc: &'a Document, path: &NodePath) -> Result<NodeRef<'a>, Pa
                     .and_then(Option::as_ref)
                     .ok_or_else(not_found)?,
             ),
-            (parent, Layer::Widget) => NodeRef::Composite(
+            (parent, Layer::Widget) => node_ref(
                 parent
                     .composite()
                     .and_then(|c| c.widgets.get(name))

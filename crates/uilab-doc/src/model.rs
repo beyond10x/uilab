@@ -207,7 +207,7 @@ pub enum NavPages {
 pub struct Page {
     /// Template the page starts from.
     pub kind: String,
-    /// Frame the page renders in; the first shell when absent.
+    /// Frame the page renders in; when absent, `shells.app`, else the only shell ([`Document::shell_of`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell: Option<String>,
     /// Header title.
@@ -216,8 +216,8 @@ pub struct Page {
     /// Regions of the page by name, in layout order, written as the list of named nodes
     /// `ess-ui/1` declares. `None` is `{name: <n>, remove: true}`, which removes a section the
     /// page kind contributes.
-    #[serde(default, with = "named_sections")]
-    pub sections: IndexMap<String, Option<Composite>>,
+    #[serde(default, skip_serializing_if = "Sections::unwritten")]
+    pub sections: Sections,
     /// Drawers and dialogs of the page. `null` removes one inherited from the kind.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub overlays: IndexMap<String, Option<Overlay>>,
@@ -226,22 +226,66 @@ pub struct Page {
     pub extra: IndexMap<String, Value>,
 }
 
-/// A page's sections as `ess-ui/1` writes them: a list of named nodes, in layout order.
-mod named_sections {
-    use indexmap::IndexMap;
-    use serde::de::Error;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use serde_json::{Map, Value};
+/// A page's sections by name, in layout order, written as the list of named nodes `ess-ui/1`
+/// declares. `None` is `{name: <n>, remove: true}`, which removes a section the page kind
+/// contributes. A page that writes no `sections` (it takes every section from its kind) is written
+/// back without the key while it has none.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Sections {
+    map: IndexMap<String, Option<Composite>>,
+    written: bool,
+}
 
-    use super::Composite;
+impl Sections {
+    /// Whether the page writes no `sections` and has none: then the key is left out.
+    pub fn unwritten(&self) -> bool {
+        !self.written && self.map.is_empty()
+    }
+}
 
-    pub fn serialize<S: Serializer>(
-        sections: &IndexMap<String, Option<Composite>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let mut list = Vec::with_capacity(sections.len());
-        for (name, section) in sections {
-            let mut entry = Map::new();
+impl std::ops::Deref for Sections {
+    type Target = IndexMap<String, Option<Composite>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.map
+    }
+}
+
+impl std::ops::DerefMut for Sections {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.map
+    }
+}
+
+impl From<IndexMap<String, Option<Composite>>> for Sections {
+    fn from(map: IndexMap<String, Option<Composite>>) -> Self {
+        Sections { map, written: true }
+    }
+}
+
+impl<'a> IntoIterator for &'a Sections {
+    type Item = (&'a String, &'a Option<Composite>);
+    type IntoIter = indexmap::map::Iter<'a, String, Option<Composite>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Sections {
+    type Item = (&'a String, &'a mut Option<Composite>);
+    type IntoIter = indexmap::map::IterMut<'a, String, Option<Composite>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.iter_mut()
+    }
+}
+
+impl Serialize for Sections {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut list = Vec::with_capacity(self.map.len());
+        for (name, section) in &self.map {
+            let mut entry = serde_json::Map::new();
             entry.insert("name".into(), Value::String(name.clone()));
             match section {
                 Some(composite) => match serde_json::to_value(composite) {
@@ -257,12 +301,13 @@ mod named_sections {
         }
         list.serialize(serializer)
     }
+}
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<IndexMap<String, Option<Composite>>, D::Error> {
+impl<'de> Deserialize<'de> for Sections {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
         let entries = match Value::deserialize(deserializer)? {
-            Value::Null => return Ok(IndexMap::new()),
+            Value::Null => Vec::new(),
             Value::Array(entries) => entries,
             _ => {
                 return Err(D::Error::custom(
@@ -270,7 +315,7 @@ mod named_sections {
                 ));
             }
         };
-        let mut sections = IndexMap::new();
+        let mut map = IndexMap::new();
         for entry in entries {
             let Value::Object(mut fields) = entry else {
                 return Err(D::Error::custom("a section is a map"));
@@ -279,7 +324,7 @@ mod named_sections {
                 Some(Value::String(name)) if !name.is_empty() => name,
                 _ => return Err(D::Error::custom("a section carries its `name`")),
             };
-            if sections.contains_key(&name) {
+            if map.contains_key(&name) {
                 return Err(D::Error::custom(format!("two sections are named `{name}`")));
             }
             let removed = fields.len() == 1 && fields.get("remove") == Some(&Value::Bool(true));
@@ -291,9 +336,44 @@ mod named_sections {
                         .map_err(|e| D::Error::custom(format!("section `{name}`: {e}")))?,
                 )
             };
-            sections.insert(name, section);
+            map.insert(name, section);
         }
-        Ok(sections)
+        Ok(Sections { map, written: true })
+    }
+}
+
+/// A board's `widgets`: a map of name to node, each node written without its name.
+mod board_widgets {
+    use indexmap::IndexMap;
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_json::{Map, Value};
+
+    use super::Node;
+
+    pub fn serialize<S: Serializer>(
+        widgets: &IndexMap<String, Node>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut out = Map::new();
+        for (name, node) in widgets {
+            let mut fields: Map<String, Value> = node.clone().into();
+            fields.remove("name");
+            out.insert(name.clone(), Value::Object(fields));
+        }
+        out.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<IndexMap<String, Node>, D::Error> {
+        let map = Option::<IndexMap<String, Value>>::deserialize(deserializer)?.unwrap_or_default();
+        map.into_iter()
+            .map(|(name, fields)| {
+                let node = Node::named(&name, &fields).map_err(D::Error::custom)?;
+                Ok((name, node))
+            })
+            .collect()
     }
 }
 
@@ -308,13 +388,19 @@ mod named_sections {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Composite {
     /// Kind of the composite, or the widget it instantiates.
+    #[serde(default, skip_serializing_if = "Component::is_inherited")]
     pub component: Component,
     /// The composite's data.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reads: Option<Reads>,
-    /// A board's composite per widget kind.
-    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-    pub widgets: IndexMap<String, Composite>,
+    /// A board's node per widget kind (`{map: {key: name, value: Node}}`): a composite, a widget
+    /// instance or a primitive, each named by its key.
+    #[serde(
+        default,
+        with = "board_widgets",
+        skip_serializing_if = "IndexMap::is_empty"
+    )]
+    pub widgets: IndexMap<String, Node>,
     /// A collection's or record's named nodes per row, in order: composites, widget instances and
     /// primitives. Written as the list `ess-ui/1` declares; the map of name to composite that
     /// older documents carry is read too. A name written twice is kept for ESS's `names_unique`
@@ -361,8 +447,10 @@ pub struct Composite {
 /// A drawer, dialog, fullscreen pane or popover.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Overlay {
-    /// Presentation hint.
-    pub kind: OverlayKind,
+    /// Presentation hint; left out where the overlay refines one its page kind contributes, or is
+    /// `same_as` another, and takes it from there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<OverlayKind>,
     /// The composite inside the overlay, with its props inline.
     #[serde(flatten)]
     pub body: Composite,
@@ -478,13 +566,17 @@ impl CompositeKind {
 /// What a composite's `component` names: a built-in kind, or a widget the document declares.
 ///
 /// A name that is a composite kind is always the kind; any other name is a widget, whether or not
-/// the document declares it (the `widget_resolves` check decides that).
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// the document declares it (ESS's `widget_expands` decides that).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Component {
     /// A member of the composite union.
     Builtin(CompositeKind),
     /// An app-defined widget, by name.
     Widget(String),
+    /// Not written: where `ess-ui/1` lets it be left out, a page section that refines the section
+    /// its kind contributes, and an overlay that is `same_as` another, take it from there.
+    #[default]
+    Inherited,
 }
 
 impl Component {
@@ -492,24 +584,30 @@ impl Component {
     pub fn kind(&self) -> Option<CompositeKind> {
         match self {
             Component::Builtin(kind) => Some(*kind),
-            Component::Widget(_) => None,
+            Component::Widget(_) | Component::Inherited => None,
         }
     }
 
     /// The widget's name, for a widget instance.
     pub fn widget(&self) -> Option<&str> {
         match self {
-            Component::Builtin(_) => None,
+            Component::Builtin(_) | Component::Inherited => None,
             Component::Widget(name) => Some(name),
         }
     }
 
-    /// The name the document spells.
+    /// The name the document spells; `inherited` where it spells none.
     pub fn as_str(&self) -> &str {
         match self {
             Component::Builtin(kind) => kind.as_str(),
             Component::Widget(name) => name,
+            Component::Inherited => "inherited",
         }
+    }
+
+    /// Whether the document leaves `component` out, to be taken from what the node refines.
+    pub fn is_inherited(&self) -> bool {
+        matches!(self, Component::Inherited)
     }
 }
 
@@ -567,7 +665,7 @@ fn item_nodes<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<N
         Value::Array(nodes) => nodes
             .into_iter()
             .map(|node| match node {
-                Value::Object(map) => Node::try_from(map).map_err(D::Error::custom),
+                Value::Object(map) => Node::in_list(map).map_err(D::Error::custom),
                 _ => Err(D::Error::custom("an `item` node is a map")),
             })
             .collect(),
@@ -733,6 +831,30 @@ impl Node {
     }
 }
 
+impl Node {
+    /// A node of a composite's named list. An entry with neither `component` nor `primitive`
+    /// refines the entry of its name that a page kind contributes (`inheritance.named_lists`,
+    /// matched by name) and takes `component` from it; where nothing is inherited, ESS's loader
+    /// refuses it.
+    fn in_list(map: serde_json::Map<String, Value>) -> Result<Node, String> {
+        if map.contains_key("component") || map.contains_key("primitive") {
+            return Node::try_from(map);
+        }
+        let mut map = map;
+        let name = match map.remove("name") {
+            Some(Value::String(name)) if !name.is_empty() => name,
+            Some(_) => return Err("a node's `name` is a non-empty string".into()),
+            None => return Err("a node in a list carries `name`".into()),
+        };
+        let composite = serde_json::from_value(Value::Object(map))
+            .map_err(|e| format!("node `{name}`: {e}"))?;
+        Ok(Node {
+            name,
+            body: NodeBody::Composite(composite),
+        })
+    }
+}
+
 impl TryFrom<serde_json::Map<String, Value>> for Node {
     type Error = String;
 
@@ -858,23 +980,97 @@ impl PrimitiveKind {
 /// What a composite reads: an ESS view, or, while the model has no such view yet, a named
 /// placeholder answered by a fixture file (`ess-ui/1` `Reads`; exactly one of `view` and
 /// `placeholder`, which ESS's loader holds).
+///
+/// `reads: <view>` is the shorthand `ess-ui/1` declares for `reads: {view: <view>}`
+/// (`shorthands.index`, `Reads`); a read written that way is written back that way.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "ReadsRepr", into = "ReadsRepr")]
 pub struct Reads {
     /// ESS view name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
     /// A view name not yet bound to the model.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<String>,
     /// The fixture file answering the placeholder, relative to the document.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixture: Option<String>,
     /// Keys this subset does not type (params, paging, debounce, …).
-    #[serde(flatten)]
     pub extra: IndexMap<String, Value>,
+    /// Whether the document writes it as the shorthand `reads: <view>`.
+    pub shorthand: bool,
+}
+
+/// [`Reads`] as written: the shorthand string, or the map.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum ReadsRepr {
+    Shorthand(String),
+    Map(ReadsMap),
+}
+
+#[derive(Serialize, Deserialize)]
+struct ReadsMap {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    view: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    placeholder: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fixture: Option<String>,
+    #[serde(flatten)]
+    extra: IndexMap<String, Value>,
+}
+
+impl From<ReadsRepr> for Reads {
+    fn from(repr: ReadsRepr) -> Self {
+        match repr {
+            ReadsRepr::Shorthand(view) => Reads {
+                view: Some(view),
+                placeholder: None,
+                fixture: None,
+                extra: IndexMap::new(),
+                shorthand: true,
+            },
+            ReadsRepr::Map(map) => Reads {
+                view: map.view,
+                placeholder: map.placeholder,
+                fixture: map.fixture,
+                extra: map.extra,
+                shorthand: false,
+            },
+        }
+    }
+}
+
+impl From<Reads> for ReadsRepr {
+    fn from(reads: Reads) -> Self {
+        match reads {
+            Reads {
+                view: Some(view),
+                placeholder: None,
+                fixture: None,
+                extra,
+                shorthand: true,
+            } if extra.is_empty() => ReadsRepr::Shorthand(view),
+            reads => ReadsRepr::Map(ReadsMap {
+                view: reads.view,
+                placeholder: reads.placeholder,
+                fixture: reads.fixture,
+                extra: reads.extra,
+            }),
+        }
+    }
 }
 
 impl Reads {
+    /// A read of `view`, written as a map.
+    pub fn view(view: impl Into<String>) -> Self {
+        Reads {
+            view: Some(view.into()),
+            placeholder: None,
+            fixture: None,
+            extra: IndexMap::new(),
+            shorthand: false,
+        }
+    }
+
     /// The name of what is read: the view, or the placeholder.
     pub fn name(&self) -> &str {
         self.view
@@ -1026,10 +1222,18 @@ fn yaml_of(value: Value) -> serde_yaml::Value {
 }
 
 impl Document {
-    /// The shell a page renders in: its own, or the first shell of the document.
+    /// The shell a page renders in, as ESS resolves `Page.shell` (`first_present: [shells.app,
+    /// only_shell]`): its own, else the shell named `app`, else the only shell; `None` when the
+    /// document has several shells and none is `app`.
     pub fn shell_of<'a>(&'a self, page: &'a Page) -> Option<&'a str> {
-        page.shell
-            .as_deref()
-            .or_else(|| self.shells.keys().next().map(String::as_str))
+        page.shell.as_deref().or_else(|| {
+            if let Some((name, _)) = self.shells.get_key_value("app") {
+                Some(name.as_str())
+            } else if self.shells.len() == 1 {
+                self.shells.keys().next().map(String::as_str)
+            } else {
+                None
+            }
+        })
     }
 }
