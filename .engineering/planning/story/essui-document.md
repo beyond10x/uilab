@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:essui-document
 kind: story
-status: active
+status: implemented
 title: uilab-doc on ess-ui/1, admission decided by ESS
 relations:
 - decomposes: epic:ess-ui-adoption
@@ -56,10 +56,11 @@ scope:
   path: generated
 - confidence: cited
   path: widget/src/generated
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:19Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":9}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:19Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":9}}}
+- {from: "active", to: "implemented", at: "2026-10-01T15:26:21Z", actor: "human:timo", revision: 13, decided_on: {"recorded":{"test_result":1,"review_outcome":24}}}
 ---
 ## Outcome
 

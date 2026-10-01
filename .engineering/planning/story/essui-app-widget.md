@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:essui-app-widget
 kind: story
-status: active
+status: implemented
 title: Server and canvas on ess-ui/1, expanded document shown
 relations:
 - decomposes: epic:ess-ui-adoption
@@ -19,10 +19,11 @@ scope:
   path: generated
 - confidence: cited
   path: widget/src
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":9}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"review_outcome":9}}}
+- {from: "active", to: "implemented", at: "2026-10-01T15:26:21Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"review_outcome":18}}}
 ---
 ## Outcome
 
