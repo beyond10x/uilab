@@ -247,6 +247,25 @@ export function optionsOf(node: OutlineNode): string[] {
   });
 }
 
+/** A page's header as the server sends it (ESS's rendering, the kind's merged in): the title
+ *  (the header's, else the page's, else its name), the help text and each action's text. */
+export function headerOf(page: OutlineNode): { title: string; help: string | null; actions: string[] } {
+  const p = propsOf(page);
+  const header = p.header && typeof p.header === 'object' && !Array.isArray(p.header) ? (p.header as Record<string, unknown>) : {};
+  const actions = header.actions;
+  return {
+    title: textAt(p, 'header', 'title') || page.title || page.name,
+    help: textAt(p, 'header', 'help', 'text'),
+    actions: Array.isArray(actions) ? actions.map(actionLabel) : [],
+  };
+}
+
+/** A page's text in the menu: its `nav.label` (ESS gives it the page's title when not written),
+ *  else its title, else its name. */
+export function navLabelOf(page: OutlineNode): string {
+  return textAt(propsOf(page), 'nav', 'label') || page.title || page.name;
+}
+
 /** A record field of `p` read as text, or null when absent or not text. */
 export function textAt(p: Record<string, unknown>, ...keys: string[]): string | null {
   let at: unknown = p;

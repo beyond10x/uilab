@@ -131,9 +131,28 @@ function doc(): OutlineNode {
   ];
   return n('/', 'root', 'document', {
     title: 'Lending library',
-    children: [n(P, 'page', 'dashboard_page', { title: 'Overview', props: { shell: 'app' }, children: [...sections, ...overlays] })],
+    children: [
+      n('nav', 'nav', 'navigation', {
+        props: { home: 'overview' },
+        children: [n('nav/nav_section:circulation', 'nav_section', 'nav_section', { title: 'Circulation', props: { pages: ['overview', 'loans'] } })],
+      }),
+      n(P, 'page', 'dashboard_page', { title: 'Overview', props: { shell: 'app', ...pageProps }, children: [...sections, ...overlays] }),
+      n('page:loans', 'page', 'list_page', { title: 'Loans', props: { shell: 'app' } }),
+    ],
   });
 }
+
+/** The overview's props beyond its shell, as the server sends them (`outline.rs`,
+ *  `Expanded::merge_pages`): its header and menu entry as ESS renders them. */
+let pageProps: Record<string, unknown> = {};
+const HEADER = {
+  header: {
+    title: 'Today at the desk',
+    help: { text: 'What is out and what is due back' },
+    actions: [{ name: 'lend', does: 'loans.Lend', label: 'Lend a copy' }],
+  },
+  nav: { label: 'Desk' },
+};
 
 async function render(mode: CanvasMode, overlay: string | null = null): Promise<string> {
   canvasMode.mode.value = mode;
@@ -215,6 +234,35 @@ for (const mode of ['preview', 'structure'] as const) {
       for (const s of c.hint ?? []) assert.ok(html.includes(`placeholder="${s}"`), `no input hints ${JSON.stringify(s)}`);
     });
   }
+
+  test(`${mode}: the page header's title, help text and action labels are shown`, async () => {
+    pageProps = HEADER;
+    try {
+      const shown = text(nodeHtml(await render(mode), P));
+      for (const s of ['Today at the desk', 'What is out and what is due back', 'Lend a copy']) {
+        assert.ok(shown.includes(s), `${JSON.stringify(s)} is not on the canvas: ${shown}`);
+      }
+    } finally {
+      pageProps = {};
+    }
+  });
+
+  test(`${mode}: the menu shows a page's nav label, and its title when it has no nav entry`, async () => {
+    pageProps = HEADER;
+    try {
+      const html = await render(mode);
+      const entries = [...html.matchAll(/<a[^>]*class="nav-page[^"]*"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => text(m[1]));
+      assert.deepEqual(entries, ['Desk', 'Loans']);
+    } finally {
+      pageProps = {};
+    }
+  });
+
+  test(`${mode}: a page without a header shows its title and no invented help or actions`, async () => {
+    const html = nodeHtml(await render(mode), P);
+    assert.match(html, /<h1 class="page-title">Overview<\/h1>/);
+    assert.doesNotMatch(html, /class="page-help"|class="page-actions"/);
+  });
 
   test(`${mode}: a column without a label is headed by its field, nothing else`, async () => {
     const html = nodeHtml(await render(mode), `${P}/section:recent`);

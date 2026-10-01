@@ -2,7 +2,7 @@
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { accountChrome, canvasMode } from '../lib/canvasmode.ts';
-import { childrenOf, findNode, labelOf, navLayout, nodeClasses, shellOf } from '../lib/outline.ts';
+import { childrenOf, findNode, headerOf, labelOf, navLabelOf, navLayout, nodeClasses, shellOf } from '../lib/outline.ts';
 import { activePage, marks, requestRows, select, shownOutline, showPage, state, tint } from '../store.ts';
 import CompositeView from './CompositeView.vue';
 
@@ -21,6 +21,8 @@ const nav = computed(() => childrenOf(root.value, 'nav')[0] ?? null);
 const showNav = computed(() => !!nav.value && (!shell.value || !!navRegion.value));
 const navGroups = computed(() => (root.value ? navLayout(root.value) : []));
 const sections = computed(() => childrenOf(page.value, 'section'));
+/** The page's header as ESS renders it: title, help text, action texts. */
+const header = computed(() => (page.value ? headerOf(page.value) : null));
 const pageOverlays = computed(() => childrenOf(page.value, 'overlay'));
 const shellOverlays = computed(() => childrenOf(shell.value, 'overlay'));
 const overlay = computed(() => (state.openOverlay && root.value ? findNode(root.value, state.openOverlay) : null));
@@ -143,7 +145,7 @@ function openOverlay(o: OutlineNode): void {
             :class="[marks(e.page.path), { current: page?.path === e.page.path }]" :style="tint(e.page.path)"
             @click.stop.prevent="openPage(e.page)"
           >
-            {{ e.page.title || e.page.name }}
+            {{ navLabelOf(e.page) }}
             <span v-if="e.fromView && !preview" class="muted small">per row of {{ e.fromView }}</span>
           </a>
         </div>
@@ -158,7 +160,11 @@ function openOverlay(o: OutlineNode): void {
           @click.stop="select(page.path)"
         >
           <div v-if="!preview" class="card-label">{{ page.name }} · {{ page.kind }}</div>
-          <h1 class="page-title">{{ page.title || page.name }}</h1>
+          <h1 class="page-title">{{ header?.title }}</h1>
+          <p v-if="header?.help" class="page-help muted small">{{ header.help }}</p>
+          <div v-if="header?.actions.length" class="page-actions">
+            <button v-for="(a, i) in header.actions" :key="i" type="button" tabindex="-1">{{ a }}</button>
+          </div>
           <div v-if="pageOverlays.length" class="overlay-buttons">
             <button
               v-for="o in pageOverlays"
@@ -227,6 +233,17 @@ function openOverlay(o: OutlineNode): void {
 .caret {
   color: var(--muted);
   font-size: 10px;
+}
+
+.page-help {
+  margin: -4px 0 8px;
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .chrome-bell {

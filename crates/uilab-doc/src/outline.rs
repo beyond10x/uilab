@@ -224,6 +224,9 @@ struct Expanded<'a> {
     /// Per page kind a page uses, its `sections` and `overlays` as ESS resolves the kind over
     /// those it extends (a built-in kind as the schema writes it), as JSON.
     kinds: Map<String, Value>,
+    /// Per page, by name, its `header` and `nav` as ESS renders them ([`header_json`],
+    /// [`nav_json`]); a key ESS renders none for is absent.
+    pages: HashMap<String, Map<String, Value>>,
 }
 
 impl<'a> Expanded<'a> {
@@ -274,6 +277,20 @@ impl<'a> Expanded<'a> {
             fields,
             written: serde_json::to_value(doc).ok()?,
             kinds,
+            pages: ess
+                .pages
+                .iter()
+                .map(|(name, page)| {
+                    let mut shown = Map::new();
+                    if let Some(header) = &page.header {
+                        shown.insert("header".into(), header_json(header));
+                    }
+                    if let Some(nav) = &page.nav {
+                        shown.insert("nav".into(), nav_json(nav));
+                    }
+                    (name.clone(), shown)
+                })
+                .collect(),
         })
     }
 
@@ -281,10 +298,39 @@ impl<'a> Expanded<'a> {
     /// its parent; then puts each list's nodes in ESS's order. Nodes of a map (shells, regions,
     /// overlays, pages, board widgets) keep the author's order, inherited ones after. Last, every
     /// section, overlay and node, the author's included, takes the kind and the view ESS renders
-    /// it with: a section refining its page kind's, an overlay `same_as` another.
+    /// it with: a section refining its page kind's, an overlay `same_as` another; and every page
+    /// takes the header and menu entry ESS renders for it.
     fn add_to(&self, root: &mut OutlineNode) {
         self.add_nodes(root);
         self.merge_fields(root);
+        self.merge_pages(root);
+    }
+
+    /// Each page node's `header` and `nav` props as ESS renders them: the page kind's header
+    /// merged in, `title: from_page` and a missing `nav.label` taken from the page's title. A
+    /// header's `metrics` stay as the page writes them.
+    fn merge_pages(&self, root: &mut OutlineNode) {
+        for page in root.children.iter_mut().filter(|c| c.layer == Layer::Page) {
+            let Some(shown) = self.pages.get(&page.name) else {
+                continue;
+            };
+            let mut props = match page.props.take() {
+                Some(Value::Object(props)) => props,
+                _ => Map::new(),
+            };
+            let metrics = props.get("header").and_then(|h| h.get("metrics")).cloned();
+            for key in ["header", "nav"] {
+                match shown.get(key) {
+                    Some(value) => props.insert(key.into(), value.clone()),
+                    None => props.remove(key),
+                };
+            }
+            if let (Some(metrics), Some(Value::Object(header))) = (metrics, props.get_mut("header"))
+            {
+                header.insert("metrics".into(), metrics);
+            }
+            page.props = (!props.is_empty()).then_some(Value::Object(props));
+        }
     }
 
     /// Each node's kind and view as ESS renders it, where ESS gives them; a view only where ESS
@@ -417,6 +463,67 @@ impl<'a> Expanded<'a> {
             _ => None,
         }
     }
+}
+
+/// A page header as ESS renders it, as JSON: its title, total, filters, switch, live channels,
+/// help, and each action's name, text and what it runs or opens. ESS's types do not serialize, so
+/// this carries what a renderer draws, not every field of an action; `metrics` are left to the
+/// page as written ([`Expanded::merge_pages`]).
+fn header_json(header: &ess_ui::Header) -> Value {
+    let mut out = Map::new();
+    let mut text = |key: &str, value: &Option<String>| {
+        if let Some(v) = value {
+            out.insert(key.into(), Value::from(v.as_str()));
+        }
+    };
+    text("title", &header.title);
+    text("total", &header.total);
+    text("filters", &header.filters);
+    if let Some(help) = &header.help {
+        let mut h = Map::new();
+        for (key, value) in [("text", &help.text), ("link", &help.link)] {
+            if let Some(v) = value {
+                h.insert(key.into(), Value::from(v.as_str()));
+            }
+        }
+        out.insert("help".into(), Value::Object(h));
+    }
+    for (key, list) in [("switch", &header.switch), ("live", &header.live)] {
+        if !list.is_empty() {
+            out.insert(key.into(), serde_json::json!(list));
+        }
+    }
+    if !header.actions.is_empty() {
+        let actions = header
+            .actions
+            .iter()
+            .map(|a| {
+                let mut m = Map::new();
+                m.insert("name".into(), Value::from(a.name.as_str()));
+                for (key, value) in [("label", &a.label), ("does", &a.does), ("opens", &a.opens)] {
+                    if let Some(v) = value {
+                        m.insert(key.into(), Value::from(v.as_str()));
+                    }
+                }
+                Value::Object(m)
+            })
+            .collect();
+        out.insert("actions".into(), Value::Array(actions));
+    }
+    Value::Object(out)
+}
+
+/// A page's menu entry as ESS renders it, as JSON: its label (the page's title when not written)
+/// and synonyms.
+fn nav_json(nav: &ess_ui::NavEntry) -> Value {
+    let mut out = Map::new();
+    if let Some(label) = &nav.label {
+        out.insert("label".into(), Value::from(label.as_str()));
+    }
+    if !nav.synonyms.is_empty() {
+        out.insert("synonyms".into(), serde_json::json!(nav.synonyms));
+    }
+    Value::Object(out)
 }
 
 /// What ESS renders a section, an overlay or a node as: its kind label as uilab spells it (a
@@ -605,9 +712,18 @@ fn describe(
                 serde_json::json!({"from_view": entries.get("from_view"), "page": entries.get("page")})
             }
         }),
-        NodeRef::Page(p) => doc
-            .shell_of(p)
-            .map(|shell| serde_json::json!({"shell": shell})),
+        NodeRef::Page(p) => {
+            let mut props = Map::new();
+            if let Some(shell) = doc.shell_of(p) {
+                props.insert("shell".into(), serde_json::json!(shell));
+            }
+            for key in ["header", "nav"] {
+                if let Some(value) = p.extra.get(key) {
+                    props.insert(key.into(), value.clone());
+                }
+            }
+            (!props.is_empty()).then_some(Value::Object(props))
+        }
         NodeRef::Component(w) => Some(serde_json::json!({
             "params": w.params,
             "arrange": w.arrangement(),
@@ -1095,6 +1211,63 @@ pages:
             rendered_at(&doc, "page:overview/section:latest/node:title").map(|n| n.inherited),
             Some(true)
         );
+    }
+
+    /// story:canvas-shows-labels: a page node carries its `header` and its menu entry `nav`, as
+    /// written in the outline the agent is given and as ESS renders them in the one the browser
+    /// is shown: the page kind's header merged in, `title: from_page` and a missing `nav.label`
+    /// both taken from the page's title.
+    #[test]
+    fn a_page_carries_the_header_and_nav_entry_ess_renders() {
+        let mut doc = library();
+        let header = json!({
+            "title": "Today at the desk",
+            "help": {"text": "What is out and what is due back"},
+            "actions": [{"name": "lend", "does": "loans.Lend", "label": "Lend a copy"}]
+        });
+        doc.pages["overview"]
+            .extra
+            .insert("header".into(), header.clone());
+        doc.pages["overview"]
+            .extra
+            .insert("nav".into(), json!({"label": "Desk"}));
+        doc.pages["members"]
+            .extra
+            .insert("nav".into(), json!({"synonyms": ["patrons"]}));
+        let props = |root: &OutlineNode, page: &str| {
+            child_at(root, &format!("page:{page}"))
+                .props
+                .clone()
+                .unwrap_or_default()
+        };
+
+        let written = outline(&doc);
+        assert_eq!(props(&written, "overview")["header"], header);
+        assert_eq!(props(&written, "overview")["nav"], json!({"label": "Desk"}));
+
+        let shown = rendered(&doc);
+        let overview = props(&shown, "overview");
+        assert_eq!(overview["header"]["title"], json!("Today at the desk"));
+        assert_eq!(
+            overview["header"]["help"]["text"],
+            json!("What is out and what is due back")
+        );
+        assert_eq!(
+            overview["header"]["actions"][0]["label"],
+            json!("Lend a copy")
+        );
+        assert_eq!(overview["nav"]["label"], json!("Desk"));
+        assert_eq!(
+            props(&shown, "loans")["header"]["title"],
+            json!("Loans"),
+            "list_page's header `title: from_page` is the page's title"
+        );
+        assert_eq!(
+            props(&shown, "members")["nav"]["label"],
+            json!("Members"),
+            "a nav entry without a label is labelled with the page's title"
+        );
+        assert_eq!(props(&shown, "overview")["shell"], json!("app"));
     }
 
     /// A section the page removes (`{name: board, remove: true}` on the overview, a
