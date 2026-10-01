@@ -984,3 +984,113 @@ fn prompt_offers_no_section_title() {
         offending.join("\n")
     );
 }
+
+/// Every node path of the outline under `node`, `node`'s own first.
+fn outline_paths(node: &uilab_doc::OutlineNode, out: &mut Vec<String>) {
+    out.push(node.path.clone());
+    for child in &node.children {
+        outline_paths(child, out);
+    }
+}
+
+/// story:eval-round-5: the Messages API refuses a tool whose `input_schema` has `oneOf`, `allOf`
+/// or `anyOf` at its top level (round 5, run 1: every case answered 400 "input_schema does not
+/// support oneOf, allOf, or anyOf at the top level"). So no schema the agent sends has one: the
+/// patch schema at every node of the library, as a plain proposal and as one that may move, on
+/// both workspaces, and the plan schema. Each run is answered with a decline; only what was sent
+/// matters.
+#[test]
+fn no_answer_schema_sent_has_a_combinator_at_its_top_level() {
+    let doc = library();
+    let mut all = Vec::new();
+    outline_paths(&uilab_doc::outline(&doc), &mut all);
+    let mut sent: Vec<(String, Value)> = Vec::new();
+    let first = |seen: Arc<Mutex<Vec<TurnRequest>>>| {
+        seen.lock()
+            .unwrap()
+            .first()
+            .map(|request| schema_of(request).clone())
+    };
+    for at in &all {
+        let target: NodePath = at.parse().unwrap();
+        let decline = json!({"op": "decline", "target": at, "reason": "a test"});
+        for workspace in [Workspace::App, Workspace::Components] {
+            let (mut agent, seen) = proposer(vec![decline.clone()]);
+            let _ = agent.propose_in(&doc, &target, "add a table", &[], workspace);
+            sent.extend(first(seen).map(|s| (format!("propose_in {at} {workspace:?}"), s)));
+            let (mut agent, seen) = proposer(vec![decline.clone()]);
+            let _ = agent.answer_in(&doc, &target, "add a table", &[], workspace);
+            sent.extend(first(seen).map(|s| (format!("answer_in {at} {workspace:?}"), s)));
+        }
+        let (mut agent, seen) = proposer(vec![json!({"op": "decline", "reason": "a test"})]);
+        let _ = agent.plan_goal(&doc, &target, MEMBER_AREA, 4);
+        sent.extend(first(seen).map(|s| (format!("plan_goal {at}"), s)));
+    }
+    assert!(
+        sent.len() >= 5 * all.len(),
+        "{} schemas sent for {} nodes",
+        sent.len(),
+        all.len()
+    );
+    let offending: Vec<String> = sent
+        .iter()
+        .filter_map(|(run, schema)| {
+            let combinators: Vec<&str> = ["oneOf", "allOf", "anyOf"]
+                .into_iter()
+                .filter(|key| schema.get(*key).is_some())
+                .collect();
+            let object = schema["type"] == "object";
+            (!combinators.is_empty() || !object)
+                .then(|| format!("{run}: type {}, top-level {combinators:?}", schema["type"]))
+        })
+        .collect();
+    assert!(
+        offending.is_empty(),
+        "{} of {} schemas sent would be refused by the Messages API:\n{}",
+        offending.len(),
+        sent.len(),
+        offending.join("\n")
+    );
+}
+
+/// story:eval-round-5, run 2: the prompt taught a section as `{name: …, component: …}`, while a
+/// patch's section node may not carry `name` (the patch names it: `child.name`, or the target),
+/// and the schema refuses one that does with `{"required":["name"]} is not allowed`. At a
+/// collection, the model's replaces were refused in the loop three times and it fell back to a
+/// batch of the same replace twice (add-column, relabel-column, retarget-none). The prompt now
+/// teaches the shape the schema takes, and says where the name goes.
+#[test]
+fn the_prompt_teaches_a_section_node_without_its_name() {
+    let doc = library();
+    let named = json!({"op": "replace", "target": "page:loans/section:list", "node": {
+        "name": "list", "component": "collection", "reads": {"view": "loans.All"},
+        "columns": [{"field": "title"}],
+    }});
+    let schema =
+        uilab_doc::patch_schema(&doc, &"page:loans/section:list".parse().unwrap()).unwrap();
+    assert!(
+        harness_loop::OutputSchema::new(schema)
+            .unwrap()
+            .validate(&named)
+            .is_err(),
+        "the schema takes a section node with its name; this test's premise is gone"
+    );
+    assert!(
+        !INSTRUCTIONS.contains("`{name: …, component:"),
+        "INSTRUCTIONS teach a section as `{{name: …, component: …}}`"
+    );
+    const RULE: &str = "a node in a patch never carries its own `name`";
+    // Every run that answers a patch; the planner answers steps, not nodes.
+    let patch_runs: Vec<Sent> = sent_prompts()
+        .into_iter()
+        .filter(|sent| sent.run != "plan_goal")
+        .collect();
+    assert_eq!(patch_runs.len(), 3);
+    for sent in patch_runs {
+        assert!(
+            sent.instructions.contains(RULE),
+            "{}: the instructions do not say `{RULE}`",
+            sent.run
+        );
+    }
+}

@@ -520,3 +520,44 @@ fn a_node_name_other_than_the_patchs_is_refused_by_admission() {
     );
     assert_eq!(judged(renamed), Err("node_name".to_owned()));
 }
+
+/// story:eval-round-5, run 2: at a collection section, the model's `replace` (the node with one
+/// column more, a column relabelled, a sort added) was refused by the schema in the loop three
+/// times in a row, and its fourth answer was a `batch` of the same replace twice, which the
+/// schema's looser batch entry let through. The nodes are the ones the model wrote. Each is a
+/// replace the schema at its target accepts and ESS admits with no error.
+#[test]
+fn the_replaces_the_model_wrote_at_a_collection_pass_the_schema() {
+    let doc = library();
+    let loans_list = || {
+        json!({
+            "component": "collection",
+            "reads": {"view": "loans.All", "paging": "server"},
+            "row_actions": [{"opens": "edit", "label": "Extend"}],
+            "columns": [{"field": "title"}, {"field": "member"}, {"field": "due"}, {"field": "state", "as": "badge"}],
+        })
+    };
+    let mut add_column = loans_list();
+    add_column["columns"]
+        .as_array_mut()
+        .unwrap()
+        .insert(0, json!({"field": "id"}));
+    let mut sort = loans_list();
+    sort["sort"] = json!({"by": "due", "dir": "asc", "mode": "server"});
+    let relabel = json!({
+        "component": "collection",
+        "reads": {"view": "members.All"},
+        "columns": [{"field": "name"}, {"field": "joined", "label": "Member since"}, {"field": "loans"}, {"field": "standing", "as": "badge"}],
+    });
+    for (case, target, node) in [
+        ("add-column", "page:loans/section:list", add_column),
+        ("retarget-none", "page:loans/section:list", sort),
+        ("relabel-column", "page:members/section:list", relabel),
+    ] {
+        let patch = json!({"op": "replace", "target": target, "node": node});
+        if let Err(why) = valid(&doc, &patch) {
+            panic!("{case}: the schema refuses {patch}: {why}");
+        }
+        passes(&doc, &patch);
+    }
+}
