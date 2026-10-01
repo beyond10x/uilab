@@ -305,10 +305,11 @@ export function previewNode(node: OutlineNode, args: Record<string, unknown>): O
 }
 
 /** How the canvas draws a primitive. */
-export type PrimitiveShape = 'heading' | 'text' | 'badge' | 'image' | 'link' | 'button' | 'rule' | 'placeholder';
+export type PrimitiveShape = 'heading' | 'text' | 'badge' | 'image' | 'link' | 'button' | 'icon' | 'input' | 'toggle' | 'rule' | 'placeholder';
 
 /** How the canvas draws a primitive of this kind: a `divider` as a horizontal rule, a `text` styled
- *  `heading` as a heading; a kind the canvas has no drawing for as the placeholder box. */
+ *  `heading` as a heading, an `icon` by its label, an `input` with its placeholder, a `toggle` as a
+ *  switch with its label; a kind the canvas has no drawing for as the placeholder box. */
 export function primitiveShape(node: OutlineNode): PrimitiveShape {
   switch (node.kind) {
     case 'text':
@@ -319,6 +320,9 @@ export function primitiveShape(node: OutlineNode): PrimitiveShape {
     case 'image':
     case 'link':
     case 'button':
+    case 'icon':
+    case 'input':
+    case 'toggle':
       return node.kind;
     default:
       return 'placeholder';

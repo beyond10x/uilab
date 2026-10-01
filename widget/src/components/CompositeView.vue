@@ -61,14 +61,25 @@ watchEffect(() => {
   if (instance.value) for (const v of entityViews(instance.value.params, views.value)) requestRows(v);
 });
 
-const emptyLine = computed(() =>
-  emptyLineText({
-    view: view.value,
-    loaded: !!rows.value,
-    count: rowObjects.value.length,
-    connOpen: state.conn === 'open',
-    preview: preview.value,
-  }),
+/** The read returned and has no rows: the section's `states.empty` applies. */
+const isEmpty = computed(() => !!rows.value && rowObjects.value.length === 0);
+/** The author's `states.empty` message and action, shown when the read returns no rows. */
+const emptyMessage = computed(() => (isEmpty.value ? textAt(p.value, 'states', 'empty', 'message') : null));
+const emptyAction = computed(() => {
+  const states = p.value.states as Record<string, unknown> | undefined;
+  const empty = states && typeof states === 'object' ? (states.empty as Record<string, unknown> | undefined) : undefined;
+  return isEmpty.value && empty && typeof empty === 'object' && empty.action ? actionLabel(empty.action) : null;
+});
+const emptyLine = computed(
+  () =>
+    emptyMessage.value ??
+    emptyLineText({
+      view: view.value,
+      loaded: !!rows.value,
+      count: rowObjects.value.length,
+      connOpen: state.conn === 'open',
+      preview: preview.value,
+    }),
 );
 
 const columns = computed(() => columnsOf(props.node));
@@ -274,6 +285,10 @@ function display(v: unknown): string {
     <template v-else-if="kind !== 'board'">
       <div class="placeholder">{{ kind }}<span v-if="view && !preview"> · {{ view }}</span></div>
     </template>
+
+    <div v-if="emptyAction" class="card-actions">
+      <button type="button" tabindex="-1">{{ emptyAction }}</button>
+    </div>
 
     <div v-if="actions.length" class="card-actions">
       <button v-for="(a, i) in actions" :key="i" type="button" tabindex="-1">{{ a }}</button>

@@ -247,16 +247,35 @@ export function optionsOf(node: OutlineNode): string[] {
   });
 }
 
+/** A headline metric of a page header: a node with its caption (`label`, none when the author
+ *  wrote none), the view it reads and the row field its value is. */
+export interface HeaderMetric {
+  name: string;
+  component: string;
+  label: string | null;
+  view: string | null;
+  from: string | null;
+}
+
 /** A page's header as the server sends it (ESS's rendering, the kind's merged in): the title
- *  (the header's, else the page's, else its name), the help text and each action's text. */
-export function headerOf(page: OutlineNode): { title: string; help: string | null; actions: string[] } {
+ *  (the header's, else the page's, else its name), the help text, each action's text and the
+ *  headline metrics. */
+export function headerOf(page: OutlineNode): { title: string; help: string | null; actions: string[]; metrics: HeaderMetric[] } {
   const p = propsOf(page);
   const header = p.header && typeof p.header === 'object' && !Array.isArray(p.header) ? (p.header as Record<string, unknown>) : {};
   const actions = header.actions;
+  const metrics = Array.isArray(header.metrics) ? header.metrics : [];
   return {
     title: textAt(p, 'header', 'title') || page.title || page.name,
     help: textAt(p, 'header', 'help', 'text'),
     actions: Array.isArray(actions) ? actions.map(actionLabel) : [],
+    metrics: metrics.flatMap((m) => {
+      if (!m || typeof m !== 'object' || Array.isArray(m)) return [];
+      const r = m as Record<string, unknown>;
+      const reads = r.reads;
+      const view = typeof reads === 'string' ? reads : textAt(r, 'reads', 'view') ?? textAt(r, 'reads', 'placeholder');
+      return [{ name: textAt(r, 'name') ?? '', component: textAt(r, 'component') ?? '', label: textAt(r, 'label'), view, from: textAt(r, 'from') }];
+    }),
   };
 }
 

@@ -219,14 +219,17 @@ struct Expanded<'a> {
     /// What ESS renders each section, overlay and node of [`Self::nodes`] as, by uilab path: its
     /// kind label as uilab spells it and the view it reads ([`ess_fields`]).
     fields: HashMap<String, (String, Option<String>)>,
-    /// The document as written, as JSON.
-    written: Value,
-    /// Per page kind a page uses, its `sections` and `overlays` as ESS resolves the kind over
-    /// those it extends (a built-in kind as the schema writes it), as JSON.
-    kinds: Map<String, Value>,
+    /// The document as JSON with ESS's first loading step applied ([`merged_document`]): every
+    /// page merged over its page kind, every `same_as` overlay over the one it names. What a node
+    /// of [`rendered`] has as props is read here, so a section a page names again keeps what its
+    /// kind gives it and an overlay what it copies.
+    merged: Value,
     /// Per page, by name, its `header` and `nav` as ESS renders them ([`header_json`],
     /// [`nav_json`]); a key ESS renders none for is absent.
     pages: HashMap<String, Map<String, Value>>,
+    /// Per choice ESS renders with fixed options, by uilab path, those options as ESS renders
+    /// them: `{value, label}` each, one per value of a named enum type included.
+    options: HashMap<String, Value>,
 }
 
 impl<'a> Expanded<'a> {
@@ -236,6 +239,7 @@ impl<'a> Expanded<'a> {
         let ess = ess_ui::load_str(&text).ok()?;
         let mut nodes = Vec::new();
         let mut fields = HashMap::new();
+        let mut options = HashMap::new();
         for located in ess.nodes() {
             let segments = located.path.segments();
             let top = segments.first().map(String::as_str);
@@ -247,6 +251,9 @@ impl<'a> Expanded<'a> {
             };
             if let Some(found) = ess_fields(located.node) {
                 fields.insert(path.to_string(), found);
+            }
+            if let Some(found) = choice_options(located.node) {
+                options.insert(path.to_string(), found);
             }
             nodes.push((path, segments.to_vec()));
         }
@@ -263,6 +270,9 @@ impl<'a> Expanded<'a> {
                 Some(kind) => serde_json::json!({
                     "sections": json(kind.sections.as_ref()),
                     "overlays": json(kind.overlays.as_ref()),
+                    "header": json(kind.header.as_ref()),
+                    "state": json(kind.state.as_ref()),
+                    "layout": json(kind.layout.as_ref()),
                 }),
                 None => json(Some(
                     &schema()["constructs"]["PageKind"]["builtins"][page.kind.as_str()],
@@ -275,8 +285,8 @@ impl<'a> Expanded<'a> {
             uses: widget_uses(doc),
             nodes,
             fields,
-            written: serde_json::to_value(doc).ok()?,
-            kinds,
+            merged: merged_document(serde_json::to_value(doc).ok()?, &kinds),
+            options,
             pages: ess
                 .pages
                 .iter()
@@ -302,13 +312,43 @@ impl<'a> Expanded<'a> {
     /// takes the header and menu entry ESS renders for it.
     fn add_to(&self, root: &mut OutlineNode) {
         self.add_nodes(root);
+        self.merge_props(root);
         self.merge_fields(root);
         self.merge_pages(root);
     }
 
+    /// Every section, overlay and node the author wrote takes the props and title ESS renders
+    /// it with ([`Self::merged`]): a section the page names again keeps its kind's columns, an
+    /// overlay `same_as` another that one's title. A choice over fixed options, the author's or
+    /// an inherited one, takes the options ESS renders ([`Self::options`]).
+    fn merge_props(&self, root: &mut OutlineNode) {
+        for (path, segments) in &self.nodes {
+            let text = path.to_string();
+            let Some(node) = node_mut(root, text.trim_matches('/')) else {
+                continue;
+            };
+            if !node.inherited
+                && !matches!(node.layer, Layer::Page | Layer::Shell | Layer::Region)
+                && let Some(written) = self.written_at(segments)
+            {
+                let shown = as_written(path, Some(written));
+                node.props = shown.props;
+                node.title = shown.title;
+            }
+            if let Some(options) = self.options.get(&text) {
+                let mut props = match node.props.take() {
+                    Some(Value::Object(props)) => props,
+                    _ => Map::new(),
+                };
+                props.insert("options".into(), options.clone());
+                node.props = Some(Value::Object(props));
+            }
+        }
+    }
+
     /// Each page node's `header` and `nav` props as ESS renders them: the page kind's header
     /// merged in, `title: from_page` and a missing `nav.label` taken from the page's title. A
-    /// header's `metrics` stay as the page writes them.
+    /// header's `metrics` are its kind's and the page's merged by name ([`Self::merged`]).
     fn merge_pages(&self, root: &mut OutlineNode) {
         for page in root.children.iter_mut().filter(|c| c.layer == Layer::Page) {
             let Some(shown) = self.pages.get(&page.name) else {
@@ -318,7 +358,13 @@ impl<'a> Expanded<'a> {
                 Some(Value::Object(props)) => props,
                 _ => Map::new(),
             };
-            let metrics = props.get("header").and_then(|h| h.get("metrics")).cloned();
+            let metrics = self
+                .merged
+                .get("pages")
+                .and_then(|p| p.get(page.name.as_str()))
+                .and_then(|p| p.get("header"))
+                .and_then(|h| h.get("metrics"))
+                .cloned();
             for key in ["header", "nav"] {
                 match shown.get(key) {
                     Some(value) => props.insert(key.into(), value.clone()),
@@ -389,61 +435,17 @@ impl<'a> Expanded<'a> {
         typed.unwrap_or_else(|| as_written(path, written))
     }
 
-    /// The fields written for the node at an ESS path: the author's where the author wrote it,
-    /// else the page kind's (named lists merge by name, so a node of a refined section is the
-    /// kind's), a widget instance's `body` read from the widget's declaration.
+    /// The fields ESS renders the node at an ESS path with, before its shorthands expand: read
+    /// from [`Self::merged`] (the page merged over its kind, a `same_as` overlay over the one it
+    /// copies), a widget instance's `body` from the widget's declaration.
     fn written_at(&self, segments: &[String]) -> Option<&Value> {
         let (top, name) = (segments.first()?, segments.get(1)?);
-        let mut candidates: Vec<&Value> = vec![self.written.get(top.as_str())?.get(name.as_str())?];
-        if top == "pages"
-            && let Some(kind) = self
-                .doc
-                .pages
-                .get(name.as_str())
-                .and_then(|page| self.kinds.get(&page.kind))
-        {
-            candidates.push(kind);
-        }
+        let mut at = self.merged.get(top.as_str())?.get(name.as_str())?;
         for step in segments.get(2..)?.chunks(2) {
             let [key, child] = step else { return None };
-            let found: Vec<&Value> = candidates
-                .into_iter()
-                .filter_map(|c| self.child_of(c, key, child))
-                .collect();
-            candidates = Vec::new();
-            for value in found {
-                self.with_same_as(value, &mut candidates, 0);
-            }
+            at = self.child_of(at, key, child)?;
         }
-        candidates.first().copied()
-    }
-
-    /// `value`, then, where it is an overlay written `same_as: <page>.<overlay>`, the overlay it
-    /// copies (as the author wrote it, then as that page's kind contributes it), as ESS copies it
-    /// (`resolve_same_as`, at most 8 deep).
-    fn with_same_as<'v>(&'v self, value: &'v Value, out: &mut Vec<&'v Value>, depth: usize) {
-        out.push(value);
-        let Some((page, overlay)) = value
-            .get("same_as")
-            .and_then(Value::as_str)
-            .and_then(|target| target.rsplit_once('.'))
-        else {
-            return;
-        };
-        if depth >= 8 {
-            return;
-        }
-        let kind = self
-            .doc
-            .pages
-            .get(page)
-            .and_then(|p| self.kinds.get(&p.kind));
-        let sources = [self.written.get("pages").and_then(|p| p.get(page)), kind];
-        for source in sources.into_iter().flatten() {
-            if let Some(copied) = source.get("overlays").and_then(|o| o.get(overlay)) {
-                self.with_same_as(copied, out, depth + 1);
-            }
-        }
+        Some(at)
     }
 
     /// The written child `name` under `key` of `value`: an entry of a list by its `name`, a value
@@ -451,7 +453,7 @@ impl<'a> Expanded<'a> {
     fn child_of<'v>(&'v self, value: &'v Value, key: &str, name: &str) -> Option<&'v Value> {
         let holder = if key == "body" {
             let widget = value.get("component")?.as_str()?;
-            self.written.get("widgets")?.get(widget)?.get("body")?
+            self.merged.get("widgets")?.get(widget)?.get("body")?
         } else {
             value.get(key)?
         };
@@ -463,6 +465,275 @@ impl<'a> Expanded<'a> {
             _ => None,
         }
     }
+}
+
+/// `doc` (the document as JSON) with ESS's first loading step applied, as `ess_ui`'s `expand`
+/// applies it before any shorthand: each page merged over its page kind as `kinds` holds it
+/// (resolved over the kinds it extends), then each overlay written `same_as` another merged over
+/// that one. ESS's loader has accepted the document, so nothing here refuses.
+fn merged_document(mut doc: Value, kinds: &Map<String, Value>) -> Value {
+    let inherited: Vec<&str> = schema()["constructs"]["Page"]["inheritance"]["applies_to"]
+        .as_sequence()
+        .into_iter()
+        .flatten()
+        .filter_map(serde_yaml::Value::as_str)
+        .collect();
+    if let Some(Value::Object(pages)) = doc.get_mut("pages") {
+        for page in pages.values_mut() {
+            let kind = page
+                .get("kind")
+                .and_then(Value::as_str)
+                .and_then(|k| kinds.get(k));
+            if let (Some(Value::Object(kind)), Value::Object(own)) = (kind, &*page) {
+                *page = Value::Object(merge_page(kind, own, &inherited));
+            }
+        }
+    }
+    let snapshot = doc.get("pages").cloned().unwrap_or(Value::Null);
+    for container in ["pages", "shells"] {
+        let Some(Value::Object(owners)) = doc.get_mut(container) else {
+            continue;
+        };
+        for owner in owners.values_mut() {
+            let Some(Value::Object(overlays)) = owner.get_mut("overlays") else {
+                continue;
+            };
+            for overlay in overlays.values_mut() {
+                if let Value::Object(local) = overlay
+                    && local.contains_key("same_as")
+                {
+                    *local = same_as(local, &snapshot, 0);
+                }
+            }
+        }
+    }
+    doc
+}
+
+/// `own` (a page) merged over the `inherited` fields of `kind` (`shorthands.inheritance`): a
+/// field the page writes `null` is removed, one both write is merged ([`merge_value`]).
+fn merge_page(
+    kind: &Map<String, Value>,
+    own: &Map<String, Value>,
+    inherited: &[&str],
+) -> Map<String, Value> {
+    let mut out: Map<String, Value> = own
+        .iter()
+        .filter(|(k, _)| !inherited.contains(&k.as_str()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    for field in inherited {
+        let base = kind.get(*field).filter(|v| !v.is_null());
+        let merged = match (base, own.get(*field)) {
+            (_, Some(Value::Null)) | (None, None) => None,
+            (Some(base), Some(over)) => Some(merge_value(field, base, over)),
+            (Some(base), None) => Some(base.clone()),
+            (None, Some(over)) => Some(over.clone()),
+        };
+        if let Some(merged) = merged {
+            out.insert((*field).to_owned(), merged);
+        }
+    }
+    out
+}
+
+/// `over` merged over `base` under `key`: maps deep, named lists by name, anything else (and a
+/// `layout`) replaced.
+fn merge_value(key: &str, base: &Value, over: &Value) -> Value {
+    if key == "layout" {
+        return over.clone();
+    }
+    match (base, over) {
+        (Value::Object(base), Value::Object(over)) => Value::Object(merge_map(base, over)),
+        (Value::Array(base), Value::Array(over))
+            if named_list(key, base) && named_list(key, over) =>
+        {
+            Value::Array(merge_named(key, base, over))
+        }
+        _ => over.clone(),
+    }
+}
+
+/// `over` merged over `base`: inherited keys first, `null` removes one, new keys after.
+fn merge_map(base: &Map<String, Value>, over: &Map<String, Value>) -> Map<String, Value> {
+    let mut out = Map::new();
+    for (key, inherited) in base {
+        match over.get(key) {
+            Some(Value::Null) => {}
+            Some(own) => {
+                out.insert(key.clone(), merge_value(key, inherited, own));
+            }
+            None => {
+                out.insert(key.clone(), inherited.clone());
+            }
+        }
+    }
+    for (key, own) in over {
+        if !base.contains_key(key) && !own.is_null() {
+            out.insert(key.clone(), own.clone());
+        }
+    }
+    out
+}
+
+/// The name a list entry under `key` has or will derive: its `name`; in a `Field` list its
+/// `field` or the bare name written; in an `Action` list the name `Action.name` derives.
+fn entry_key(key: &str, entry: &Value) -> Option<String> {
+    if let Some(name) = entry.get("name").and_then(Value::as_str) {
+        return Some(name.to_owned());
+    }
+    let positions = ess_ui::positions();
+    let listed = |set: &std::collections::BTreeSet<(String, ess_ui::Shape)>| {
+        set.contains(&(key.to_owned(), ess_ui::Shape::List))
+    };
+    if listed(&positions.fields) {
+        return match entry {
+            Value::String(name) => Some(name.clone()),
+            other => other
+                .get("field")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        };
+    }
+    if listed(&positions.actions) {
+        return action_name(entry);
+    }
+    None
+}
+
+/// The name ESS derives for an action written without one: the first of its `Action.name`
+/// shorthand's `first_present` sources the action has.
+fn action_name(action: &Value) -> Option<String> {
+    let template = schema()["shorthands"]["index"]
+        .as_sequence()?
+        .iter()
+        .find(|s| s["construct"].as_str() == Some("Action") && s["at"].as_str() == Some("name"))?;
+    template["expands_to"]["first_present"]
+        .as_sequence()?
+        .iter()
+        .filter_map(serde_yaml::Value::as_str)
+        .find_map(|source| {
+            let mut parts = source.split('.');
+            let mut at = action.get(parts.next()?)?;
+            for part in parts {
+                match part {
+                    "last_segment_snake_case" => {
+                        return at.as_str()?.rsplit('.').next().map(snake_case);
+                    }
+                    "first_key" => return at.as_object()?.keys().next().cloned(),
+                    field => at = at.get(field)?,
+                }
+            }
+            match at {
+                Value::String(text) => Some(text.clone()),
+                Value::Number(number) => Some(number.to_string()),
+                _ => None,
+            }
+        })
+}
+
+/// `ExtendLoan` as `extend_loan`.
+fn snake_case(text: &str) -> String {
+    let mut out = String::new();
+    for (index, c) in text.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if index > 0 {
+                out.push('_');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn named_list(key: &str, entries: &[Value]) -> bool {
+    entries.iter().all(|entry| entry_key(key, entry).is_some())
+}
+
+/// Named lists merge by name: inherited entries in their order, each merged with the page's of
+/// the same name (replaced by it when the two name different components, dropped by
+/// `{name, remove: true}`), then the page's new ones.
+fn merge_named(key: &str, base: &[Value], over: &[Value]) -> Vec<Value> {
+    let name_of = |entry: &Value| entry_key(key, entry).unwrap_or_default();
+    let removes = |entry: &Value| entry.get("remove").and_then(Value::as_bool) == Some(true);
+    let mut out = Vec::new();
+    for inherited in base {
+        let name = name_of(inherited);
+        match over.iter().find(|own| name_of(own) == name) {
+            Some(own) if removes(own) => {}
+            Some(own) => {
+                let replaces = matches!(
+                    (inherited.get("component"), own.get("component")),
+                    (Some(a), Some(b)) if a != b
+                );
+                match (inherited, own) {
+                    (Value::Object(inherited), Value::Object(own)) if !replaces => {
+                        out.push(Value::Object(merge_map(inherited, own)));
+                    }
+                    _ => out.push(own.clone()),
+                }
+            }
+            None => out.push(inherited.clone()),
+        }
+    }
+    for own in over {
+        let name = name_of(own);
+        if !base.iter().any(|inherited| name_of(inherited) == name) && !removes(own) {
+            out.push(own.clone());
+        }
+    }
+    out
+}
+
+/// An overlay written `same_as: <page>.<overlay>` merged over the overlay it names (itself
+/// resolved first, at most 8 deep), as ESS's `resolve_same_as` merges it.
+fn same_as(local: &Map<String, Value>, pages: &Value, depth: usize) -> Map<String, Value> {
+    let Some(target) = local.get("same_as").and_then(Value::as_str) else {
+        return local.clone();
+    };
+    let Some(Value::Object(copied)) = target
+        .rsplit_once('.')
+        .and_then(|(page, overlay)| pages.get(page)?.get("overlays")?.get(overlay))
+    else {
+        return local.clone();
+    };
+    if depth > 8 {
+        return local.clone();
+    }
+    let copied = same_as(copied, pages, depth + 1);
+    let mut merged = merge_map(&copied, local);
+    merged.insert("same_as".into(), Value::from(target));
+    merged
+}
+
+/// The options ESS renders a choice with, as JSON `{value, label}` each; `None` for a node that
+/// is no choice or a choice with no fixed options (one reading a view).
+fn choice_options(node: ess_ui::NodeRef<'_>) -> Option<Value> {
+    let body = match node {
+        ess_ui::NodeRef::Section(section) => &section.body,
+        ess_ui::NodeRef::Node(node) => &node.body,
+        ess_ui::NodeRef::Overlay(overlay) => &overlay.body,
+        _ => return None,
+    };
+    let ess_ui::Body::Composite(ess_ui::Composite::Choice(choice)) = body else {
+        return None;
+    };
+    if choice.options.is_empty() {
+        return None;
+    }
+    let options = choice
+        .options
+        .iter()
+        .map(|o| {
+            serde_json::json!({
+                "value": serde_json::to_value(&o.value).unwrap_or(Value::Null),
+                "label": o.label,
+            })
+        })
+        .collect();
+    Some(Value::Array(options))
 }
 
 /// A page header as ESS renders it, as JSON: its title, total, filters, switch, live channels,

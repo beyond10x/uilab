@@ -2,7 +2,7 @@
 import { computed, watchEffect } from 'vue';
 import type { UilabWireOutlineNode as OutlineNode } from '../generated/types.ts';
 import { accountChrome, canvasMode } from '../lib/canvasmode.ts';
-import { childrenOf, findNode, headerOf, labelOf, navLabelOf, navLayout, nodeClasses, shellOf } from '../lib/outline.ts';
+import { childrenOf, findNode, headerOf, labelOf, navLabelOf, navLayout, nodeClasses, shellOf, type HeaderMetric } from '../lib/outline.ts';
 import { activePage, marks, requestRows, select, shownOutline, showPage, state, tint } from '../store.ts';
 import CompositeView from './CompositeView.vue';
 
@@ -31,6 +31,18 @@ watchEffect(() => {
   if (!preview.value) return;
   for (const r of barRegions.value) if (r.kind === 'account_menu') requestRows(r.view);
 });
+
+/** Rows of the views the header's headline metrics read. */
+watchEffect(() => {
+  for (const m of header.value?.metrics ?? []) if (m.view) requestRows(m.view);
+});
+
+/** A headline metric's value: its `from` field of the first row its view returned, else `—`. */
+function metricValue(m: HeaderMetric): string {
+  const first = m.view ? state.rows[m.view]?.rows?.[0] : undefined;
+  const v = m.from && first && typeof first === 'object' ? (first as Record<string, unknown>)[m.from] : undefined;
+  return v === undefined || v === null ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+}
 
 /** The account menu as chrome: the staff member's name from the rows its view reads, when loaded. */
 function account(r: OutlineNode): ReturnType<typeof accountChrome> {
@@ -165,6 +177,13 @@ function openOverlay(o: OutlineNode): void {
           <div v-if="header?.actions.length" class="page-actions">
             <button v-for="(a, i) in header.actions" :key="i" type="button" tabindex="-1">{{ a }}</button>
           </div>
+          <div v-if="header?.metrics.length" class="page-metrics">
+            <div v-for="m in header.metrics" :key="m.name" class="page-metric">
+              <div v-if="m.label" class="metric-label">{{ m.label }}</div>
+              <div v-if="m.component === 'metric'" class="page-metric-value">{{ metricValue(m) }}</div>
+              <div v-if="!preview" class="muted small">{{ m.name }} · {{ m.component }}</div>
+            </div>
+          </div>
           <div v-if="pageOverlays.length" class="overlay-buttons">
             <button
               v-for="o in pageOverlays"
@@ -237,6 +256,23 @@ function openOverlay(o: OutlineNode): void {
 
 .page-help {
   margin: -4px 0 8px;
+}
+
+.page-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.page-metric .metric-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.page-metric-value {
+  font-size: 22px;
+  font-weight: 600;
 }
 
 .page-actions {
