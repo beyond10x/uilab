@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:essui-docs
 kind: story
-status: active
+status: implemented
 title: README, AGENTS.md and the docs site say ess-ui/1
 relations:
 - decomposes: epic:ess-ui-adoption
@@ -20,10 +20,11 @@ scope:
   path: website/src
 - confidence: cited
   path: website/static/img/screens
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:21Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"review_outcome":6}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:21Z", actor: "human:timo", revision: 7, decided_on: {"recorded":{"review_outcome":6}}}
+- {from: "active", to: "implemented", at: "2026-10-01T17:43:23Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"review_outcome":6}}}
 ---
 ## Outcome
 

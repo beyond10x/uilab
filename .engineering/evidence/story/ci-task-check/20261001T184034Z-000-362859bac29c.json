@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-01T18:40:34Z",
+  "actor": "human:timo",
+  "artifact": "story:ci-task-check",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "red proof: PR #9 with a deliberately failing test; uilab / task check failed (run 36901613215, 9m1s); mergeStateStatus BLOCKED; merge through the bot refused 405; PR closed unmerged, branch deleted",
+    "reference": "https://github.com/beyond10x/uilab/pull/9"
+  }
+}
