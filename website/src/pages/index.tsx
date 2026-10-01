@@ -15,15 +15,14 @@ const SPEC: Line[] = [
   {text: '  overview:', key: true},
   {text: '    kind: dashboard_page'},
   {text: '    sections:', key: true},
-  {text: '      recent:', key: true},
+  {text: '      - name: recent', key: true},
   {text: '        component: collection'},
   {text: '        reads: {view: loans.All}'},
-  {text: '      overdue:', add: true},
+  {text: '      - name: overdue', add: true},
   {text: '        component: collection', add: true},
   {text: '        reads:', add: true},
   {text: '          view: loans.All', add: true},
   {text: '          params: {state: overdue}', add: true},
-  {text: '        title: Overdue loans', add: true},
   {text: '        columns:', add: true},
   {text: '        - field: title', add: true},
   {text: '        - field: member', add: true},
@@ -47,7 +46,7 @@ function Workbench() {
     <div
       className={styles.bench}
       role="img"
-      aria-label="A uilab session: the canvas previews a new Overdue loans table in green while the sidebar shows the spoken instruction and the proposed YAML diff, waiting for Accept or Reject">
+      aria-label="A uilab session: the canvas previews a new overdue table in green while the sidebar shows the spoken instruction and the proposed YAML diff, waiting for Accept or Reject">
       <div className={styles.benchBar}>
         <span className={styles.dots} aria-hidden="true">
           <i />
@@ -78,7 +77,6 @@ function Workbench() {
             </div>
             <div className={clsx(styles.card, styles.cardNew)}>
               <span className={styles.crumb}>overdue · collection · loans.All</span>
-              <strong className={styles.cardTitle}>Overdue loans</strong>
               <table className={styles.miniTable}>
                 <thead>
                   <tr>
@@ -275,7 +273,7 @@ function RealScreens() {
         <Shot
           className={styles.shotMain}
           src="img/screens/proposal.png"
-          alt="uilab with a proposal waiting for review: the INSERT card and diff in the sidebar, the new Overdue loans section highlighted in green on the canvas"
+          alt="uilab with a proposal waiting for review: the INSERT card and diff in the sidebar, the new overdue section highlighted in green on the canvas"
         />
         <div className={styles.shotRow}>
           {shots.map((shot) => (

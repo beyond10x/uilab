@@ -142,7 +142,7 @@ metric and the list are the page's own.
 `list_page` contributes the page state `search`, `page`, `size` and `sort`, a header showing the
 title and the total of `list`, and two sections: `filters`, a `filter_bar` bound to `state.search`,
 and `list`, a `collection`. The page's own `list` is merged over the kind's by name; `filters` is
-inherited and is shown on the canvas marked as inherited.
+inherited: the canvas draws it with a dashed outline and the tree marks it **inherited**.
 
 `as: badge` renders a column as a badge. `row_actions` puts an **Extend** action on every row that
 `opens` the overlay `edit`. The overlay is a `drawer` holding a `form` whose submit runs the ESS
