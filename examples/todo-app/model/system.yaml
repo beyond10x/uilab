@@ -1,0 +1,28 @@
+format: ess/20
+system: todo
+version: v1
+summary: A todo list where a task can be blocked by another task.
+domains: [todo.tasks]
+
+components:
+  - component: todo-service
+    owns: {domains: [todo.tasks]}
+    accepts:
+      commands:
+        - todo.tasks.AddTask
+        - todo.tasks.RenameTask
+        - todo.tasks.BlockTask
+        - todo.tasks.UnblockTask
+        - todo.tasks.CompleteTask
+        - todo.tasks.ReopenTask
+        - todo.tasks.DeleteTask
+    publishes:
+      events:
+        - todo.tasks.TaskAdded
+        - todo.tasks.TaskRenamed
+        - todo.tasks.TaskBlocked
+        - todo.tasks.TaskUnblocked
+        - todo.tasks.TaskCompleted
+        - todo.tasks.TaskReopened
+        - todo.tasks.TaskDeleted
+    reached_by: network

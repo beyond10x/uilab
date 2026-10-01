@@ -1,0 +1,192 @@
+domain: todo.tasks
+
+types:
+  - {name: todo.tasks.TaskId, kind: newtype, of: Uuid}
+  - {name: todo.tasks.Title, kind: newtype, of: String}
+
+entities:
+  - name: todo.tasks.Task
+    identity: {name: task_id, type: todo.tasks.TaskId}
+    fields:
+      - {name: title, type: todo.tasks.Title}
+      - {name: blocked_by, type: Optional<todo.tasks.TaskId>}
+    lifecycle:
+      initial: Open
+      states: [Open, Done]
+      terminal: []
+      transitions:
+        - {name: complete, from: [Open], to: Done}
+        - {name: reopen, from: [Done], to: Open}
+
+actors:
+  - name: todo.tasks.User
+    may:
+      - todo.tasks.AddTask
+      - todo.tasks.RenameTask
+      - todo.tasks.BlockTask
+      - todo.tasks.UnblockTask
+      - todo.tasks.CompleteTask
+      - todo.tasks.ReopenTask
+      - todo.tasks.DeleteTask
+
+errors:
+  - name: todo.tasks.AlreadyDone
+    summary: The task is already done.
+    fields:
+      - {name: state, type: todo.tasks.Task.State}
+  - name: todo.tasks.NotDone
+    summary: Only a done task can be reopened.
+    fields:
+      - {name: state, type: todo.tasks.Task.State}
+  - name: todo.tasks.UnknownBlocker
+    summary: The blocking task does not exist.
+    fields:
+      - {name: blocker_id, type: todo.tasks.TaskId}
+
+commands:
+  - name: todo.tasks.AddTask
+    input:
+      - {name: title, type: todo.tasks.Title}
+    outcomes:
+      - name: added
+        creates: todo.tasks.Task
+        instance: task_id
+        sets: {title: input.title}
+        emits: [todo.tasks.TaskAdded]
+        payload:
+          todo.tasks.TaskAdded: {task_id: {generated: true}, title: input.title}
+
+  - name: todo.tasks.RenameTask
+    input:
+      - {name: task_id, type: todo.tasks.TaskId}
+      - {name: title, type: todo.tasks.Title}
+    outcomes:
+      - name: renamed
+        updates: todo.tasks.Task
+        instance: task_id
+        sets: {title: input.title}
+        emits: [todo.tasks.TaskRenamed]
+        payload:
+          todo.tasks.TaskRenamed: {task_id: input.task_id, title: input.title}
+
+  - name: todo.tasks.BlockTask
+    input:
+      - {name: task_id, type: todo.tasks.TaskId}
+      - {name: blocker_id, type: todo.tasks.TaskId}
+    outcomes:
+      - name: unknown-blocker
+        when_related: {via: input.blocker_id, exists: false}
+        error: todo.tasks.UnknownBlocker
+        payload:
+          todo.tasks.UnknownBlocker: {blocker_id: input.blocker_id}
+      - name: blocked
+        updates: todo.tasks.Task
+        instance: task_id
+        sets: {blocked_by: input.blocker_id}
+        emits: [todo.tasks.TaskBlocked]
+        payload:
+          todo.tasks.TaskBlocked: {task_id: input.task_id, blocker_id: input.blocker_id}
+
+  - name: todo.tasks.UnblockTask
+    input:
+      - {name: task_id, type: todo.tasks.TaskId}
+    outcomes:
+      - name: unblocked
+        updates: todo.tasks.Task
+        instance: task_id
+        sets: {blocked_by: {cleared: true}}
+        emits: [todo.tasks.TaskUnblocked]
+        payload:
+          todo.tasks.TaskUnblocked: {task_id: input.task_id}
+
+  - name: todo.tasks.CompleteTask
+    input:
+      - {name: task_id, type: todo.tasks.TaskId}
+    outcomes:
+      - name: completed
+        moves: todo.tasks.Task.complete
+        instance: task_id
+        emits: [todo.tasks.TaskCompleted]
+        payload:
+          todo.tasks.TaskCompleted: {task_id: input.task_id}
+      - name: already-done
+        wrong_state: true
+        error: todo.tasks.AlreadyDone
+
+  - name: todo.tasks.ReopenTask
+    input:
+      - {name: task_id, type: todo.tasks.TaskId}
+    outcomes:
+      - name: reopened
+        moves: todo.tasks.Task.reopen
+        instance: task_id
+        emits: [todo.tasks.TaskReopened]
+        payload:
+          todo.tasks.TaskReopened: {task_id: input.task_id}
+      - name: not-done
+        wrong_state: true
+        error: todo.tasks.NotDone
+
+  - name: todo.tasks.DeleteTask
+    input:
+      - {name: task_id, type: todo.tasks.TaskId}
+    outcomes:
+      - name: deleted
+        deletes: todo.tasks.Task
+        instance: task_id
+        emits: [todo.tasks.TaskDeleted]
+        payload:
+          todo.tasks.TaskDeleted: {task_id: input.task_id}
+
+events:
+  - name: todo.tasks.TaskAdded
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+      - {name: title, type: todo.tasks.Title}
+  - name: todo.tasks.TaskRenamed
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+      - {name: title, type: todo.tasks.Title}
+  - name: todo.tasks.TaskBlocked
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+      - {name: blocker_id, type: todo.tasks.TaskId}
+  - name: todo.tasks.TaskUnblocked
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+  - name: todo.tasks.TaskCompleted
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+  - name: todo.tasks.TaskReopened
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+  - name: todo.tasks.TaskDeleted
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+
+views:
+  - name: todo.tasks.Tasks
+    source: todo.tasks.Task
+    consistency: read_your_writes
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+      - {name: title, type: todo.tasks.Title}
+      - {name: blocked_by, type: Optional<todo.tasks.TaskId>}
+      - {name: state, type: todo.tasks.Task.State}
+  - name: todo.tasks.OpenTasks
+    source: todo.tasks.Task
+    consistency: read_your_writes
+    filter: state == Open
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+      - {name: title, type: todo.tasks.Title}
+      - {name: blocked_by, type: Optional<todo.tasks.TaskId>}
+      - {name: state, type: todo.tasks.Task.State}
+  - name: todo.tasks.DoneTasks
+    source: todo.tasks.Task
+    consistency: read_your_writes
+    filter: state == Done
+    fields:
+      - {name: task_id, type: todo.tasks.TaskId}
+      - {name: title, type: todo.tasks.Title}
+      - {name: state, type: todo.tasks.Task.State}
