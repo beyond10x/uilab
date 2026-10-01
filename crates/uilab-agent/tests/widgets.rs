@@ -180,13 +180,14 @@ fn an_answer_declaring_a_widget_and_using_it_is_admitted() {
 
     let seen = seen.lock().unwrap();
     assert_eq!(seen.len(), 1);
-    let offered = &seen[0].tools[0].input_schema["properties"]["child"]["oneOf"];
+    // `child` picks its layer by `if`/`then` on `layer`.
+    let offered = &seen[0].tools[0].input_schema["properties"]["child"]["allOf"];
     assert!(
         offered
             .as_array()
             .unwrap()
             .iter()
-            .any(|variant| variant["properties"]["layer"]["const"] == "component"),
+            .any(|entry| entry["then"]["properties"]["layer"]["const"] == "component"),
         "the root's patch schema offers a widget: {offered}"
     );
 }
@@ -333,7 +334,7 @@ fn a_request_at_the_root_naming_a_page_lists_its_sections_with_their_columns() {
     let user = texts(&seen.lock().unwrap()[0]);
     assert!(user.contains("page:members/section:list"), "{user}");
     assert!(
-        user.contains("columns name, joined, loans, standing (as tag)"),
+        user.contains("columns name, joined, loans, standing (as badge)"),
         "{user}"
     );
     assert!(
@@ -374,7 +375,7 @@ fn a_request_at_a_section_lists_no_other_places() {
         "op": "replace",
         "target": "page:members/section:list",
         "node": {"component": "collection", "reads": {"view": "members.All"},
-                 "columns": [{"field": "name", "label": "Member"}, {"field": "joined"}, {"field": "loans"}, {"field": "standing", "as": "tag"}]}
+                 "columns": [{"field": "name", "label": "Member"}, {"field": "joined"}, {"field": "loans"}, {"field": "standing", "as": "badge"}]}
     })]);
     proposer
         .propose(

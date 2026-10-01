@@ -977,9 +977,14 @@ impl TryFrom<serde_json::Map<String, Value>> for Node {
                 serde_json::from_value(Value::Object(map))
                     .map_err(|e| format!("node `{name}`: {e}"))?,
             ),
-            _ => {
+            (true, true) => {
                 return Err(format!(
-                    "node `{name}` has exactly one of `component` and `primitive`"
+                    "node `{name}` has both `component` and `primitive`; a node has exactly one"
+                ));
+            }
+            (false, false) => {
+                return Err(format!(
+                    "node `{name}` has neither `component` nor `primitive`; a node has exactly one"
                 ));
             }
         };

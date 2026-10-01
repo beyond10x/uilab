@@ -110,12 +110,12 @@ fn a_path_survives_a_sibling_insert() {
 fn patch_schema_offers_only_what_the_node_can_take() {
     let doc = library();
     let layers = |schema: serde_json::Value| -> Vec<String> {
-        schema["properties"]["child"]["oneOf"]
+        schema["properties"]["child"]["allOf"]
             .as_array()
             .map(|v| {
                 v.iter()
                     .map(|c| {
-                        c["properties"]["layer"]["const"]
+                        c["then"]["properties"]["layer"]["const"]
                             .as_str()
                             .unwrap()
                             .to_owned()
@@ -151,7 +151,7 @@ fn patch_schema_offers_only_what_the_node_can_take() {
         json!(["insert", "batch", "decline"])
     );
     assert_eq!(layers(root.clone()), ["shell", "page", "component"]);
-    let nav = &root["properties"]["child"]["oneOf"][1]["properties"]["nav_section"]["enum"];
+    let nav = &root["properties"]["child"]["allOf"][1]["then"]["properties"]["nav_section"]["enum"];
     assert_eq!(nav, &json!(["circulation", "people"]));
 }
 
@@ -1178,12 +1178,12 @@ fn widgets_and_their_nodes_are_patched_by_path() {
 fn the_patch_schema_offers_widgets_and_nodes() {
     let doc = with_widgets();
     let layers = |schema: &serde_json::Value| -> Vec<String> {
-        schema["properties"]["child"]["oneOf"]
+        schema["properties"]["child"]["allOf"]
             .as_array()
             .map(|v| {
                 v.iter()
                     .map(|c| {
-                        c["properties"]["layer"]["const"]
+                        c["then"]["properties"]["layer"]["const"]
                             .as_str()
                             .unwrap()
                             .to_owned()
@@ -1194,7 +1194,7 @@ fn the_patch_schema_offers_widgets_and_nodes() {
     };
     let root = patch_schema(&doc, &NodePath::root()).unwrap();
     assert_eq!(layers(&root), ["shell", "page", "component"]);
-    let component = &root["properties"]["child"]["oneOf"][2];
+    let component = &root["properties"]["child"]["allOf"][2]["then"];
     assert_eq!(
         component["properties"]["node"]["$ref"],
         json!("#/$defs/widget_declaration")
@@ -1207,13 +1207,16 @@ fn the_patch_schema_offers_widgets_and_nodes() {
         json!(["insert", "replace", "remove", "batch", "decline"])
     );
     assert_eq!(
-        card["properties"]["child"]["oneOf"][0]["properties"]["node"]["$ref"],
-        json!("#/$defs/node")
+        card["properties"]["child"]["allOf"][0]["then"]["properties"]["node"]["$ref"],
+        json!("#/$defs/body_node")
     );
 
     let title = patch_schema(&doc, &path("component:loan_card/node:title")).unwrap();
     assert!(title["properties"].get("child").is_none());
-    assert_eq!(title["properties"]["node"]["$ref"], json!("#/$defs/node"));
+    assert_eq!(
+        title["properties"]["node"]["$ref"],
+        json!("#/$defs/body_node")
+    );
 
     let defs = &root["$defs"];
     let components = defs["composite"]["properties"]["component"]["enum"]
@@ -1229,7 +1232,7 @@ fn the_patch_schema_offers_widgets_and_nodes() {
         .as_array()
         .unwrap();
     assert_eq!(primitives.len(), 9);
-    assert!(defs["node"]["oneOf"].is_array());
+    assert_eq!(defs["node"]["if"], json!({"required": ["primitive"]}));
     assert!(defs["widget_declaration"]["properties"]["body"].is_object());
     let patch_layers = defs["patch"]["properties"]["child"]["properties"]["layer"]["enum"]
         .as_array()
@@ -1899,15 +1902,16 @@ fn item_nodes_are_patched_by_path() {
 
     let schema = patch_schema(&doc, &list).unwrap();
     assert_eq!(
-        schema["properties"]["child"]["oneOf"][0]["properties"]["node"]["$ref"],
+        schema["properties"]["child"]["allOf"][0]["then"]["properties"]["node"]["$ref"],
         json!("#/$defs/node"),
         "an item may be a primitive"
     );
     let at_card = patch_schema(&doc, &path("page:overview/section:list/item:card")).unwrap();
     assert_eq!(at_card["properties"]["node"]["$ref"], json!("#/$defs/node"));
     assert_eq!(
-        schema["$defs"]["composite"]["properties"]["item"]["type"],
-        json!("array")
+        schema["$defs"]["collection"]["properties"]["item"]["type"],
+        json!("array"),
+        "a collection's `item` is a list (typed once, in the kind's definition)"
     );
 }
 
