@@ -333,7 +333,7 @@ fn a_request_at_the_root_naming_a_page_lists_its_sections_with_their_columns() {
     let user = texts(&seen.lock().unwrap()[0]);
     assert!(user.contains("page:members/section:list"), "{user}");
     assert!(
-        user.contains("columns name, joined, loans, standing (as tag)"),
+        user.contains("columns name, joined, loans, standing (as badge)"),
         "{user}"
     );
     assert!(

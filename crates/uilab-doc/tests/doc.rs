@@ -1208,12 +1208,15 @@ fn the_patch_schema_offers_widgets_and_nodes() {
     );
     assert_eq!(
         card["properties"]["child"]["oneOf"][0]["properties"]["node"]["$ref"],
-        json!("#/$defs/node")
+        json!("#/$defs/body_node")
     );
 
     let title = patch_schema(&doc, &path("component:loan_card/node:title")).unwrap();
     assert!(title["properties"].get("child").is_none());
-    assert_eq!(title["properties"]["node"]["$ref"], json!("#/$defs/node"));
+    assert_eq!(
+        title["properties"]["node"]["$ref"],
+        json!("#/$defs/body_node")
+    );
 
     let defs = &root["$defs"];
     let components = defs["composite"]["properties"]["component"]["enum"]
@@ -1906,8 +1909,9 @@ fn item_nodes_are_patched_by_path() {
     let at_card = patch_schema(&doc, &path("page:overview/section:list/item:card")).unwrap();
     assert_eq!(at_card["properties"]["node"]["$ref"], json!("#/$defs/node"));
     assert_eq!(
-        schema["$defs"]["composite"]["properties"]["item"]["type"],
-        json!("array")
+        schema["$defs"]["collection"]["properties"]["item"]["type"],
+        json!("array"),
+        "a collection's `item` is a list (typed once, in the kind's definition)"
     );
 }
 

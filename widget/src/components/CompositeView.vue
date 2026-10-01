@@ -145,7 +145,7 @@ function display(v: unknown): string {
         <tbody v-if="!emptyLine">
           <tr v-for="(r, i) in rowObjects" :key="i">
             <td v-for="c in columns" :key="c.field">
-              <span v-if="c.as === 'tag'" class="tag">{{ display(r[c.field]) }}</span>
+              <span v-if="c.as === 'badge' || c.as === 'tag'" class="tag">{{ display(r[c.field]) }}</span>
               <template v-else>{{ display(r[c.field]) }}</template>
             </td>
             <td v-if="rowActions.length" class="actions">

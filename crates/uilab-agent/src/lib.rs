@@ -1302,7 +1302,7 @@ fn named_pages<'a>(doc: &'a Document, target: &NodePath, utterance: &str) -> Vec
         .collect()
 }
 
-/// A section's columns, as `name, standing (as tag)`.
+/// A section's columns, as `name, standing (as badge)`.
 fn columns(composite: &uilab_doc::model::Composite) -> Option<String> {
     let columns = composite.props.get("columns")?.as_array()?;
     Some(

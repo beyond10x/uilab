@@ -104,8 +104,8 @@ fn loads_only_ess_ui() {
         ),
         // the draft's map of sections
         text.replacen(
-            "    sections:\n      - name: list\n        component: collection\n        reads: {view: members.All}\n        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: tag}]",
-            "    sections:\n      list:\n        component: collection\n        reads: {view: members.All}\n        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: tag}]",
+            "    sections:\n      - name: list\n        component: collection\n        reads: {view: members.All}\n        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: badge}]",
+            "    sections:\n      list:\n        component: collection\n        reads: {view: members.All}\n        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: badge}]",
             1,
         ),
         // a board without its read
@@ -243,8 +243,8 @@ fn sections_are_named_lists() {
     // The written YAML keeps the authored key order, also where it is not the usual one.
     let authored = library_text()
         .replacen(
-            "      - name: list\n        component: collection\n        reads: {view: members.All}\n        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: tag}]",
-            "      - columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: tag}]\n        reads: {view: members.All}\n        name: list\n        component: collection",
+            "      - name: list\n        component: collection\n        reads: {view: members.All}\n        columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: badge}]",
+            "      - columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: badge}]\n        reads: {view: members.All}\n        name: list\n        component: collection",
             1,
         )
         .replacen("model: library\n", "", 1)
@@ -304,7 +304,7 @@ fn saves_authored_only() {
     let late = json!({"component": "collection", "reads": {"view": "loans.All"}, "columns": [{"field": "title"}]});
     let mut replaced_list: serde_json::Value = serde_json::to_value(loans_list).unwrap();
     replaced_list.as_object_mut().unwrap().remove("name");
-    replaced_list["columns"] = json!([{"field": "title"}, {"field": "member"}, {"field": "due"}, {"field": "state", "as": "tag"}, {"field": "id"}]);
+    replaced_list["columns"] = json!([{"field": "title"}, {"field": "member"}, {"field": "due"}, {"field": "state", "as": "badge"}, {"field": "id"}]);
 
     let cases: Vec<(&str, Patch, Expect)> = vec![
         (
@@ -333,7 +333,7 @@ fn saves_authored_only() {
             },
             Box::new(|d: &mut Yaml| {
                 d["pages"]["loans"]["sections"][0]["columns"] = yaml(
-                    "[{field: title}, {field: member}, {field: due}, {field: state, as: tag}, {field: id}]",
+                    "[{field: title}, {field: member}, {field: due}, {field: state, as: badge}, {field: id}]",
                 );
             }),
         ),
