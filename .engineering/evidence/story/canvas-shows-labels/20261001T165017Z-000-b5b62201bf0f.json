@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-01T16:50:17Z",
+  "actor": "human:timo",
+  "artifact": "story:canvas-shows-labels",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task check steps on wave/2026-10-01-w11 at beaad0b: validate, drift, ui, widget 403 (0 failed), cargo 385 passed, clippy, fmt; EXIT=0"
+  }
+}

@@ -305,10 +305,11 @@ export function previewNode(node: OutlineNode, args: Record<string, unknown>): O
 }
 
 /** How the canvas draws a primitive. */
-export type PrimitiveShape = 'heading' | 'text' | 'badge' | 'image' | 'link' | 'button' | 'rule' | 'placeholder';
+export type PrimitiveShape = 'heading' | 'text' | 'badge' | 'image' | 'link' | 'button' | 'icon' | 'input' | 'toggle' | 'rule' | 'placeholder';
 
 /** How the canvas draws a primitive of this kind: a `divider` as a horizontal rule, a `text` styled
- *  `heading` as a heading; a kind the canvas has no drawing for as the placeholder box. */
+ *  `heading` as a heading, an `icon` by its label, an `input` with its placeholder, a `toggle` as a
+ *  switch with its label; a kind the canvas has no drawing for as the placeholder box. */
 export function primitiveShape(node: OutlineNode): PrimitiveShape {
   switch (node.kind) {
     case 'text':
@@ -319,9 +320,33 @@ export function primitiveShape(node: OutlineNode): PrimitiveShape {
     case 'image':
     case 'link':
     case 'button':
+    case 'icon':
+    case 'input':
+    case 'toggle':
       return node.kind;
     default:
       return 'placeholder';
+  }
+}
+
+/** The words a primitive shows, as PrimitiveView draws them: a text, badge or link its `text`; a
+ *  button, toggle or icon its `label`; an image its `alt`; an input its `placeholder`; a divider
+ *  none. */
+export function primitiveWords(node: OutlineNode): string {
+  const p = propsOf(node);
+  switch (node.kind) {
+    case 'divider':
+      return '';
+    case 'image':
+      return displayValue(p.alt ?? '');
+    case 'input':
+      return displayValue(p.placeholder ?? '');
+    case 'button':
+    case 'toggle':
+    case 'icon':
+      return displayValue(p.label ?? p.text ?? '');
+    default:
+      return displayValue(p.text ?? p.label ?? '');
   }
 }
 

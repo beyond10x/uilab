@@ -47,7 +47,7 @@ test('a divider is a rule; the other drawn primitives keep their shapes', () => 
   assert.equal(primitiveShape(prim('image')), 'image');
   assert.equal(primitiveShape(prim('link')), 'link');
   assert.equal(primitiveShape(prim('button')), 'button');
-  assert.equal(primitiveShape(prim('toggle')), 'placeholder');
+  assert.equal(primitiveShape(prim('toggle')), 'toggle');
 });
 
 test('the canvas draws a divider as a horizontal rule, not the placeholder box', async () => {
