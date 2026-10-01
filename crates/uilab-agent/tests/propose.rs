@@ -215,12 +215,30 @@ fn two_refusals_are_refused() {
 #[test]
 fn an_answer_that_is_not_a_patch_is_refused_as_patch_shape_and_retried() {
     let doc = library();
-    // The schema does not tie `child` to `insert`, so this passes the loop and fails the patch.
-    let no_child = json!({"op": "insert", "target": "page:loans"});
-    let (mut proposer, seen) = proposer(vec![no_child, overdue_section()]);
+    // A batch's patches name their own targets as strings, so one that is no node path passes the
+    // schema and the loop, and fails the patch.
+    let no_path = json!({"op": "batch", "target": "page:loans", "patches": [
+        {"op": "remove", "target": "page:loans/overlay:edit"},
+        {"op": "remove", "target": "not a path"},
+    ]});
+    let (mut proposer, seen) = proposer(vec![no_path, overdue_section()]);
     let proposal = proposer.propose(&doc, &loans(), "add a table").unwrap();
     assert_eq!(proposal.attempts, 2);
     assert!(texts(&seen.lock().unwrap()[1]).contains("patch_shape: "));
+}
+
+/// story:essui-agent-schema: the schema ties `child` to `insert` (and `node` to `replace`), so an
+/// insert without its child no longer reaches uilab as a `patch_shape` refusal: the loop holds it
+/// to the published schema and the model answers again in the same attempt.
+#[test]
+fn an_insert_without_its_child_is_refused_by_the_schema_in_the_loop() {
+    let doc = library();
+    let no_child = json!({"op": "insert", "target": "page:loans"});
+    let (mut proposer, seen) = proposer(vec![no_child, overdue_section()]);
+    let proposal = proposer.propose(&doc, &loans(), "add a table").unwrap();
+    assert_eq!(proposal.attempts, 1, "no uilab retry was spent");
+    assert_eq!(proposal.turns, 2, "the loop asked again");
+    assert_eq!(seen.lock().unwrap().len(), 2);
 }
 
 #[test]
@@ -741,11 +759,13 @@ fn a_planner_target_that_names_no_node_or_a_zero_cap_is_refused_before_any_turn(
     assert!(seen.lock().unwrap().is_empty());
 }
 
-/// One sent prompt: which run it opened, its instructions and its user text.
+/// One sent prompt: which run it opened, its instructions, its user text and the schema of the
+/// tool it answers with.
 struct Sent {
     run: &'static str,
     instructions: String,
     user: String,
+    schema: Value,
 }
 
 /// The first request of every kind of run the agent makes at `page:loans`: a plain proposal, a
@@ -763,6 +783,7 @@ fn sent_prompts() -> Vec<Sent> {
             run,
             instructions: request.instructions.clone(),
             user: texts(request),
+            schema: schema_of(request).clone(),
         }
     };
     let mut sent = Vec::new();
@@ -867,29 +888,71 @@ fn prompt_has_no_draft_views() {
     }
 }
 
-/// The members of ESS's composite union (`ess-ui/1`, `Composite.union.members`), the kinds a
-/// section holds. The second half of story:essui-agent-schema reads them from `ess_ui::SCHEMA`.
-const SECTION_KINDS: [&str; 12] = [
-    "collection",
-    "record",
-    "form",
-    "choice",
-    "filter_bar",
-    "confirm",
-    "metric",
-    "chart",
-    "board",
-    "graph_editor",
-    "rich_text",
-    "references",
-];
+/// The kinds a section holds: the members of ESS's composite union, read from the schema this
+/// build of ESS embeds (`Composite.union.members`).
+fn section_kinds() -> Vec<String> {
+    let schema: serde_yaml::Value =
+        serde_yaml::from_str(uilab_doc::ess_ui::SCHEMA).expect("the ESS schema is YAML");
+    let members = schema["constructs"]["Composite"]["union"]["members"]
+        .as_sequence()
+        .expect("ESS declares the composite union's members");
+    members
+        .iter()
+        .map(|m| m.as_str().expect("a member is a name").to_owned())
+        .collect()
+}
 
-/// story:essui-agent-schema, prompt half: an `ess-ui/1` section has no `title`. No section kind's
-/// entry in the instructions offers one, and every sentence of the instructions that says
-/// "title" is about a page, an overlay or a page header, or says there is none.
+/// Every composite or widget variant in `schema` that is not an overlay: an object schema whose
+/// `properties` hold `component` and no overlay `kind`. Found by walking the whole schema, so no
+/// definition name is assumed.
+fn composite_variants<'a>(schema: &'a Value, out: &mut Vec<&'a Value>) {
+    match schema {
+        Value::Object(object) => {
+            if let Some(properties) = object.get("properties").and_then(Value::as_object)
+                && properties.contains_key("component")
+                && !properties.contains_key("kind")
+            {
+                out.push(schema);
+            }
+            for value in object.values() {
+                composite_variants(value, out);
+            }
+        }
+        Value::Array(values) => values.iter().for_each(|v| composite_variants(v, out)),
+        _ => {}
+    }
+}
+
+/// story:essui-agent-schema: an `ess-ui/1` section has no `title`. No section kind's entry in the
+/// instructions offers one; every sentence of the instructions that says "title" is about a page,
+/// an overlay or a page header, or says there is none; and no section or nested composite in the
+/// schema sent with the prompt has a `title` field (an overlay does: ESS's overlay frame has one).
 #[test]
 fn prompt_offers_no_section_title() {
-    for kind in SECTION_KINDS {
+    let kinds = section_kinds();
+    assert_eq!(kinds.len(), 12, "ESS 0.48.0 has 12 composite kinds");
+    for sent in sent_prompts() {
+        let mut variants = Vec::new();
+        composite_variants(&sent.schema, &mut variants);
+        if sent.run != "plan_goal" {
+            // Every kind as a section and nested, at least.
+            assert!(
+                variants.len() >= 2 * kinds.len(),
+                "{}: {} composite variants in the schema",
+                sent.run,
+                variants.len()
+            );
+        }
+        for variant in variants {
+            assert!(
+                variant["properties"].get("title").is_none(),
+                "{}: the schema offers a section or nested composite a `title`: {}",
+                sent.run,
+                variant["properties"]["component"]
+            );
+        }
+    }
+    for kind in &kinds {
         let entry = format!("- {kind}:");
         let line = INSTRUCTIONS
             .lines()

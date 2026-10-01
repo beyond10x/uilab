@@ -374,7 +374,7 @@ fn a_request_at_a_section_lists_no_other_places() {
         "op": "replace",
         "target": "page:members/section:list",
         "node": {"component": "collection", "reads": {"view": "members.All"},
-                 "columns": [{"field": "name", "label": "Member"}, {"field": "joined"}, {"field": "loans"}, {"field": "standing", "as": "tag"}]}
+                 "columns": [{"field": "name", "label": "Member"}, {"field": "joined"}, {"field": "loans"}, {"field": "standing", "as": "badge"}]}
     })]);
     proposer
         .propose(
