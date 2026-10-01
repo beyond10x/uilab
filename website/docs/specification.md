@@ -1,19 +1,20 @@
 ---
 title: The specification
 sidebar_position: 2
-description: ui-spec/1 read line by line from the lending-library example, and how uilab relates to ESS.
+description: ess-ui/1 read line by line from the lending-library example, and how uilab relates to ESS.
 ---
 
 # The specification
 
 This page reads `examples/library/library.ui.yaml` — the lending-library app uilab ships as its
 example — from top to bottom. It is short enough to read whole, and it uses most of what a
-list-and-detail back-office screen needs.
+list-and-detail back-office screen needs. The format is `ess-ui/1`, which ESS defines; its
+[reference](https://beyond10x.github.io/ess/docs/reference/ess-ui) lists every construct and field.
 
 ## Header
 
 ```yaml
-format: ui-spec/1
+format: ess-ui/1
 app: library
 title: Lending library
 model: library
@@ -22,22 +23,25 @@ placement_profile: fat
 
 `format` marks the file. `app` and `title` name the application. `model` names the ESS model whose
 views (`loans.All`) and commands (`loans.ExtendLoan`) the document refers to. `placement_profile`
-is carried through from `ui-spec/1`; uilab shows it in the Docs view.
+says where UI state lives — `fat` keeps it in the browser; uilab shows it in the Docs view.
 
 ## Sample data
 
 ```yaml
-fixtures:
-  dir: fixtures
-  views:
-    loans.All: loans.yaml
-    loans.Summary: loans.yaml
-    members.All: members.yaml
-    staff.Me: staff.yaml
+fixtures: {dir: fixtures, index: fixtures/index.yaml}
 ```
 
-Each view the document reads gets rows from a fixture file, so the canvas renders without a
-backend. See [Drafts and sample data](./concepts/drafts-and-sample-data.md).
+```yaml title="fixtures/index.yaml"
+views:
+  loans.All: loans.yaml
+  loans.Summary: loans.yaml
+  members.All: members.yaml
+  staff.Me: staff.yaml
+```
+
+The document names a fixture directory and an index file; the index maps each view the document
+reads to a file of sample rows, so the canvas renders without a backend. See
+[Drafts and sample data](./concepts/drafts-and-sample-data.md).
 
 ## The frame
 
@@ -62,8 +66,7 @@ shells:
 ```
 
 A **shell** is an application frame. Its regions say where the menu, the current page, overlays,
-notifications and the account menu go. Pages render into the `page_outlet`; a shell a page renders
-in must have one.
+notifications and the account menu go. Pages render into the `page_outlet`.
 
 ## The menu
 
@@ -84,28 +87,35 @@ navigation:
 `home` is the start page. Every page appears in exactly one menu section or in `hidden`; the checks
 refuse a page nobody can reach and a menu entry for a page that does not exist.
 
-## A dashboard page
+## The overview page
 
 ```yaml
 pages:
   overview:
-    kind: dashboard_page
+    kind: detail_page
     title: Overview
     sections:
-      on_loan:
+      - name: on_loan
         component: metric
-        title: Copies on loan
+        label: Copies on loan
         reads: {view: loans.Summary}
         from: on_loan
-      recent:
+      - name: recent
         component: collection
-        title: Recent loans
         reads: {view: loans.All, params: {size: 5}}
         columns: [{field: title}, {field: member}, {field: due}]
 ```
 
-Sections are named and appear in layout order. A `metric` shows one number, taken `from` a field of
-the first row of its view. A `collection` shows rows; `params` are fixed parameters of the read.
+`sections` is a list, and each section carries its `name`; the list order is the order on the page.
+A `metric` shows one number, taken `from` a field of the first row of its view, with `label` as its
+caption.
+A `collection` shows rows; `params` are fixed parameters of the read. A section has no title of its
+own in `ess-ui/1` (requested in [beyond10x/ess#281](https://github.com/beyond10x/ess/issues/281)).
+
+The page's `kind` is a template. `detail_page` contributes a `summary` section, a `record`; this page
+does not write one, so it inherits it. The canvas shows what ESS expands — the sections a page kind
+contributes included, marked as inherited. A page could not use `dashboard_page` here: that kind
+contributes a `board` section, and a board must read a dashboard record.
 
 ## A list page with a drawer
 
@@ -114,7 +124,7 @@ the first row of its view. A `collection` shows rows; `params` are fixed paramet
     kind: list_page
     title: Loans
     sections:
-      list:
+      - name: list
         component: collection
         reads: {view: loans.All, paging: server}
         columns: [{field: title}, {field: member}, {field: due}, {field: state, as: tag}]
@@ -128,10 +138,15 @@ the first row of its view. A `collection` shows rows; `params` are fixed paramet
         fields: [due]
 ```
 
+`list_page` contributes the page state `search`, `page`, `size` and `sort`, a header showing the
+title and the total of `list`, and two sections: `filters`, a `filter_bar` bound to `state.search`,
+and `list`, a `collection`. The page's own `list` is merged over the kind's by name; `filters` is
+inherited and is shown on the canvas marked as inherited.
+
 `as: tag` renders a column as a tag. `row_actions` puts an **Extend** action on every row that
 `opens` the overlay `edit`. The overlay is a `drawer` holding a `form` whose submit runs the ESS
 command `loans.ExtendLoan` with the field `due`. The `opens_resolves` check holds that `edit` exists
-on this page or its shell.
+on this page, its kind or its shell.
 
 ## The last page
 
@@ -140,34 +155,34 @@ on this page or its shell.
     kind: list_page
     title: Members
     sections:
-      list:
+      - name: list
         component: collection
         reads: {view: members.All}
         columns: [{field: name}, {field: joined}, {field: loans}, {field: standing, as: tag}]
 ```
 
-That is the whole document: 79 lines, three pages, five composites.
+That is the whole document: three pages, four sections and one overlay written by hand, and the
+sections the page kinds add.
 
 ## What one instruction adds
 
 Selecting `page:overview` and saying *"add a table of overdue loans with title, member and due
-date"* produced this proposal, which was accepted as is:
+date"* asks for one new entry in that page's `sections` list:
 
 ```yaml
-overdue:
+- name: overdue
   component: collection
   reads:
     view: loans.All
     params:
       state: overdue
-  title: Overdue loans
   columns:
     - field: title
     - field: member
     - field: due
 ```
 
-The agent reused the existing view `loans.All` with a fixed `state` parameter — its rows carry a
+The read reuses the existing view `loans.All` with a fixed `state` parameter — its rows carry a
 `state` field — rather than inventing a new view.
 
 ## How uilab relates to ESS
@@ -180,9 +195,9 @@ touches it in three places:
 
 | Where | What |
 |---|---|
-| The document | `ui-spec/1` is ESS's UI specification format. A document's views and commands are names in an ESS model. The format is still being settled in ESS and is not part of a released ESS yet; uilab reads the subset it edits with its own reader, `crates/uilab-doc`. |
+| The document | `ess-ui/1` is ESS's UI specification format, released with ess 0.47.0; uilab follows ess 0.48.0. ESS's own loader expands a document and its checker decides what it may hold; uilab adds node paths and patches on top and writes only what ESS reads. A document's views and commands are names in an ESS model. The [reference](https://beyond10x.github.io/ess/docs/reference/ess-ui) is generated from the format's schema. |
 | uilab itself | uilab's session — documents, selection, proposals and who may accept them — and its browser↔server messages are specified in ESS in the repository's `ess/` directory. The Rust and TypeScript types and the conformance suite are generated from that specification, and the build fails when they drift. |
-| Drafts | a `draft.` view is a request to the ESS model: the UI needs this data, and the model does not have it yet. |
+| Placeholders | a read written as `reads: {placeholder, fixture}` is a request to the ESS model: the UI needs this data, and the model does not have it yet. |
 
 You do not need ESS installed to run uilab over a document. You need it to change uilab's own
-specification.
+specification, and `ess ui check --path <file>` checks a document the same way uilab does.

@@ -14,9 +14,9 @@ team implements the screens in its own stack. See
 
 ## Can I use my own design system on the canvas?
 
-Not today. The canvas renders the 14 built-in composite kinds, the nine primitives and your declared
-widgets with uilab's generic look. `ui-spec/1` has no style tokens yet. Map the kinds and widgets to
-your components when you implement.
+Not today. The canvas renders the composite kinds, the nine primitives and your declared widgets
+with uilab's generic look. `ess-ui/1` has no style tokens yet. Map the kinds and widgets to your
+components when you implement.
 
 ## Does anything change without me accepting it?
 
@@ -43,7 +43,7 @@ another model or Messages-compatible endpoint.
 
 ## Why did the agent refuse, or propose something odd?
 
-A proposal must pass the document checks; when it does not, the agent gets the refusal and one more
+A proposal must pass ESS's document checks; when it does not, the agent gets the refusal and one more
 try, and a second refusal is reported to you. Odd proposals are usually a selection problem: the
 agent works at the selected node, so select the table you mean before you say "add a column". The
 session journal (`events.jsonl`) records each instruction, the proposal or refusal, and timings.
@@ -67,11 +67,14 @@ server also exposes `/api/document.yaml`, `/api/docs.md` and `/api/help.md`.
 
 ## Where is the specification format defined?
 
-`ui-spec/1` belongs to [ESS](https://github.com/beyond10x/ess) and is still being settled there.
-uilab reads the subset it edits; [The specification](./specification.md) walks through it.
+In [ESS](https://github.com/beyond10x/ess). `ess-ui/1` is ESS's UI format, released with ess
+0.47.0, and its [reference](https://beyond10x.github.io/ess/docs/reference/ess-ui) is generated
+from its schema. uilab reads and writes only that format and has none of its own; a construct uilab
+needs and the format lacks is requested in ESS. [The specification](./specification.md) walks
+through the example document.
 
 ## Is uilab ready for production use?
 
-It is a working tool under active development; `ui-spec/1` itself is not released yet. Treat
-the specification it writes as a design artefact that your team reviews, not as an input your build
+It is a working tool under active development, and `ess-ui/1` is still young. Treat the
+specification it writes as a design artefact that your team reviews, not as an input your build
 depends on.

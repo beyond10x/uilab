@@ -140,7 +140,7 @@ function Hero() {
       <div className={styles.heroInner}>
         <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>
-            ui-spec/1 · <span className={styles.eyebrowWide}>browser workbench · </span>reviewed by you
+            ess-ui/1 · <span className={styles.eyebrowWide}>browser workbench · </span>reviewed by you
           </span>
           <Heading as="h1" className={styles.heroTitle}>
             Point at the screen.
@@ -290,7 +290,7 @@ function RealScreens() {
 const FEATURES = [
   {
     title: 'One file is the record',
-    text: 'A ui-spec/1 YAML document in your repository. Accepted changes are written back to it; review them in the pull request like any other diff.',
+    text: 'An ess-ui/1 YAML document, the UI format ESS publishes, in your repository. Accepted changes are written back to it; review them in the pull request like any other diff.',
     to: '/docs/concepts/the-document',
   },
   {
@@ -315,7 +315,7 @@ const FEATURES = [
   },
   {
     title: 'Drafts show the data gap',
-    text: 'When a screen needs data the model lacks, the agent reads a draft view instead of inventing one. The list becomes your backend hand-off.',
+    text: 'When a screen needs data the model lacks, the agent writes a placeholder read instead of inventing a view. The list becomes your backend hand-off.',
     to: '/docs/concepts/drafts-and-sample-data',
   },
   {
