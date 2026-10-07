@@ -6,9 +6,6 @@ vars:
   WIRE_ROOTS: --root uilab.wire.ClientMessage --root uilab.wire.ServerMessage
   CARGO_FEATURES: ''
 
-env:
-  CARGO_TARGET_DIR: '{{.HOME}}/.cache/b10x-target/uilab'
-
 tasks:
   default:
     cmds: [{task: check}]

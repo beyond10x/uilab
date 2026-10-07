@@ -36,14 +36,15 @@ is https://beyond10x.github.io/ess/docs/reference/ess-ui.
 - No company or customer names in this repository. Examples use the lending-library app in
   `examples/library/`.
 - Models (whisper ggml files) live in `~/.cache/uilab/models/`, never in the tree.
-- Build with `CARGO_TARGET_DIR=$HOME/.cache/b10x-target/uilab` (the Taskfile sets it). The
-  whisper.cpp build is large; check `df -h /` first.
+- Build into the tree's own `target/` and never set `CARGO_TARGET_DIR` (operator, 2026-10-06).
+  Never delete a `target/` by hand. The whisper.cpp build is large; check `df -h /` first.
 - Every worktree's work lands on `main` or on an integration branch (`wave/<date>-<n>`) that is
   merged into `main`; no branch is left unmerged at the end of a wave. When a wave or unit closes,
-  archive and remove its worktrees (`worktree archive`, `finish`, `gc --apply --id`), delete their
-  branches, and remove their build directories (`~/.cache/b10x-target/uilab-<unit>`), their
-  `node_modules`/`dist`, and their scratch under `~/.cache/`. Check `worktree list` and
-  `du -sh ~/.cache/b10x-target/uilab*` at each wave boundary (operator, 2026-09-30).
+  end each of its worktrees with `worktree finish --discard-cache --archive <tree>`, which deletes
+  the tree's recognised build cache and archives the rest, then remove it with
+  `worktree gc --apply --id <id>` on the ids `worktree gc --dry-run` lists. Delete their branches
+  and their scratch under `~/.cache/`. Check `worktree list` and `df -h /` at each wave boundary
+  (operator, 2026-09-30).
 
 ## Layout
 
