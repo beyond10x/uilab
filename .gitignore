@@ -3,3 +3,4 @@ target/
 .engineering/drafts/
 widget/node_modules/
 widget/dist/
+.ess-output/
