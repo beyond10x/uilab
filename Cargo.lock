@@ -2276,7 +2276,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "uilab-agent"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "b10x-harness-credential",
  "b10x-harness-loop",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "uilab-app"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "axum",
  "clap",
@@ -2316,7 +2316,7 @@ dependencies = [
 
 [[package]]
 name = "uilab-behaviour"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "indexmap",
  "serde_json",
@@ -2329,7 +2329,7 @@ dependencies = [
 
 [[package]]
 name = "uilab-doc"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "ess-ui",
  "ess-ui-check",
@@ -2349,7 +2349,7 @@ dependencies = [
 
 [[package]]
 name = "uilab-stt"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clap",
  "hound",
