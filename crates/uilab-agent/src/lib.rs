@@ -15,16 +15,18 @@
 //! [`Plan`] of at most N [`Step`]s, each an instruction `propose` can carry out at its target,
 //! held to [`check_plan`] with the same one retry.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use harness_llm::llm_credentials::SecretRef;
+use harness_llm::llm_credentials::environment::EnvironmentResolver;
+use harness_llm::{Presentation, Source};
 use harness_loop::{
     AgentLoop, Budget, DenyAll, LoopConfig, LoopError, NullLoopSink, OutputSchema, RateCard,
     RunLedger,
 };
-use harness_wire::{
-    Bearer, BearerSource, ModelPort, ToolCall, ToolOutcome, ToolPort, ToolSpec, WireError,
-};
+use harness_wire::{Cancel, ModelPort, ToolCall, ToolOutcome, ToolPort, ToolSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uilab_doc::{Document, Layer, NodeContext, NodePath, Patch, PathError, Refusal};
@@ -514,15 +516,17 @@ impl Proposer {
     /// [`ProposeError::Config`] for an endpoint that could not serve a request or a client that
     /// could not be built. The credential is read on each turn, not here.
     pub fn new(config: ProposerConfig) -> Result<Self, ProposeError> {
-        let endpoint = harness_messages::Endpoint::new(
-            config.base_url.clone(),
-            config.model.clone(),
-            config.context_window,
-        )
-        .map_err(|error| ProposeError::Config(error.to_string()))?;
-        let client = harness_messages::MessagesClient::new(endpoint, bearer(&config.credential))
-            .map_err(|error| ProposeError::Config(error.to_string()))?;
-        Ok(Self::with_port(&config, Box::new(client)))
+        let target = harness_llm::Target {
+            protocol: harness_llm::Protocol::Messages,
+            base_url: &config.base_url,
+            model: &config.model,
+            context_window: config.context_window,
+            max_output_tokens: None,
+        };
+        let source = source(&config.credential).map_err(ProposeError::Config)?;
+        let client = harness_llm::client(&target, Some(source), &Cancel::new())
+            .map_err(ProposeError::Config)?;
+        Ok(Self::with_port(&config, client))
     }
 
     /// A proposer over a model port the caller built: another wire, or a scripted one in a test.
@@ -897,15 +901,15 @@ fn describe_stop(stop: &harness_loop::LoopStop) -> String {
 }
 
 /// The credential source for a config. Read on every turn, so a renewed token is picked up.
-fn bearer(credential: &Credential) -> Arc<dyn BearerSource> {
+fn source(credential: &Credential) -> Result<Source, String> {
     match credential {
-        Credential::OauthFile { path, pointer } => Arc::new(
-            harness_credential::SubscriptionToken::new(harness_credential::NamedSource::file(
-                expand_home(path),
-            ))
-            .at_pointer(pointer.clone()),
-        ),
-        Credential::ApiKeyEnv { name } => Arc::new(EnvApiKey(name.clone())),
+        Credential::OauthFile { path, pointer } => Source::file(&expand_home(path), Some(pointer)),
+        Credential::ApiKeyEnv { name } => {
+            let reference = SecretRef::new("api-key-env").map_err(|error| error.to_string())?;
+            let resolver = EnvironmentResolver::new(BTreeMap::from([(reference, name.clone())]))
+                .map_err(|error| format!("the environment variable `{name}`: {error}"))?;
+            Source::resolver("api-key-env", Arc::new(resolver), Presentation::ApiKey)
+        }
     }
 }
 
@@ -913,26 +917,6 @@ fn expand_home(path: &std::path::Path) -> PathBuf {
     match (path.strip_prefix("~"), std::env::var_os("HOME")) {
         (Ok(rest), Some(home)) => PathBuf::from(home).join(rest),
         _ => path.to_path_buf(),
-    }
-}
-
-/// An API key in a named environment variable, presented as a key rather than a subscription
-/// token.
-struct EnvApiKey(String);
-
-impl BearerSource for EnvApiKey {
-    fn bearer(&self) -> Result<Bearer, WireError> {
-        match std::env::var(&self.0) {
-            Ok(value) if !value.trim().is_empty() => Ok(Bearer::new(value.trim())),
-            Ok(_) => Err(WireError::unauthorized(format!(
-                "the environment variable `{}` is empty",
-                self.0
-            ))),
-            Err(_) => Err(WireError::unauthorized(format!(
-                "the environment variable `{}` is not set",
-                self.0
-            ))),
-        }
     }
 }
 

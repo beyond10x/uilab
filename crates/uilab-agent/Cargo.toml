@@ -15,10 +15,9 @@ path = "src/bin/uilab-propose.rs"
 
 [dependencies]
 uilab-doc = { workspace = true }
-harness-loop = { package = "b10x-harness-loop", git = "https://github.com/beyond10x/harness", rev = "798325f03cf5a18df8fadb346d31b314826136ec" }
-harness-messages = { package = "b10x-harness-messages", git = "https://github.com/beyond10x/harness", rev = "798325f03cf5a18df8fadb346d31b314826136ec" }
-harness-wire = { package = "b10x-harness-wire", git = "https://github.com/beyond10x/harness", rev = "798325f03cf5a18df8fadb346d31b314826136ec" }
-harness-credential = { package = "b10x-harness-credential", git = "https://github.com/beyond10x/harness", rev = "798325f03cf5a18df8fadb346d31b314826136ec" }
+harness-loop = { package = "b10x-harness-loop", git = "https://github.com/beyond10x/harness", tag = "0.15.0" }
+harness-wire = { package = "b10x-harness-wire", git = "https://github.com/beyond10x/harness", tag = "0.15.0" }
+harness-llm = { package = "b10x-harness-llm", git = "https://github.com/beyond10x/harness", tag = "0.15.0" }
 clap = { version = "4", features = ["derive"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
