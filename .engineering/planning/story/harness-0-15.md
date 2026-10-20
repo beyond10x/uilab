@@ -2,15 +2,16 @@
 format: aep.planning-md/3
 id: story:harness-0-15
 kind: story
-status: active
+status: implemented
 title: Move to harness 0.15.0 (Substrate 0.7.17)
 summary: uilab-agent on harness 0.15.0 and llm 0.8.0 through harness's public llm adapter (Atlas ADR 0097)
 relations:
 - serves: vision:website-harness
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-20T10:57:49Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-10-20T10:57:49Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-10-20T14:30:33Z", actor: "human:timo", revision: 5, decided_on: {"asserted":{"test_result":1}}}
 ---
 ## Outcome
 
