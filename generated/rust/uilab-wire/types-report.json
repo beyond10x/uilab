@@ -8,7 +8,7 @@
     "contract_digest": "slice-sha256/2:d1e424a9fbbb2455da85e1618a99afe7866e45e1b8850c5d34a8e9f75846934b",
     "projection_digest": "bda235c50db4993b86533844da57299009583386c423eb5ef51b33c98ffca809"
   },
-  "generator_version": "0.48.0",
+  "generator_version": "0.67.0",
   "target": "rust",
   "configuration": {
     "language": "rust",
@@ -763,12 +763,22 @@
     {
       "pointer": "/$defs/uilab.wire.Changed/properties/revision",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Changed/properties/revision",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.ClientMessage",
       "rule": "oneOf",
       "detail": "validate exclusive branch membership against the source schema"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ClientMessage",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.ClientMessage",
@@ -778,32 +788,72 @@
     {
       "pointer": "/$defs/uilab.wire.DocumentState/properties/revision",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.DocumentState/properties/revision",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.Goal/properties/current",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Goal/properties/current",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.Operator/properties/last_seen_ms",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Operator/properties/last_seen_ms",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.OutlineNode/properties/props",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.Resync/properties/revision",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Resync/properties/revision",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Rows/properties/rows/items",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.Rows/properties/total",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Rows/properties/total",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.ServerMessage",
       "rule": "oneOf",
       "detail": "validate exclusive branch membership against the source schema"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.ServerMessage",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.ServerMessage",
@@ -813,17 +863,32 @@
     {
       "pointer": "/$defs/uilab.wire.StartGoal/properties/max_steps",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.StartGoal/properties/max_steps",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.Transcript/properties/audio_ms",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Transcript/properties/audio_ms",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     },
     {
       "pointer": "/$defs/uilab.wire.Transcript/properties/took_ms",
       "rule": "integer",
-      "detail": "serde_json::Number retains exact JSON numbers but does not enforce integrality; validate the source constraint"
+      "detail": "serde_json::Number holds exact JSON numbers with the default `exact-numbers` feature and binary64 without it, and does not enforce integrality; validate the source constraint"
+    },
+    {
+      "pointer": "/$defs/uilab.wire.Transcript/properties/took_ms",
+      "rule": "rust_exact_numbers",
+      "detail": "this value holds JSON numbers in serde_json; the generated crate's default-on `exact-numbers` feature enables serde_json/arbitrary_precision, and a consumer that turns default features off gets these numbers as binary64"
     }
   ]
 }

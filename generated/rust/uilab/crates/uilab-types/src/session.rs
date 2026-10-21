@@ -811,7 +811,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `stale`.
     ///
-    /// Contract: given `uilab.session.AcceptProposal` input, decide and enact exactly one outcome — `accepted` otherwise, takes `accept` of `uilab.session.Proposal`, emits `uilab.session.ProposalAccepted`; `stale` externally decided (the document changed since the proposal and the patch no longer applies), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields.
+    /// Contract: given `uilab.session.AcceptProposal` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `accepted` otherwise, takes `accept` of `uilab.session.Proposal`, emits `uilab.session.ProposalAccepted`; `stale` externally decided (the document changed since the proposal and the patch no longer applies), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait AcceptProposalBehavior {
         /// Decides and enacts exactly one declared outcome of `uilab.session.AcceptProposal`.
         ///
@@ -824,7 +824,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by `creates:` leaving the required field `selected` of `uilab.session.Document` undetermined, in `opened`.
     ///
-    /// Contract: given `uilab.session.OpenDocument` input, decide and enact exactly one outcome — `opened` otherwise, creates `uilab.session.Document`, emits `uilab.session.DocumentOpened`; `unreadable` externally decided (the file does not parse as an ess-ui/1 document), error `uilab.session.DocumentUnreadable`.
+    /// Contract: given `uilab.session.OpenDocument` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `opened` otherwise, creates `uilab.session.Document`, emits `uilab.session.DocumentOpened`; `unreadable` externally decided (the file does not parse as an ess-ui/1 document), error `uilab.session.DocumentUnreadable`.
     pub trait OpenDocumentBehavior {
         /// Decides and enacts exactly one declared outcome of `uilab.session.OpenDocument`.
         ///
@@ -837,7 +837,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `refused`.
     ///
-    /// Contract: given `uilab.session.ProposePatch` input, decide and enact exactly one outcome — `proposed` otherwise, creates `uilab.session.Proposal`, emits `uilab.session.PatchProposed`; `refused` externally decided (the patched document fails a document check), error `uilab.session.PatchRefused`.
+    /// Contract: given `uilab.session.ProposePatch` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `proposed` otherwise, creates `uilab.session.Proposal`, emits `uilab.session.PatchProposed`; `refused` externally decided (the patched document fails a document check), error `uilab.session.PatchRefused`.
     pub trait ProposePatchBehavior {
         /// Decides and enacts exactly one declared outcome of `uilab.session.ProposePatch`.
         ///
@@ -861,7 +861,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by an unknown identity, which reaches no declared outcome (neither `unknown_instance:` nor `wrong_state:`).
     ///
-    /// Contract: given `uilab.session.SelectNode` input, decide and enact exactly one outcome — `selected` otherwise, updates `uilab.session.Document`, emits `uilab.session.NodeSelected`; `unknown-document` externally decided (no document with this id is open), error `uilab.session.DocumentNotOpen`; `not-found` externally decided (the document has no node at this path), error `uilab.session.NodeNotFound`.
+    /// Contract: given `uilab.session.SelectNode` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `selected` otherwise, updates `uilab.session.Document`, emits `uilab.session.NodeSelected`; `unknown-document` externally decided (no document with this id is open), error `uilab.session.DocumentNotOpen`; `not-found` externally decided (the document has no node at this path), error `uilab.session.NodeNotFound`.
     pub trait SelectNodeBehavior {
         /// Decides and enacts exactly one declared outcome of `uilab.session.SelectNode`.
         ///
@@ -874,7 +874,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `stale`.
     ///
-    /// Contract: given `uilab.session.UndoProposal` input, decide and enact exactly one outcome — `undone` otherwise, takes `undo` of `uilab.session.Proposal`, emits `uilab.session.ProposalUndone`; `stale` externally decided (a later change to the document would be lost by undoing this one), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields.
+    /// Contract: given `uilab.session.UndoProposal` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `undone` otherwise, takes `undo` of `uilab.session.Proposal`, emits `uilab.session.ProposalUndone`; `stale` externally decided (a later change to the document would be lost by undoing this one), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields.
     pub trait UndoProposalBehavior {
         /// Decides and enacts exactly one declared outcome of `uilab.session.UndoProposal`.
         ///

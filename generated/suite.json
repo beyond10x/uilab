@@ -1,12 +1,186 @@
 {
   "provenance": {
-    "suite_version": "ess-conformance/12",
+    "suite_version": "ess-conformance/34",
     "system": "uilab",
     "specification_version": "v1",
     "spec_digest": "d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13",
-    "contract_digest": "9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0"
+    "contract_digest": "9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0",
+    "scenario_initial_state": "empty"
   },
   "scenarios": {
+    "uilab.session.AcceptProposal/grant/denied": {
+      "purpose": "`uilab.session.AcceptProposal` sent as `uilab.session.Agent`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "uilab.session.OpenDocument",
+          "actor": "uilab.session.Operator",
+          "input": {
+            "path": {
+              "kind": "literal",
+              "value": "path"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "document",
+          "entity": "uilab.session.Document",
+          "event": "uilab.session.DocumentOpened",
+          "field": "document_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.ProposePatch",
+          "actor": "uilab.session.Agent",
+          "input": {
+            "document_id": {
+              "kind": "instance",
+              "instance": "document"
+            },
+            "op": {
+              "kind": "literal",
+              "value": "Insert"
+            },
+            "target": {
+              "kind": "literal",
+              "value": "target"
+            },
+            "utterance": {
+              "kind": "literal",
+              "value": "utterance"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.ProposePatch",
+            "outcome": "proposed"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "proposal",
+          "entity": "uilab.session.Proposal",
+          "event": "uilab.session.PatchProposed",
+          "field": "proposal_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.AcceptProposal",
+          "actor": "uilab.session.Agent",
+          "input": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "uilab.session.Agent",
+          "unpublished": [
+            "uilab.session.DocumentOpened",
+            "uilab.session.NodeSelected",
+            "uilab.session.PatchProposed",
+            "uilab.session.ProposalAccepted",
+            "uilab.session.ProposalRejected",
+            "uilab.session.ProposalUndone"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "uilab.session.ProposalId"
+        },
+        {
+          "kind": "entity",
+          "name": "uilab.session.Proposal"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.AcceptProposal"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.OpenDocument"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.ProposePatch"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.AcceptProposal",
+            "outcome": "accepted"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.ProposePatch",
+            "outcome": "proposed"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.DocumentOpened"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.NodeSelected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.PatchProposed"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalAccepted"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalRejected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalUndone"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Pending"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Proposals"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Agent"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Operator"
+        }
+      ]
+    },
     "uilab.session.AcceptProposal/outcome/accepted": {
       "purpose": "`uilab.session.AcceptProposal` answers `accepted` for an input no other branch's guard claims",
       "steps": [
@@ -40,12 +214,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -97,8 +265,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "uilab.session.ProposalAccepted",
+          "payload": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          },
           "shape": {
             "proposal_id": {
               "holds": "primitive",
@@ -468,6 +642,91 @@
         }
       ]
     },
+    "uilab.session.OpenDocument/grant/denied": {
+      "purpose": "`uilab.session.OpenDocument` sent as `uilab.session.Agent`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "uilab.session.OpenDocument",
+          "actor": "uilab.session.Agent",
+          "input": {
+            "path": {
+              "kind": "literal",
+              "value": "path"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "uilab.session.Agent",
+          "unpublished": [
+            "uilab.session.DocumentOpened",
+            "uilab.session.NodeSelected",
+            "uilab.session.PatchProposed",
+            "uilab.session.ProposalAccepted",
+            "uilab.session.ProposalRejected",
+            "uilab.session.ProposalUndone"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "uilab.session.DocumentId"
+        },
+        {
+          "kind": "entity",
+          "name": "uilab.session.Document"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.OpenDocument"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.DocumentOpened"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.NodeSelected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.PatchProposed"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalAccepted"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalRejected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalUndone"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Documents"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Agent"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Operator"
+        }
+      ]
+    },
     "uilab.session.OpenDocument/outcome/opened": {
       "purpose": "`uilab.session.OpenDocument` answers `opened` for an input no other branch's guard claims",
       "steps": [
@@ -739,12 +998,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -1044,12 +1297,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -1360,12 +1607,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -1709,12 +1950,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -2025,12 +2260,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -2330,12 +2559,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -2646,12 +2869,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -2980,12 +3197,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -3325,12 +3536,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -3659,12 +3864,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -3716,8 +3915,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "uilab.session.ProposalAccepted",
+          "payload": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          },
           "shape": {
             "proposal_id": {
               "holds": "primitive",
@@ -3913,12 +4118,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -3970,8 +4169,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "uilab.session.ProposalRejected",
+          "payload": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          },
           "shape": {
             "proposal_id": {
               "holds": "primitive",
@@ -4167,12 +4372,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -4242,8 +4441,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "uilab.session.ProposalUndone",
+          "payload": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          },
           "shape": {
             "proposal_id": {
               "holds": "primitive",
@@ -4417,6 +4622,159 @@
         }
       ]
     },
+    "uilab.session.ProposePatch/grant/denied": {
+      "purpose": "`uilab.session.ProposePatch` sent as `uilab.session.Operator`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "uilab.session.OpenDocument",
+          "actor": "uilab.session.Operator",
+          "input": {
+            "path": {
+              "kind": "literal",
+              "value": "path"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "document",
+          "entity": "uilab.session.Document",
+          "event": "uilab.session.DocumentOpened",
+          "field": "document_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.ProposePatch",
+          "actor": "uilab.session.Operator",
+          "input": {
+            "document_id": {
+              "kind": "instance",
+              "instance": "document"
+            },
+            "op": {
+              "kind": "literal",
+              "value": "Insert"
+            },
+            "target": {
+              "kind": "literal",
+              "value": "target"
+            },
+            "utterance": {
+              "kind": "literal",
+              "value": "utterance"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "uilab.session.Operator",
+          "unpublished": [
+            "uilab.session.DocumentOpened",
+            "uilab.session.NodeSelected",
+            "uilab.session.PatchProposed",
+            "uilab.session.ProposalAccepted",
+            "uilab.session.ProposalRejected",
+            "uilab.session.ProposalUndone"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "uilab.session.DocumentId"
+        },
+        {
+          "kind": "type",
+          "name": "uilab.session.NodePath"
+        },
+        {
+          "kind": "type",
+          "name": "uilab.session.PatchBody"
+        },
+        {
+          "kind": "type",
+          "name": "uilab.session.PatchOp"
+        },
+        {
+          "kind": "type",
+          "name": "uilab.session.ProposalId"
+        },
+        {
+          "kind": "entity",
+          "name": "uilab.session.Proposal"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.OpenDocument"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.ProposePatch"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.ProposePatch",
+            "outcome": "proposed"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.DocumentOpened"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.NodeSelected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.PatchProposed"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalAccepted"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalRejected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalUndone"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Pending"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Proposals"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Agent"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Operator"
+        }
+      ]
+    },
     "uilab.session.ProposePatch/outcome/proposed": {
       "purpose": "`uilab.session.ProposePatch` answers `proposed` for an input no other branch's guard claims",
       "steps": [
@@ -4450,12 +4808,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -4482,11 +4834,21 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "uilab.session.PatchProposed",
           "payload": {
-            "op": "Insert",
-            "target": "target"
+            "document_id": {
+              "kind": "instance",
+              "instance": "document"
+            },
+            "op": {
+              "kind": "literal",
+              "value": "Insert"
+            },
+            "target": {
+              "kind": "literal",
+              "value": "target"
+            }
           },
           "shape": {
             "document_id": {
@@ -4679,6 +5041,10 @@
         {
           "kind": "actor",
           "name": "uilab.session.Agent"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Operator"
         }
       ]
     },
@@ -4697,12 +5063,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "literal",
               "value": "00000000-0000-4000-8000-e7d16e5f69c4"
@@ -4819,6 +5179,179 @@
         }
       ]
     },
+    "uilab.session.RejectProposal/grant/denied": {
+      "purpose": "`uilab.session.RejectProposal` sent as `uilab.session.Agent`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "uilab.session.OpenDocument",
+          "actor": "uilab.session.Operator",
+          "input": {
+            "path": {
+              "kind": "literal",
+              "value": "path"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "document",
+          "entity": "uilab.session.Document",
+          "event": "uilab.session.DocumentOpened",
+          "field": "document_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.ProposePatch",
+          "actor": "uilab.session.Agent",
+          "input": {
+            "document_id": {
+              "kind": "instance",
+              "instance": "document"
+            },
+            "op": {
+              "kind": "literal",
+              "value": "Insert"
+            },
+            "target": {
+              "kind": "literal",
+              "value": "target"
+            },
+            "utterance": {
+              "kind": "literal",
+              "value": "utterance"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.ProposePatch",
+            "outcome": "proposed"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "proposal",
+          "entity": "uilab.session.Proposal",
+          "event": "uilab.session.PatchProposed",
+          "field": "proposal_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.RejectProposal",
+          "actor": "uilab.session.Agent",
+          "input": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "uilab.session.Agent",
+          "unpublished": [
+            "uilab.session.DocumentOpened",
+            "uilab.session.NodeSelected",
+            "uilab.session.PatchProposed",
+            "uilab.session.ProposalAccepted",
+            "uilab.session.ProposalRejected",
+            "uilab.session.ProposalUndone"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "uilab.session.ProposalId"
+        },
+        {
+          "kind": "entity",
+          "name": "uilab.session.Proposal"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.OpenDocument"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.ProposePatch"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.RejectProposal"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.ProposePatch",
+            "outcome": "proposed"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.RejectProposal",
+            "outcome": "rejected"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.DocumentOpened"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.NodeSelected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.PatchProposed"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalAccepted"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalRejected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalUndone"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Pending"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Proposals"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Agent"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Operator"
+        }
+      ]
+    },
     "uilab.session.RejectProposal/outcome/rejected": {
       "purpose": "`uilab.session.RejectProposal` answers `rejected` for an input no other branch's guard claims",
       "steps": [
@@ -4852,12 +5385,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -4909,8 +5436,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "uilab.session.ProposalRejected",
+          "payload": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          },
           "shape": {
             "proposal_id": {
               "holds": "primitive",
@@ -5173,6 +5706,135 @@
         }
       ]
     },
+    "uilab.session.SelectNode/grant/denied": {
+      "purpose": "`uilab.session.SelectNode` sent as `uilab.session.Agent`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "uilab.session.OpenDocument",
+          "actor": "uilab.session.Operator",
+          "input": {
+            "path": {
+              "kind": "literal",
+              "value": "path"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "document",
+          "entity": "uilab.session.Document",
+          "event": "uilab.session.DocumentOpened",
+          "field": "document_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.SelectNode",
+          "actor": "uilab.session.Agent",
+          "input": {
+            "document_id": {
+              "kind": "instance",
+              "instance": "document"
+            },
+            "path": {
+              "kind": "literal",
+              "value": "path"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "uilab.session.Agent",
+          "unpublished": [
+            "uilab.session.DocumentOpened",
+            "uilab.session.NodeSelected",
+            "uilab.session.PatchProposed",
+            "uilab.session.ProposalAccepted",
+            "uilab.session.ProposalRejected",
+            "uilab.session.ProposalUndone"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "uilab.session.DocumentId"
+        },
+        {
+          "kind": "type",
+          "name": "uilab.session.NodePath"
+        },
+        {
+          "kind": "entity",
+          "name": "uilab.session.Document"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.OpenDocument"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.SelectNode"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.SelectNode",
+            "outcome": "selected"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.DocumentOpened"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.NodeSelected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.PatchProposed"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalAccepted"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalRejected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalUndone"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Documents"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Agent"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Operator"
+        }
+      ]
+    },
     "uilab.session.SelectNode/outcome/not-found": {
       "purpose": "`uilab.session.SelectNode` answers `not-found` for the cause it declares as external, injected",
       "steps": [
@@ -5339,10 +6001,17 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "uilab.session.NodeSelected",
           "payload": {
-            "path": "path"
+            "document_id": {
+              "kind": "instance",
+              "instance": "document"
+            },
+            "path": {
+              "kind": "literal",
+              "value": "path"
+            }
           },
           "shape": {
             "document_id": {
@@ -5574,6 +6243,208 @@
         }
       ]
     },
+    "uilab.session.UndoProposal/grant/denied": {
+      "purpose": "`uilab.session.UndoProposal` sent as `uilab.session.Agent`, which the specification does not grant it, is refused before it runs",
+      "steps": [
+        {
+          "step": "execute_command",
+          "command": "uilab.session.OpenDocument",
+          "actor": "uilab.session.Operator",
+          "input": {
+            "path": {
+              "kind": "literal",
+              "value": "path"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "document",
+          "entity": "uilab.session.Document",
+          "event": "uilab.session.DocumentOpened",
+          "field": "document_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.ProposePatch",
+          "actor": "uilab.session.Agent",
+          "input": {
+            "document_id": {
+              "kind": "instance",
+              "instance": "document"
+            },
+            "op": {
+              "kind": "literal",
+              "value": "Insert"
+            },
+            "target": {
+              "kind": "literal",
+              "value": "target"
+            },
+            "utterance": {
+              "kind": "literal",
+              "value": "utterance"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.ProposePatch",
+            "outcome": "proposed"
+          }
+        },
+        {
+          "step": "capture_instance",
+          "instance": "proposal",
+          "entity": "uilab.session.Proposal",
+          "event": "uilab.session.PatchProposed",
+          "field": "proposal_id"
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.AcceptProposal",
+          "actor": "uilab.session.Operator",
+          "input": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          }
+        },
+        {
+          "step": "expect_outcome",
+          "outcome": {
+            "command": "uilab.session.AcceptProposal",
+            "outcome": "accepted"
+          }
+        },
+        {
+          "step": "execute_command",
+          "command": "uilab.session.UndoProposal",
+          "actor": "uilab.session.Agent",
+          "input": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          }
+        },
+        {
+          "step": "expect_not_granted",
+          "actor": "uilab.session.Agent",
+          "unpublished": [
+            "uilab.session.DocumentOpened",
+            "uilab.session.NodeSelected",
+            "uilab.session.PatchProposed",
+            "uilab.session.ProposalAccepted",
+            "uilab.session.ProposalRejected",
+            "uilab.session.ProposalUndone"
+          ]
+        }
+      ],
+      "source": [
+        {
+          "kind": "type",
+          "name": "uilab.session.ProposalId"
+        },
+        {
+          "kind": "entity",
+          "name": "uilab.session.Proposal"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.AcceptProposal"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.OpenDocument"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.ProposePatch"
+        },
+        {
+          "kind": "command",
+          "name": "uilab.session.UndoProposal"
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.AcceptProposal",
+            "outcome": "accepted"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.OpenDocument",
+            "outcome": "opened"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.ProposePatch",
+            "outcome": "proposed"
+          }
+        },
+        {
+          "kind": "outcome",
+          "name": {
+            "command": "uilab.session.UndoProposal",
+            "outcome": "undone"
+          }
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.DocumentOpened"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.NodeSelected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.PatchProposed"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalAccepted"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalRejected"
+        },
+        {
+          "kind": "event",
+          "name": "uilab.session.ProposalUndone"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Pending"
+        },
+        {
+          "kind": "view",
+          "name": "uilab.session.Proposals"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Agent"
+        },
+        {
+          "kind": "actor",
+          "name": "uilab.session.Operator"
+        }
+      ]
+    },
     "uilab.session.UndoProposal/outcome/stale": {
       "purpose": "`uilab.session.UndoProposal` answers `stale` for the cause it declares as external, injected",
       "steps": [
@@ -5714,12 +6585,6 @@
           "command": "uilab.session.ProposePatch",
           "actor": "uilab.session.Agent",
           "input": {
-            "body": {
-              "kind": "literal",
-              "value": {
-                "body": "body"
-              }
-            },
             "document_id": {
               "kind": "instance",
               "instance": "document"
@@ -5789,8 +6654,14 @@
           }
         },
         {
-          "step": "expect_event",
+          "step": "expect_event_values",
           "event": "uilab.session.ProposalUndone",
+          "payload": {
+            "proposal_id": {
+              "kind": "instance",
+              "instance": "proposal"
+            }
+          },
           "shape": {
             "proposal_id": {
               "holds": "primitive",

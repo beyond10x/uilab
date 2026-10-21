@@ -319,7 +319,7 @@
           "class": "undetermined",
           "construct": "the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `stale`"
         },
-        "contract": "given `uilab.session.AcceptProposal` input, decide and enact exactly one outcome — `accepted` otherwise, takes `accept` of `uilab.session.Proposal`, emits `uilab.session.ProposalAccepted`; `stale` externally decided (the document changed since the proposal and the patch no longer applies), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields"
+        "contract": "given `uilab.session.AcceptProposal` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `accepted` otherwise, takes `accept` of `uilab.session.Proposal`, emits `uilab.session.ProposalAccepted`; `stale` externally decided (the document changed since the proposal and the patch no longer applies), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields"
       }
     },
     {
@@ -338,7 +338,7 @@
           "class": "undetermined",
           "construct": "`creates:` leaving the required field `selected` of `uilab.session.Document` undetermined, in `opened`"
         },
-        "contract": "given `uilab.session.OpenDocument` input, decide and enact exactly one outcome — `opened` otherwise, creates `uilab.session.Document`, emits `uilab.session.DocumentOpened`; `unreadable` externally decided (the file does not parse as an ess-ui/1 document), error `uilab.session.DocumentUnreadable`"
+        "contract": "given `uilab.session.OpenDocument` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `opened` otherwise, creates `uilab.session.Document`, emits `uilab.session.DocumentOpened`; `unreadable` externally decided (the file does not parse as an ess-ui/1 document), error `uilab.session.DocumentUnreadable`"
       }
     },
     {
@@ -357,7 +357,7 @@
           "class": "undetermined",
           "construct": "the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `refused`"
         },
-        "contract": "given `uilab.session.ProposePatch` input, decide and enact exactly one outcome — `proposed` otherwise, creates `uilab.session.Proposal`, emits `uilab.session.PatchProposed`; `refused` externally decided (the patched document fails a document check), error `uilab.session.PatchRefused`"
+        "contract": "given `uilab.session.ProposePatch` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `proposed` otherwise, creates `uilab.session.Proposal`, emits `uilab.session.PatchProposed`; `refused` externally decided (the patched document fails a document check), error `uilab.session.PatchRefused`"
       }
     },
     {
@@ -390,7 +390,7 @@
           "class": "undetermined",
           "construct": "an unknown identity, which reaches no declared outcome (neither `unknown_instance:` nor `wrong_state:`)"
         },
-        "contract": "given `uilab.session.SelectNode` input, decide and enact exactly one outcome — `selected` otherwise, updates `uilab.session.Document`, emits `uilab.session.NodeSelected`; `unknown-document` externally decided (no document with this id is open), error `uilab.session.DocumentNotOpen`; `not-found` externally decided (the document has no node at this path), error `uilab.session.NodeNotFound`"
+        "contract": "given `uilab.session.SelectNode` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `selected` otherwise, updates `uilab.session.Document`, emits `uilab.session.NodeSelected`; `unknown-document` externally decided (no document with this id is open), error `uilab.session.DocumentNotOpen`; `not-found` externally decided (the document has no node at this path), error `uilab.session.NodeNotFound`"
       }
     },
     {
@@ -409,7 +409,7 @@
           "class": "undetermined",
           "construct": "the fields of error `uilab.session.PatchRefused`, which the specification gives no source, in `stale`"
         },
-        "contract": "given `uilab.session.UndoProposal` input, decide and enact exactly one outcome — `undone` otherwise, takes `undo` of `uilab.session.Proposal`, emits `uilab.session.ProposalUndone`; `stale` externally decided (a later change to the document would be lost by undoing this one), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields"
+        "contract": "given `uilab.session.UndoProposal` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `undone` otherwise, takes `undo` of `uilab.session.Proposal`, emits `uilab.session.ProposalUndone`; `stale` externally decided (a later change to the document would be lost by undoing this one), error `uilab.session.PatchRefused`; `wrong-state` from a state no declared move starts in, error `uilab.session.ProposalStateConflict`, and for an instance no record carries, without the error's fields"
       }
     },
     {
@@ -535,20 +535,14 @@
       "kind": "actor_grants",
       "source": "uilab.session.Agent",
       "disposition": {
-        "disposition": "refused",
-        "reason": "needs_caller_identity",
-        "stage": "planning",
-        "detail": "may invoke `uilab.session.ProposePatch`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry"
+        "disposition": "generated"
       }
     },
     {
       "kind": "actor_grants",
       "source": "uilab.session.Operator",
       "disposition": {
-        "disposition": "refused",
-        "reason": "needs_caller_identity",
-        "stage": "planning",
-        "detail": "may invoke `uilab.session.AcceptProposal`, `uilab.session.OpenDocument`, `uilab.session.RejectProposal`, `uilab.session.SelectNode`, `uilab.session.UndoProposal`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry"
+        "disposition": "generated"
       }
     },
     {

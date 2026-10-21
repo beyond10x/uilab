@@ -15,7 +15,7 @@ scope:
   path: crates/uilab-doc/tests/library_model.rs
 - confidence: cited
   path: examples/library/model
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"review_outcome":5}}}
 - {from: "proposed", to: "active", at: "2026-10-01T11:11:20Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"review_outcome":5}}}
@@ -56,3 +56,40 @@ Depends on story:essui-document (it converts the document and adds the Taskfile 
 ## Unmapped
 
 Filled by the implementor.
+
+## State (paused 2026-10-21)
+
+Branch `unit/essui-library-model`. beyond10x/ess#286 shipped in ess 0.53.0 (ess CHANGELOG, 0.53.0
+section); dependency-blocker:ess-view-read-grant is cleared.
+
+Done, uncommitted gate:
+
+- ess pin 0.48.0 -> 0.67.0: `ESS_VERSION` in `.github/workflows/check.yml`, `requires:` in
+  `ess/ess-inputs.yaml` and `examples/library/model/ess-inputs.yaml`, the `ess-ui` and
+  `ess-ui-check` git rev in `crates/uilab-doc/Cargo.toml` (4579d80, tag 0.67.0), `Cargo.lock`,
+  `AGENTS.md`. `generated/` and `widget/src/generated/` regenerated with ess 0.67.0.
+- Model `format: ess/22` (a view grant requires it); `library.staff.Staff` may read
+  `loans.All`, `loans.Summary`, `members.All`, `staff.Me`.
+- The overview's `params: {size: 5}` on `loans.All` is dropped from the document: ess 0.67.0
+  reports it as `read_params`, and a `size` parameter no filter reads is refused as
+  `unobservable_fact`. The gap is an `UNMAPPED:` marker on the view in `loans.yaml`.
+- `task ui` gains `ess ui check --model`; with ess 0.67.0 `task validate drift ui` passes and the
+  `--model` check prints `0 error(s), 0 warning(s)`.
+- `crates/uilab-doc/src/outline.rs`: ess-ui 0.67 holds page kinds as `serde_norway` values; the
+  `json` helper is generic over `Serialize`. `cargo check --workspace --all-targets
+  --no-default-features` passes.
+- Tests adjusted: `agent_schema.rs` (ess 0.67.0 declares a section `title`; `subtitle` is the
+  undeclared field now), `doc.rs` (the number round-trip puts `size: 5` back in the read).
+
+Open:
+
+- The full `cargo test --workspace --no-fail-fast --no-default-features` has not run after the
+  two test edits (the first run failed only `schema_patches_pass_ess`, and stopped there).
+- The Acceptance section still names ess 0.48.0 and the document as committed; revise it to
+  ess 0.67.0, `format: ess/22`, and the dropped `size` read, then copy `grep -rn 'UNMAPPED:'
+  examples/library/model` into `## Unmapped`.
+- `task check` (both feature sets), one adversarial pass, PR, merge, release v0.1.6. The
+  release's live agent step is a paid model call and needs its own approval.
+
+First step on resume: in this branch's worktree, run the test command above through
+`b10x-build-slot` with ess 0.67.0 on `PATH`.

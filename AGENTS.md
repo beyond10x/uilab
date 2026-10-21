@@ -28,7 +28,7 @@ is https://beyond10x.github.io/ess/docs/reference/ess-ui.
 - `crates/uilab-doc` is uilab's editing layer over `ess-ui/1`: node paths, patches, the outline,
   sample rows and the agent's patch schema. ESS's `ess-ui` crate loads and expands the document
   and `ess-ui-check` checks it; both are git dependencies of `crates/uilab-doc` only, on ess tag
-  `0.48.0`, re-exported from `uilab_doc` so no other crate adds them. A patch is refused when its
+  `0.67.0`, re-exported from `uilab_doc` so no other crate adds them. A patch is refused when its
   result has an ESS error the document did not already have. uilab writes the authored document
   back, never what a page kind or widget contributes.
 - Work is planned in the AEP store under `.engineering/`, written only through `aep plan artifact`.
@@ -70,7 +70,7 @@ task check CARGO_FEATURES=--no-default-features   # the same with CPU speech, as
 
 No paid model call is part of the gate. `.github/workflows/check.yml` runs `task check` with CPU
 speech on every pull request and every push to `main` (GitHub runners have no Vulkan), with ess
-0.48.0 from its GitHub Release, checked against the release's `SHA256SUMS`.
+0.67.0 from its GitHub Release, checked against the release's `SHA256SUMS`.
 
 ## Common Gates
 

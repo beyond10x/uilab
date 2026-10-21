@@ -64,6 +64,19 @@ fn round_trip_keeps_section_order_and_untyped_props() {
     let recent = yaml.find("name: recent").unwrap();
     assert!(on_loan < recent, "section order is layout order");
     assert!(yaml.contains("row_actions"), "an untyped prop survives");
+    // The library document holds no number since its recent section lost `size: 5` (ESS refuses a
+    // view parameter no filter reads); the read gets it back here.
+    let text = std::fs::read_to_string(examples().join("library/library.ui.yaml")).unwrap();
+    let sized = text.replacen(
+        "reads: {view: loans.All}\n",
+        "reads: {view: loans.All, params: {size: 5}}\n",
+        1,
+    );
+    assert_ne!(sized, text, "the recent section reads loans.All");
+    let yaml = Document::from_yaml_in(&sized, &examples().join("library"))
+        .unwrap()
+        .to_yaml()
+        .unwrap();
     assert!(yaml.contains("size: 5"), "a number is written as a number");
     assert!(
         !yaml.contains("serde_json"),

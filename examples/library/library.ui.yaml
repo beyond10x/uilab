@@ -45,7 +45,7 @@ pages:
         from: on_loan
       - name: recent
         component: collection
-        reads: {view: loans.All, params: {size: 5}}
+        reads: {view: loans.All}
         columns: [{field: title}, {field: member}, {field: due}]
   loans:
     kind: list_page

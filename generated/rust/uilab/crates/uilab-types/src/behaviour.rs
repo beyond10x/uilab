@@ -7,7 +7,7 @@
 //! lists as generated, written against ports the implementor supplies.
 //!
 //! Storage is a port: one trait per entity, get, put and delete of a snapshot by identity. ess
-//! generates the trait and never a store. `Context` is the other port: the caller's attributes,
+//! preserves the trait; generated network entries supply an ephemeral store. `Context` carries the caller's attributes,
 //! every identity and value the model says the implementation assigns, and the answer to each
 //! `external:` branch. [`Generated`] implements every generated `…Behavior` trait over those ports
 //! and forwards every behaviour and query the plan still owes to them, so it is a complete bundle
@@ -22,7 +22,7 @@ use crate::obligation::UnmetObligation;
 
 /// Where `uilab.session.Document` is stored — a port the implementor provides.
 ///
-/// Keyed by the identity `document_id`. ess generates this trait and never an implementation of it.
+/// Keyed by the identity `document_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
 pub trait DocumentStorage {
     /// The instance with this identity, or `None` where none is stored.
     fn get(&self, identity: &crate::session::DocumentId) -> Option<crate::session::DocumentSnapshot>;
@@ -40,7 +40,7 @@ pub trait DocumentStorage {
 
 /// Where `uilab.session.Proposal` is stored — a port the implementor provides.
 ///
-/// Keyed by the identity `proposal_id`. ess generates this trait and never an implementation of it.
+/// Keyed by the identity `proposal_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
 pub trait ProposalStorage {
     /// The instance with this identity, or `None` where none is stored.
     fn get(&self, identity: &crate::session::ProposalId) -> Option<crate::session::ProposalSnapshot>;
@@ -58,11 +58,10 @@ pub trait ProposalStorage {
 
 /// Every generated behaviour of this workspace, over the ports `P` supplies.
 ///
-/// `P` implements the storage trait of each entity a generated behaviour reads or writes,
-/// `Context` where one asks it anything, and every `…Behavior` and `…Query` trait the plan still
-/// owes; `Generated<P>` forwards those to it.
+/// `P` implements the storage trait of each entity a generated behaviour reads or writes, and
+/// every `…Behavior` and `…Query` trait the plan still owes; `Generated<P>` forwards those to it.
 pub struct Generated<P> {
-    /// The storage and context ports, and every behaviour or query still owed.
+    /// The storage ports, and every behaviour or query still owed.
     pub ports: P,
 }
 
@@ -109,8 +108,9 @@ where
             _ => return Ok(crate::session::RejectProposalOutcome::WrongState { error: crate::session::ProposalStateConflict { state: held_state } }),
         };
         let next = moved.snapshot();
+        let answer = crate::session::RejectProposalOutcome::Rejected { proposal_rejected: crate::session::ProposalRejected { proposal_id: input.proposal_id.clone() } };
         ProposalStorage::put(&mut self.ports, next);
-        return Ok(crate::session::RejectProposalOutcome::Rejected { proposal_rejected: crate::session::ProposalRejected { proposal_id: input.proposal_id.clone() } });
+        return Ok(answer);
     }
 }
 

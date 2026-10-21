@@ -49,7 +49,7 @@ pub const ROUTES: &[(&str, &str)] = &[
 /// Everything outside `runtime` is the same in every language this plan is emitted into, and
 /// `cargo xtask synth --check` starts both and compares them.
 pub const STARTUP: &[&str] = &[
-    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"uilab\",\"version\":\"v1\",\"model_digest\":\"d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13\",\"contract_digest\":\"9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0\",\"components\":[\"uilab-session\"],\"capabilities\":{\"generated\":68,\"obligations\":5,\"refused\":2}",
+    "{\"log\":\"ess/1\",\"event\":\"system.starting\",\"system\":\"uilab\",\"version\":\"v1\",\"model_digest\":\"d3dac30e4a3114e008b9d96d1e4eba874d61954f6a5319044185b6c608753f13\",\"contract_digest\":\"9e9941e5243af0824123a784b98dadddce493ba5c713cb7b55ce33bfaf77efa0\",\"components\":[\"uilab-session\"],\"capabilities\":{\"generated\":70,\"obligations\":5,\"refused\":0}",
     "{\"log\":\"ess/1\",\"event\":\"surface.serving\",\"component\":\"uilab-session\",\"reached_by\":\"network\",\"transport\":\"http/1.1\",\"routes\":11,\"paths\":[{\"method\":\"GET\",\"path\":\"/docs\",\"serves\":\"documentation\",\"name\":\"docs\"},{\"method\":\"GET\",\"path\":\"/openapi.json\",\"serves\":\"contract\",\"name\":\"openapi\"},{\"method\":\"POST\",\"path\":\"/session/commands/accept-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.AcceptProposal\"},{\"method\":\"POST\",\"path\":\"/session/commands/open-document\",\"serves\":\"command\",\"name\":\"uilab.session.OpenDocument\"},{\"method\":\"POST\",\"path\":\"/session/commands/propose-patch\",\"serves\":\"command\",\"name\":\"uilab.session.ProposePatch\"},{\"method\":\"POST\",\"path\":\"/session/commands/reject-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.RejectProposal\"},{\"method\":\"POST\",\"path\":\"/session/commands/select-node\",\"serves\":\"command\",\"name\":\"uilab.session.SelectNode\"},{\"method\":\"POST\",\"path\":\"/session/commands/undo-proposal\",\"serves\":\"command\",\"name\":\"uilab.session.UndoProposal\"},{\"method\":\"GET\",\"path\":\"/session/views/documents\",\"serves\":\"view\",\"name\":\"uilab.session.Documents\"},{\"method\":\"GET\",\"path\":\"/session/views/pending\",\"serves\":\"view\",\"name\":\"uilab.session.Pending\"},{\"method\":\"GET\",\"path\":\"/session/views/proposals\",\"serves\":\"view\",\"name\":\"uilab.session.Proposals\"}]",
     "{\"log\":\"ess/1\",\"event\":\"system.ready\",\"system\":\"uilab\",\"surfaces\":1",
 ];
@@ -76,24 +76,62 @@ fn announce(address: &std::net::SocketAddr) {
 /// obligations answers the typed refusal this surface reports as `501` — the honest empty
 /// state rather than a server that pretends.
 ///
+/// `authenticate` is the realization's: it says who each request was sent by, or `None`, and
+/// [`dispatch`] checks that caller's grant before the command runs. Nothing here reads an
+/// actor from the request itself.
+///
+/// One connection at a time: each is dropped after [`http::READ_TIMEOUT`] without a byte, or
+/// [`http::WRITE_TIMEOUT`] of a stalled write, and whatever fails on one connection — a caller
+/// that hung up before reading its answer, a reset, a failed accept — ends that connection only.
+///
 /// # Errors
 ///
-/// Anything the listener refuses: the address is taken, the port is privileged, the socket
-/// died.
-pub fn serve<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, address: &str) -> std::io::Result<()>
+/// What binding the address refuses: the address is taken, or the port is privileged.
+pub fn serve<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, address: &str, authenticate: impl Fn(&http::Request) -> Option<uilab_types::actor::Caller>) -> std::io::Result<()>
+where
+    UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
+{ serve_with_static(system, address, authenticate, None) }
+
+/// Serves the declared surface, with files only for paths outside its route table.
+///
+/// # Errors
+/// Returns a listener or static-root error before announcing readiness.
+pub fn serve_with_static<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, address: &str, authenticate: impl Fn(&http::Request) -> Option<uilab_types::actor::Caller>, static_root: Option<&std::path::Path>) -> std::io::Result<()>
 where
     UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
 {
+    let static_root = static_root.map(std::fs::canonicalize).transpose()?;
+    if static_root.as_ref().is_some_and(|root| !root.is_dir()) { return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "static root is not a directory")); }
     let listener = std::net::TcpListener::bind(address)?;
     announce(&listener.local_addr()?);
     for connection in listener.incoming() {
-        let mut reader = std::io::BufReader::new(connection?);
-        let answer = match http::read(&mut reader) {
-            Ok(request) => dispatch(system, &request),
-            Err(refusal) => refusal,
+        // What fails on one connection ends that connection, never this loop: a caller that
+        // gave up before it was accepted, or before it read its answer, is that caller's affair.
+        let Ok(connection) = connection else {
+            // An accept the listener itself failed (no descriptor left) would fail again at
+            // once: pause before the next.
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            continue;
+        };
+        let _ = connection.set_read_timeout(Some(http::READ_TIMEOUT));
+        let _ = connection.set_write_timeout(Some(http::WRITE_TIMEOUT));
+        let mut reader = std::io::BufReader::new(connection);
+        let (answer, refused) = match http::read(&mut reader) {
+            Ok(request) => {
+                if !ROUTES.iter().any(|(_, path)| *path == request.path) {
+                    if let Some(root) = &static_root {
+                        let _ = crate::static_assets::answer(reader.get_mut(), root, &request);
+                        continue;
+                    }
+                }
+                (dispatch(system, authenticate(&request).as_ref(), &request), false)
+            },
+            Err(refusal) => (refusal, true),
         };
         let mut stream = reader.into_inner();
-        http::write(&mut stream, &answer)?;
+        if http::write(&mut stream, &answer).is_ok() && refused {
+            http::linger(&mut stream);
+        }
     }
     Ok(())
 }
@@ -107,7 +145,11 @@ where
 ///
 /// Public so a caller can hand it a request it built itself: [`serve`] is this function behind a
 /// socket, and nothing else.
-pub fn dispatch<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, request: &http::Request) -> http::Response
+///
+/// `caller` is who the realization authenticated the request as, or `None`. Every command
+/// checks its grant before it runs, and answers the standard refusal when the caller is none
+/// or is an actor the specification does not grant the command.
+pub fn dispatch<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, caller: Option<&uilab_types::actor::Caller>, request: &http::Request) -> http::Response
 where
     UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
 {
@@ -128,11 +170,17 @@ where
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
             }
+            if let Err(actor) = admit(caller, "uilab.session.AcceptProposal") {
+                return not_granted(actor);
+            }
             serve_uilab_session_accept_proposal(system, &request.body)
         }
         "/session/commands/open-document" => {
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
+            }
+            if let Err(actor) = admit(caller, "uilab.session.OpenDocument") {
+                return not_granted(actor);
             }
             serve_uilab_session_open_document(system, &request.body)
         }
@@ -140,11 +188,17 @@ where
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
             }
+            if let Err(actor) = admit(caller, "uilab.session.ProposePatch") {
+                return not_granted(actor);
+            }
             serve_uilab_session_propose_patch(system, &request.body)
         }
         "/session/commands/reject-proposal" => {
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
+            }
+            if let Err(actor) = admit(caller, "uilab.session.RejectProposal") {
+                return not_granted(actor);
             }
             serve_uilab_session_reject_proposal(system, &request.body)
         }
@@ -152,11 +206,17 @@ where
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
             }
+            if let Err(actor) = admit(caller, "uilab.session.SelectNode") {
+                return not_granted(actor);
+            }
             serve_uilab_session_select_node(system, &request.body)
         }
         "/session/commands/undo-proposal" => {
             if request.method != "POST" {
                 return http::method_not_allowed("POST");
+            }
+            if let Err(actor) = admit(caller, "uilab.session.UndoProposal") {
+                return not_granted(actor);
             }
             serve_uilab_session_undo_proposal(system, &request.body)
         }
@@ -199,24 +259,74 @@ where
 /// route's `400`); [`entry::Refused::Unmet`] when the port reports an unmet obligation, and
 /// [`entry::Refused::Undelivered`] when the command took effect and delivering what it published
 /// failed (the route's `501`, with `committed` `false` and `true`).
-pub fn handle<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
+/// [`entry::Refused::NotGranted`] when `caller` — who the realization authenticated the call
+/// as — is none, or is an actor the specification does not grant the command; checked before
+/// the command runs (the route's `403`).
+pub fn handle<UilabSessionBehaviors>(system: &mut uilab_system::System<UilabSessionBehaviors>, caller: Option<&uilab_types::actor::Caller>, name: &str, input: json::Value) -> Result<json::Value, entry::Refused>
 where
     UilabSessionBehaviors: uilab_types::session::obligations::AcceptProposalBehavior + uilab_types::session::obligations::OpenDocumentBehavior + uilab_types::session::obligations::ProposePatchBehavior + uilab_types::session::obligations::RejectProposalBehavior + uilab_types::session::obligations::SelectNodeBehavior + uilab_types::session::obligations::UndoProposalBehavior + uilab_types::session::obligations::DocumentsQuery + uilab_types::session::obligations::PendingQuery + uilab_types::session::obligations::ProposalsQuery,
 {
     let answered = match name {
-        "uilab.session.AcceptProposal" => run_uilab_session_accept_proposal(system, &input),
+        "uilab.session.AcceptProposal" => match admit(caller, "uilab.session.AcceptProposal") {
+            Ok(()) => run_uilab_session_accept_proposal(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
         "uilab.session.Documents" => run_uilab_session_documents(system),
-        "uilab.session.OpenDocument" => run_uilab_session_open_document(system, &input),
+        "uilab.session.OpenDocument" => match admit(caller, "uilab.session.OpenDocument") {
+            Ok(()) => run_uilab_session_open_document(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
         "uilab.session.Pending" => run_uilab_session_pending(system),
         "uilab.session.Proposals" => run_uilab_session_proposals(system),
-        "uilab.session.ProposePatch" => run_uilab_session_propose_patch(system, &input),
-        "uilab.session.RejectProposal" => run_uilab_session_reject_proposal(system, &input),
-        "uilab.session.SelectNode" => run_uilab_session_select_node(system, &input),
-        "uilab.session.UndoProposal" => run_uilab_session_undo_proposal(system, &input),
+        "uilab.session.ProposePatch" => match admit(caller, "uilab.session.ProposePatch") {
+            Ok(()) => run_uilab_session_propose_patch(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
+        "uilab.session.RejectProposal" => match admit(caller, "uilab.session.RejectProposal") {
+            Ok(()) => run_uilab_session_reject_proposal(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
+        "uilab.session.SelectNode" => match admit(caller, "uilab.session.SelectNode") {
+            Ok(()) => run_uilab_session_select_node(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
+        "uilab.session.UndoProposal" => match admit(caller, "uilab.session.UndoProposal") {
+            Ok(()) => run_uilab_session_undo_proposal(system, &input),
+            Err(actor) => Err(entry::Refused::NotGranted(actor.map(str::to_owned))),
+        },
         other => return Err(entry::Refused::Unknown(other.to_owned())),
     };
     let (_, body) = answered?;
     Ok(entry::read(&body))
+}
+
+/// Nothing, where `caller` may invoke `command`; otherwise the actor the standard refusal names,
+/// `None` where the request was authenticated as no actor.
+///
+/// Checked before the command runs, on the caller the realization authenticated the request
+/// as and never on anything the request says about itself. Public, so code that drives the system
+/// in process checks the grant exactly as every route does.
+pub fn admit(caller: Option<&uilab_types::actor::Caller>, command: &str) -> Result<(), Option<&'static str>> {
+    match caller {
+        Some(caller) if caller.may(command) => Ok(()),
+        Some(caller) => Err(Some(caller.actor.name())),
+        None => Err(None),
+    }
+}
+
+/// The standard refusal for an actor no grant admits, as the contract declares it: `403`,
+/// `{"refused": "not granted", "actor": <name or null>}`.
+fn not_granted(actor: Option<&str>) -> http::Response {
+    let mut body = String::from("{");
+    json::member(&mut body, "refused");
+    json::push_text(&mut body, "not granted");
+    json::member(&mut body, "actor");
+    match actor {
+        Some(actor) => json::push_text(&mut body, actor),
+        None => body.push_str("null"),
+    }
+    body.push('}');
+    http::Response::new(403, http::JSON, body)
 }
 
 /// `POST` `uilab.session.AcceptProposal`: reads the declared input, runs the port, answers the declared outcome.

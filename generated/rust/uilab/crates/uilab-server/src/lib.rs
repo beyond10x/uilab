@@ -23,3 +23,5 @@ pub mod http;
 pub mod json;
 pub mod wire;
 pub mod uilab_session;
+pub mod memory;
+mod static_assets;

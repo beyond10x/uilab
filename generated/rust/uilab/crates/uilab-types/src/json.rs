@@ -527,6 +527,47 @@ pub fn integer_at(value: &Value, at: &str, expected: &str) -> Result<i64, Decode
     }
 }
 
+/// The decimal string at this path, in the published pattern: an optional `-`, digits without a
+/// leading zero, then an optional `.` and digits.
+///
+/// # Errors
+///
+/// [`DecodeError`] when the value is not a string, or is one the pattern refuses — refused as the
+/// contract refuses it, rather than handed on as a decimal nobody can read.
+pub fn decimal_at<'a>(value: &'a Value, at: &str, expected: &str) -> Result<&'a str, DecodeError> {
+    let text = text_at(value, at, expected)?;
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit());
+    let unsigned = text.strip_prefix('-').unwrap_or(text);
+    let (whole, fraction) = match unsigned.split_once('.') {
+        Some((whole, fraction)) => (whole, Some(fraction)),
+        None => (unsigned, None),
+    };
+    if digits(whole) && !(whole.len() > 1 && whole.starts_with('0')) && fraction.map_or(true, digits) {
+        Ok(text)
+    } else {
+        Err(DecodeError { at: at.to_owned(), expected: expected.to_owned(), found: format!("`{text}`") })
+    }
+}
+
+/// The UUID at this path, in the published pattern: the canonical hyphenated form, in either case.
+///
+/// # Errors
+///
+/// [`DecodeError`] when the value is not a string, or is one the pattern refuses.
+pub fn uuid_at<'a>(value: &'a Value, at: &str, expected: &str) -> Result<&'a str, DecodeError> {
+    let text = text_at(value, at, expected)?;
+    let valid = text.len() == 36
+        && text.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        });
+    if valid {
+        Ok(text)
+    } else {
+        Err(DecodeError { at: at.to_owned(), expected: expected.to_owned(), found: format!("`{text}`") })
+    }
+}
+
 /// The boolean at this path.
 ///
 /// # Errors
@@ -553,8 +594,17 @@ pub fn bytes_at(value: &Value, at: &str, expected: &str) -> Result<Vec<u8>, Deco
 ///
 /// # Errors
 ///
-/// [`DecodeError`] when a character is outside the alphabet.
+/// [`DecodeError`] when the text is not in the published pattern: whole groups of four characters
+/// of the alphabet, the last of them padded with one or two `=` at most — nothing unpadded,
+/// nothing after padding, no whitespace.
 fn base64(text: &str, at: &str, expected: &str) -> Result<Vec<u8>, DecodeError> {
+    if !base64_text(text) {
+        return Err(DecodeError {
+            at: at.to_owned(),
+            expected: expected.to_owned(),
+            found: "a string that is not base64".to_owned(),
+        });
+    }
     let mut packed = 0_u32;
     let mut held = 0_u32;
     let mut out = Vec::new();
@@ -579,6 +629,20 @@ fn base64(text: &str, at: &str, expected: &str) -> Result<Vec<u8>, DecodeError> 
     Ok(out)
 }
 
+/// `true` where `text` is in the published base64 pattern,
+/// `^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`.
+fn base64_text(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.len() % 4 != 0 {
+        return false;
+    }
+    let padding = bytes.iter().rev().take_while(|byte| **byte == b'=').count();
+    padding <= 2
+        && bytes[..bytes.len() - padding]
+            .iter()
+            .all(|byte| ALPHABET.contains(byte))
+}
+
 /// The integer a map key spells.
 ///
 /// JSON has only string keys, and the published wire contract constrains a non-string map's
@@ -587,13 +651,21 @@ fn base64(text: &str, at: &str, expected: &str) -> Result<Vec<u8>, DecodeError> 
 ///
 /// # Errors
 ///
-/// [`DecodeError`] when the key is not an integer's spelling.
+/// [`DecodeError`] when the key is not an integer's spelling in the published pattern,
+/// `^-?(0|[1-9][0-9]*)$` — no sign but `-`, no leading zero — or is one past 64 bits.
 pub fn key_integer(key: &str, at: &str) -> Result<i64, DecodeError> {
-    key.parse::<i64>().map_err(|_| DecodeError {
-        at: at.to_owned(),
-        expected: "a key spelling an integer".to_owned(),
-        found: format!("the key `{key}`"),
-    })
+    let digits = key.strip_prefix('-').unwrap_or(key);
+    let spelled = !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && (digits == "0" || !digits.starts_with('0'));
+    spelled
+        .then(|| key.parse::<i64>().ok())
+        .flatten()
+        .ok_or_else(|| DecodeError {
+            at: at.to_owned(),
+            expected: "a key spelling an integer".to_owned(),
+            found: format!("the key `{key}`"),
+        })
 }
 
 /// The boolean a map key spells.

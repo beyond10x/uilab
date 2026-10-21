@@ -336,19 +336,27 @@ fn schema_patches_pass_ess() {
     assert!(uilab_doc::resolve(&next, &path("page:overview/overlay:peek")).is_ok());
 
     // A field ESS does not declare is not offered, and ESS's admission refuses it: the schema
-    // guides, admission judges (correction 1, beyond10x/ess#305).
+    // guides, admission judges (correction 1, beyond10x/ess#305). ESS 0.67.0 declares a
+    // section `title`, so it is offered and admitted; `subtitle` stays undeclared.
     let section = child_node(&page, "section");
     let metric = variant(&page, section, "component", "metric");
     assert!(
-        metric["properties"].get("title").is_none(),
-        "a section `title` is not offered"
+        metric["properties"].get("title").is_some(),
+        "a section `title` is offered"
     );
     let mut titled = example_variant(&page, section, metric);
     titled["title"] = json!("Copies on loan");
-    let patch = insert("page:loans", "section", "titled", titled);
+    passes(&doc, &insert("page:loans", "section", "titled", titled.clone()));
+    assert!(
+        metric["properties"].get("subtitle").is_none(),
+        "a section `subtitle` is not offered"
+    );
+    let mut subtitled = titled;
+    subtitled["subtitle"] = json!("this month");
+    let patch = insert("page:loans", "section", "subtitled", subtitled);
     let parsed: Patch = serde_json::from_value(patch.clone()).unwrap();
     let refused = admit(&doc, &parsed);
-    assert!(refused.is_err(), "ESS refuses a section `title`: {patch}");
+    assert!(refused.is_err(), "ESS refuses a section `subtitle`: {patch}");
 }
 
 /// Round 4, case `creative` ("show me how creative you can be" at `page:overview`): the answer

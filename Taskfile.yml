@@ -45,6 +45,7 @@ tasks:
       - for: {var: DOCS}
         cmd: ess ui check --path ../{{.ITEM}}
       - ess specify validate --path ../examples/library/model
+      - ess ui check --path ../examples/library/library.ui.yaml --model ../examples/library/model
     vars:
       DOCS:
         sh: find examples -name '*.ui.yaml' | sort

@@ -13,3 +13,6 @@ edition = "2021"
 uilab-session = { path = "../uilab-session" }
 uilab-system = { path = "../uilab-system" }
 uilab-types = { path = "../uilab-types" }
+clap = { version = "=4.6.7", features = ["derive"] }
+uuid = { version = "=1.26.1", features = ["v4"] }
+time = { version = "=0.3.45", features = ["formatting"] }

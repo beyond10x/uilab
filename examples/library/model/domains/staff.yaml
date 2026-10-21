@@ -21,10 +21,15 @@ entities:
 
 actors:
   # UNMAPPED: the document shows the signed-in person, read from staff.Me, the Extend form on the
-  # loans page. The model reads that as staff may invoke ExtendLoan; neither source states a grant.
+  # loans page. The model reads that as staff may invoke ExtendLoan and read every view the
+  # document reads; neither source states a grant.
   - name: library.staff.Staff
     may:
       - library.loans.ExtendLoan
+      - library.loans.All
+      - library.loans.Summary
+      - library.members.All
+      - library.staff.Me
 
 views:
   # UNMAPPED: `Me` is the signed-in staff member's row. ESS has no caller-relative view, and a

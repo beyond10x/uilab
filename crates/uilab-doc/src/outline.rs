@@ -257,10 +257,10 @@ impl<'a> Expanded<'a> {
             }
             nodes.push((path, segments.to_vec()));
         }
-        let json = |v: Option<&serde_yaml::Value>| {
+        fn json<T: Serialize>(v: Option<&T>) -> Value {
             v.and_then(|v| serde_json::to_value(v).ok())
                 .unwrap_or(Value::Null)
-        };
+        }
         let mut kinds = Map::new();
         for page in doc.pages.values() {
             if kinds.contains_key(&page.kind) {

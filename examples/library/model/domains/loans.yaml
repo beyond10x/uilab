@@ -67,6 +67,8 @@ events:
 views:
   # UNMAPPED: neither source says how soon a view reflects ExtendLoan; the views keep ESS's
   # default, `eventual`.
+  # UNMAPPED: the overview's recent section read loans.All with `size: 5`. ESS has no row limit on
+  # a view and refuses a parameter no filter reads, so the document's read binds no parameter.
   - name: library.loans.All
     source: library.loans.Loan
     fields:

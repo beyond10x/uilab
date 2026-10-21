@@ -26,6 +26,11 @@ pub enum Refused {
     /// The detail begins `delivering what the command published`. Not to be retried: a retry
     /// performs the command twice.
     Undelivered(String),
+    /// The caller is no actor, or one the specification does not grant the command; checked
+    /// before the command runs, and the route answers this `403` with the standard refusal,
+    /// `{"refused": "not granted", "actor": <name or null>}`. Carries the actor's qualified name,
+    /// `None` where the call was authenticated as no actor.
+    NotGranted(Option<String>),
 }
 
 impl Refused {
@@ -35,6 +40,7 @@ impl Refused {
             Self::Unknown(_) => 404,
             Self::Input(_) => 400,
             Self::Unmet(_) | Self::Undelivered(_) => 501,
+            Self::NotGranted(_) => 403,
         }
     }
 
@@ -55,6 +61,8 @@ impl std::fmt::Display for Refused {
             Self::Input(detail) | Self::Unmet(detail) | Self::Undelivered(detail) => {
                 f.write_str(detail)
             }
+            Self::NotGranted(Some(actor)) => write!(f, "not granted: `{actor}`"),
+            Self::NotGranted(None) => f.write_str("not granted: no actor"),
         }
     }
 }

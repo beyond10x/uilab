@@ -604,13 +604,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
 name = "ess-compiler"
-version = "0.48.0"
-source = "git+https://github.com/beyond10x/ess?rev=5dbda40be9d30687c347f54f2b617718a094c2eb#5dbda40be9d30687c347f54f2b617718a094c2eb"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
 dependencies = [
  "ess-domain",
  "ess-primitives",
@@ -621,50 +621,106 @@ dependencies = [
 
 [[package]]
 name = "ess-domain"
-version = "0.48.0"
-source = "git+https://github.com/beyond10x/ess?rev=5dbda40be9d30687c347f54f2b617718a094c2eb#5dbda40be9d30687c347f54f2b617718a094c2eb"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
 dependencies = [
  "ess-primitives",
+ "ess-yaml",
  "schemars",
  "serde",
  "serde_json",
- "serde_yaml",
  "thiserror",
+]
+
+[[package]]
+name = "ess-gen"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "ess-http",
+ "ess-primitives",
+ "ess-transport",
+ "ess-yaml",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "ess-http"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
+dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "ess-primitives",
+ "ess-yaml",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
 name = "ess-primitives"
-version = "0.48.0"
-source = "git+https://github.com/beyond10x/ess?rev=5dbda40be9d30687c347f54f2b617718a094c2eb#5dbda40be9d30687c347f54f2b617718a094c2eb"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
 dependencies = [
+ "ess-yaml",
  "schemars",
  "serde",
  "serde_json",
- "serde_yaml",
  "thiserror",
 ]
 
 [[package]]
-name = "ess-ui"
-version = "0.48.0"
-source = "git+https://github.com/beyond10x/ess?rev=5dbda40be9d30687c347f54f2b617718a094c2eb#5dbda40be9d30687c347f54f2b617718a094c2eb"
+name = "ess-transport"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
 dependencies = [
+ "ess-compiler",
+ "ess-domain",
+ "ess-yaml",
  "serde",
- "serde_yaml",
+ "serde_json",
+]
+
+[[package]]
+name = "ess-ui"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
+dependencies = [
+ "ess-yaml",
+ "ryu-js",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "ess-ui-check"
-version = "0.48.0"
-source = "git+https://github.com/beyond10x/ess?rev=5dbda40be9d30687c347f54f2b617718a094c2eb#5dbda40be9d30687c347f54f2b617718a094c2eb"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
 dependencies = [
  "clap",
  "ess-compiler",
  "ess-domain",
+ "ess-gen",
+ "ess-primitives",
  "ess-ui",
+ "ess-yaml",
  "serde",
  "serde_json",
- "serde_yaml",
+]
+
+[[package]]
+name = "ess-yaml"
+version = "0.67.0"
+source = "git+https://github.com/beyond10x/ess?rev=4579d8049bb5b83749b46059dfc0982de7633485#4579d8049bb5b83749b46059dfc0982de7633485"
+dependencies = [
+ "serde",
+ "serde_norway",
 ]
 
 [[package]]
@@ -1502,6 +1558,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.13.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "278e9268c93b9e498a2da46c34d90ba93a3255eb99009646398f34bc73ab36eb"
+dependencies = [
+ "bitflags",
+ "memchr",
+ "pulldown-cmark-escape",
+ "unicase",
+]
+
+[[package]]
+name = "pulldown-cmark-escape"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
+
+[[package]]
 name = "quinn"
 version = "0.11.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1554,7 +1628,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1779,7 +1853,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1828,6 +1902,12 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "ryu-js"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6518fc26bced4d53678a22d6e423e9d8716377def84545fe328236e3af070e7f"
 
 [[package]]
 name = "schemars"
@@ -1918,6 +1998,19 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_norway"
+version = "0.9.42"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e408f29489b5fd500fab51ff1484fc859bb655f32c671f307dcd733b72e8168c"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml-norway",
 ]
 
 [[package]]
@@ -2121,7 +2214,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2513,6 +2606,12 @@ name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
+
+[[package]]
+name = "unsafe-libyaml-norway"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b39abd59bf32521c7f2301b52d05a6a2c975b6003521cbd0c6dc1582f0a22104"
 
 [[package]]
 name = "untrusted"

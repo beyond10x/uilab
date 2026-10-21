@@ -40,7 +40,7 @@ pub fn encode_uilab_session_document_id(value: &uilab_types::session::DocumentId
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_uilab_session_document_id(value: &json::Value, at: &str) -> Result<uilab_types::session::DocumentId, json::DecodeError> {
-    Ok(uilab_types::session::DocumentId(uilab_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
+    Ok(uilab_types::session::DocumentId(uilab_types::primitives::Uuid(json::uuid_at(value, at, "a UUID")?.to_owned())))
 }
 
 /// Writes `uilab.session.NodePath` as JSON.
@@ -132,7 +132,7 @@ pub fn encode_uilab_session_proposal_id(value: &uilab_types::session::ProposalId
 ///
 /// [`json::DecodeError`] naming the path and what the declaration says belongs there.
 pub fn decode_uilab_session_proposal_id(value: &json::Value, at: &str) -> Result<uilab_types::session::ProposalId, json::DecodeError> {
-    Ok(uilab_types::session::ProposalId(uilab_types::primitives::Uuid(json::text_at(value, at, "a UUID")?.to_owned())))
+    Ok(uilab_types::session::ProposalId(uilab_types::primitives::Uuid(json::uuid_at(value, at, "a UUID")?.to_owned())))
 }
 
 /// Writes `uilab.wire.Changed` as JSON.
